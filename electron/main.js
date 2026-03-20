@@ -397,7 +397,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true
     },
-    title: 'New API',
+    title: 'Lemon AI',
     icon: path.join(__dirname, 'icon.png')
   });
 
@@ -458,7 +458,7 @@ function createTray() {
     }
   ]);
 
-  tray.setToolTip('New API');
+  tray.setToolTip('Lemon AI');
   tray.setContextMenu(contextMenu);
 
   // On macOS, clicking the tray icon shows the window
