@@ -29,3 +29,4 @@ data/
 .gomodcache/
 .gocache-temp
 .gopath
+本地Docker构建指南.txt
