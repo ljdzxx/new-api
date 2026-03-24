@@ -75,8 +75,8 @@ const Home = () => {
   const isMobile = useIsMobile();
   const isDemoSiteMode = statusState?.status?.demo_site_enabled || false;
   const docsLink = statusState?.status?.docs_link || '';
-  const serverAddress = 'https://ai.lemfut.com';
-  //  statusState?.status?.server_address || `${window.location.origin}`;
+  //const serverAddress = statusState?.status?.server_address || `${window.location.origin}`;
+  const serverAddress = statusState?.status?.server_address || 'https://free.lemfut.com';
   const endpointItems = API_ENDPOINTS.map((e) => ({ value: e }));
   const [endpointIndex, setEndpointIndex] = useState(0);
   const isChinese = i18n.language.startsWith('zh');

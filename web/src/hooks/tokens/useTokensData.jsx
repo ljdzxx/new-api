@@ -220,7 +220,7 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     }
     if (url.includes('{cherryConfig}') === true) {
       let cherryConfig = {
-        id: 'new-api',
+        id: 'lemon-api',
         baseUrl: serverAddress,
         apiKey: `sk-${fullKey}`,
       };
