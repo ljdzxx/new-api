@@ -612,10 +612,7 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info *relayco
 	}
 	claudeResponse.Content = contents
 	claudeResponse.StopReason = stopReason
-	claudeResponse.Usage = &dto.ClaudeUsage{
-		InputTokens:  openAIResponse.PromptTokens,
-		OutputTokens: openAIResponse.CompletionTokens,
-	}
+	claudeResponse.Usage = buildClaudeUsageFromOpenAIUsage(&openAIResponse.Usage)
 
 	return claudeResponse
 }
