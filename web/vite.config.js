@@ -65,6 +65,9 @@ export default defineConfig({
     },
   },
   build: {
+    // 降低build内存
+    sourcemap: false,
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
