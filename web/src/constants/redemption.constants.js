@@ -45,3 +45,8 @@ export const REDEMPTION_ACTIONS = {
   ENABLE: 'enable',
   DISABLE: 'disable',
 };
+
+export const REDEMPTION_REWARD_TYPES = {
+  QUOTA: 1,
+  SUBSCRIPTION: 2,
+};

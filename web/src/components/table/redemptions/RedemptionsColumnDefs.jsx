@@ -25,6 +25,7 @@ import {
   REDEMPTION_STATUS,
   REDEMPTION_STATUS_MAP,
   REDEMPTION_ACTIONS,
+  REDEMPTION_REWARD_TYPES,
 } from '../../../constants/redemption.constants';
 
 /**
@@ -87,6 +88,18 @@ export const getRedemptionsColumns = ({
   activePage,
   showDeleteRedemptionModal,
 }) => {
+  const getRewardTypeText = (record) => {
+    const rewardType = Number(record?.reward_type || REDEMPTION_REWARD_TYPES.QUOTA);
+    if (rewardType === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
+      const planId = Number(record?.plan_id || 0);
+      if (planId > 0) {
+        return `${t('订阅套餐')} #${planId}`;
+      }
+      return t('订阅套餐');
+    }
+    return renderQuota(parseInt(record?.quota || 0, 10));
+  };
+
   return [
     {
       title: t('ID'),
@@ -105,13 +118,13 @@ export const getRedemptionsColumns = ({
       },
     },
     {
-      title: t('额度'),
-      dataIndex: 'quota',
-      render: (text) => {
+      title: t('奖励'),
+      key: 'reward',
+      render: (text, record) => {
         return (
           <div>
             <Tag color='grey' shape='circle'>
-              {renderQuota(parseInt(text))}
+              {getRewardTypeText(record)}
             </Tag>
           </div>
         );

@@ -22,7 +22,7 @@ tiktoken_cache
 web/bun.lock
 plans
 .claude
-
+/codex_recovered
 electron/node_modules
 electron/dist
 data/
@@ -30,3 +30,4 @@ data/
 .gocache-temp
 .gopath
 本地Docker构建指南.txt
+机密.txt

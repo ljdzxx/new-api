@@ -34,6 +34,7 @@ import {
   CreditCard,
   Server,
   Activity,
+  Users,
 } from 'lucide-react';
 
 import SystemSetting from '../../components/settings/SystemSetting';
@@ -49,6 +50,7 @@ import DrawingSetting from '../../components/settings/DrawingSetting';
 import PaymentSetting from '../../components/settings/PaymentSetting';
 import ModelDeploymentSetting from '../../components/settings/ModelDeploymentSetting';
 import PerformanceSetting from '../../components/settings/PerformanceSetting';
+import UserLevelSetting from '../../components/settings/UserLevelSetting';
 
 const Setting = () => {
   const { t } = useTranslation();
@@ -127,6 +129,16 @@ const Setting = () => {
       ),
       content: <RateLimitSetting />,
       itemKey: 'ratelimit',
+    });
+    panes.push({
+      tab: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <Users size={18} />
+          {t('等级/限制')}
+        </span>
+      ),
+      content: <UserLevelSetting />,
+      itemKey: 'user-level',
     });
     panes.push({
       tab: (

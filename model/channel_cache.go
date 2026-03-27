@@ -94,9 +94,13 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+	return GetRandomSatisfiedChannelWithNameFilter(group, model, retry, nil)
+}
+
+func GetRandomSatisfiedChannelWithNameFilter(group string, model string, retry int, allowedNames map[string]struct{}) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannelWithNameFilter(group, model, retry, allowedNamesSlice(allowedNames))
 	}
 
 	channelSyncLock.RLock()
@@ -109,6 +113,20 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
 		channels = group2model2channels[group][normalizedModel]
+	}
+
+	if len(channels) > 0 && len(allowedNames) > 0 {
+		filteredChannels := make([]int, 0, len(channels))
+		for _, channelID := range channels {
+			channel, ok := channelsIDM[channelID]
+			if !ok {
+				return nil, fmt.Errorf("鏁版嵁搴撲竴鑷存€ч敊璇紝娓犻亾# %d 涓嶅瓨鍦紝璇疯仈绯荤鐞嗗憳淇", channelID)
+			}
+			if _, allowed := allowedNames[channel.Name]; allowed {
+				filteredChannels = append(filteredChannels, channelID)
+			}
+		}
+		channels = filteredChannels
 	}
 
 	if len(channels) == 0 {
@@ -188,6 +206,17 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+func allowedNamesSlice(allowedNames map[string]struct{}) []string {
+	if len(allowedNames) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(allowedNames))
+	for name := range allowedNames {
+		names = append(names, name)
+	}
+	return names
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

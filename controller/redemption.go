@@ -12,6 +12,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func normalizeAndValidateRedemptionReward(c *gin.Context, redemption *model.Redemption) (bool, string) {
+	if redemption == nil {
+		return false, i18n.T(c, i18n.MsgInvalidParams)
+	}
+	if redemption.RewardType == 0 {
+		redemption.RewardType = common.RedemptionRewardTypeQuota
+	}
+
+	switch redemption.RewardType {
+	case common.RedemptionRewardTypeQuota:
+		if redemption.Quota <= 0 {
+			return false, "额度必须大于 0"
+		}
+		redemption.PlanId = 0
+		return true, ""
+	case common.RedemptionRewardTypeSubscription:
+		if redemption.PlanId <= 0 {
+			return false, "请选择订阅套餐"
+		}
+		plan, err := model.GetSubscriptionPlanById(redemption.PlanId)
+		if err != nil {
+			return false, "订阅套餐不存在"
+		}
+		if plan == nil || !plan.Enabled {
+			return false, "订阅套餐未启用"
+		}
+		redemption.Quota = 0
+		return true, ""
+	default:
+		return false, "不支持的兑换码奖励类型"
+	}
+}
+
 func GetAllRedemptions(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	redemptions, total, err := model.GetAllRedemptions(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
@@ -77,6 +110,10 @@ func AddRedemption(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgRedemptionCountMax)
 		return
 	}
+	if valid, msg := normalizeAndValidateRedemptionReward(c, &redemption); !valid {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
+		return
+	}
 	if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 		return
@@ -89,7 +126,9 @@ func AddRedemption(c *gin.Context) {
 			Name:        redemption.Name,
 			Key:         key,
 			CreatedTime: common.GetTimestamp(),
+			RewardType:  redemption.RewardType,
 			Quota:       redemption.Quota,
+			PlanId:      redemption.PlanId,
 			ExpiredTime: redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()
@@ -140,16 +179,26 @@ func UpdateRedemption(c *gin.Context) {
 		return
 	}
 	if statusOnly == "" {
+		if valid, msg := normalizeAndValidateRedemptionReward(c, &redemption); !valid {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
+			return
+		}
 		if valid, msg := validateExpiredTime(c, redemption.ExpiredTime); !valid {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 			return
 		}
 		// If you add more fields, please also update redemption.Update()
 		cleanRedemption.Name = redemption.Name
+		cleanRedemption.RewardType = redemption.RewardType
 		cleanRedemption.Quota = redemption.Quota
+		cleanRedemption.PlanId = redemption.PlanId
 		cleanRedemption.ExpiredTime = redemption.ExpiredTime
 	}
 	if statusOnly != "" {
+		if redemption.Status == common.RedemptionCodeStatusEnabled && cleanRedemption.Status == common.RedemptionCodeStatusUsed {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "已使用的兑换码不可重新启用"})
+			return
+		}
 		cleanRedemption.Status = redemption.Status
 	}
 	err = cleanRedemption.Update()

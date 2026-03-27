@@ -104,12 +104,20 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 }
 
 func GetChannel(group string, model string, retry int) (*Channel, error) {
+	return GetChannelWithNameFilter(group, model, retry, nil)
+}
+
+func GetChannelWithNameFilter(group string, model string, retry int, allowedNames []string) (*Channel, error) {
 	var abilities []Ability
 
 	var err error = nil
 	channelQuery, err := getChannelQuery(group, model, retry)
 	if err != nil {
 		return nil, err
+	}
+	if len(allowedNames) > 0 {
+		subQuery := DB.Model(&Channel{}).Select("id").Where("name IN ?", allowedNames)
+		channelQuery = channelQuery.Where("channel_id IN (?)", subQuery)
 	}
 	if common.UsingSQLite || common.UsingPostgreSQL {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error

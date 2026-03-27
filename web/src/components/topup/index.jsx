@@ -32,6 +32,7 @@ import { Modal, Toast } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
+import { REDEMPTION_REWARD_TYPES } from '../../constants/redemption.constants';
 
 import RechargeCard from './RechargeCard';
 import InvitationCard from './InvitationCard';
@@ -117,18 +118,33 @@ const TopUp = () => {
       });
       const { success, message, data } = res.data;
       if (success) {
+        const rewardType =
+          Number(data?.reward_type || REDEMPTION_REWARD_TYPES.QUOTA) ||
+          REDEMPTION_REWARD_TYPES.QUOTA;
         showSuccess(t('兑换成功！'));
-        Modal.success({
-          title: t('兑换成功！'),
-          content: t('成功兑换额度：') + renderQuota(data),
-          centered: true,
-        });
-        if (userState.user) {
-          const updatedUser = {
-            ...userState.user,
-            quota: userState.user.quota + data,
-          };
-          userDispatch({ type: 'login', payload: updatedUser });
+        if (rewardType === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
+          Modal.success({
+            title: t('兑换成功！'),
+            content:
+              t('成功兑换订阅套餐：') +
+              `#${Number(data?.plan_id || 0) || '-'}`,
+            centered: true,
+          });
+          await getSubscriptionSelf();
+        } else {
+          const quotaValue = Number(data?.quota || 0);
+          Modal.success({
+            title: t('兑换成功！'),
+            content: t('成功兑换额度：') + renderQuota(quotaValue),
+            centered: true,
+          });
+          if (userState.user) {
+            const updatedUser = {
+              ...userState.user,
+              quota: userState.user.quota + quotaValue,
+            };
+            userDispatch({ type: 'login', payload: updatedUser });
+          }
         }
         setRedemptionCode('');
       } else {

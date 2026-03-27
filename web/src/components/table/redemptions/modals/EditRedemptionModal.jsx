@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   API,
@@ -28,6 +28,7 @@ import {
   renderQuotaWithPrompt,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
+import { REDEMPTION_REWARD_TYPES } from '../../../../constants/redemption.constants';
 import {
   Button,
   Modal,
@@ -55,15 +56,29 @@ const EditRedemptionModal = (props) => {
   const { t } = useTranslation();
   const isEdit = props.editingRedemption.id !== undefined;
   const [loading, setLoading] = useState(isEdit);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
 
   const getInitValues = () => ({
     name: '',
+    reward_type: REDEMPTION_REWARD_TYPES.QUOTA,
     quota: 100000,
+    plan_id: undefined,
     count: 1,
     expired_time: null,
   });
+
+  const planOptions = useMemo(() => {
+    return (subscriptionPlans || [])
+      .map((item) => item?.plan)
+      .filter(Boolean)
+      .map((plan) => ({
+        label: plan.title || `#${plan.id}`,
+        value: plan.id,
+      }));
+  }, [subscriptionPlans]);
 
   const handleCancel = () => {
     props.handleClose();
@@ -79,11 +94,31 @@ const EditRedemptionModal = (props) => {
       } else {
         data.expired_time = new Date(data.expired_time * 1000);
       }
+      if (!data.reward_type) {
+        data.reward_type = REDEMPTION_REWARD_TYPES.QUOTA;
+      }
       formApiRef.current?.setValues({ ...getInitValues(), ...data });
     } else {
       showError(message);
     }
     setLoading(false);
+  };
+
+  const loadSubscriptionPlans = async () => {
+    if (!props.visiable) return;
+    setPlansLoading(true);
+    try {
+      const res = await API.get('/api/subscription/admin/plans');
+      if (res.data?.success) {
+        setSubscriptionPlans(res.data?.data || []);
+      } else {
+        setSubscriptionPlans([]);
+      }
+    } catch (e) {
+      setSubscriptionPlans([]);
+    } finally {
+      setPlansLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -96,16 +131,18 @@ const EditRedemptionModal = (props) => {
     }
   }, [props.editingRedemption.id]);
 
+  useEffect(() => {
+    loadSubscriptionPlans();
+  }, [props.visiable]);
+
   const submit = async (values) => {
-    let name = values.name;
-    if (!isEdit && (!name || name === '')) {
-      name = renderQuota(values.quota);
-    }
-    setLoading(true);
     let localInputs = { ...values };
-    localInputs.count = parseInt(localInputs.count) || 0;
-    localInputs.quota = parseInt(localInputs.quota) || 0;
-    localInputs.name = name;
+    localInputs.count = parseInt(localInputs.count, 10) || 0;
+    localInputs.reward_type =
+      parseInt(localInputs.reward_type, 10) || REDEMPTION_REWARD_TYPES.QUOTA;
+    localInputs.quota = parseInt(localInputs.quota, 10) || 0;
+    localInputs.plan_id = parseInt(localInputs.plan_id, 10) || 0;
+
     if (!localInputs.expired_time) {
       localInputs.expired_time = 0;
     } else {
@@ -113,17 +150,45 @@ const EditRedemptionModal = (props) => {
         localInputs.expired_time.getTime() / 1000,
       );
     }
+
+    if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.QUOTA) {
+      if (localInputs.quota <= 0) {
+        showError(t('额度必须大于0'));
+        return;
+      }
+      localInputs.plan_id = 0;
+    } else if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
+      if (localInputs.plan_id <= 0) {
+        showError(t('请选择订阅套餐'));
+        return;
+      }
+      localInputs.quota = 0;
+    }
+
+    if (!localInputs.name || localInputs.name.trim() === '') {
+      if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.QUOTA) {
+        localInputs.name = renderQuota(localInputs.quota);
+      } else {
+        const matched = planOptions.find((p) => p.value === localInputs.plan_id);
+        localInputs.name = matched
+          ? `${matched.label}`
+          : `订阅套餐#${localInputs.plan_id}`;
+      }
+    }
+
+    setLoading(true);
     let res;
     if (isEdit) {
       res = await API.put(`/api/redemption/`, {
         ...localInputs,
-        id: parseInt(props.editingRedemption.id),
+        id: parseInt(props.editingRedemption.id, 10),
       });
     } else {
       res = await API.post(`/api/redemption/`, {
         ...localInputs,
       });
     }
+
     const { success, message, data } = res.data;
     if (success) {
       if (isEdit) {
@@ -139,6 +204,7 @@ const EditRedemptionModal = (props) => {
     } else {
       showError(message);
     }
+
     if (!isEdit && data) {
       let text = '';
       for (let i = 0; i < data.length; i++) {
@@ -157,6 +223,7 @@ const EditRedemptionModal = (props) => {
         },
       });
     }
+
     setLoading(false);
   };
 
@@ -217,7 +284,6 @@ const EditRedemptionModal = (props) => {
             {({ values }) => (
               <div className='p-2'>
                 <Card className='!rounded-2xl shadow-sm border-0 mb-6'>
-                  {/* Header: Basic Info */}
                   <div className='flex items-center mb-2'>
                     <Avatar
                       size='small'
@@ -227,9 +293,7 @@ const EditRedemptionModal = (props) => {
                       <IconGift size={16} />
                     </Avatar>
                     <div>
-                      <Text className='text-lg font-medium'>
-                        {t('基本信息')}
-                      </Text>
+                      <Text className='text-lg font-medium'>{t('基本信息')}</Text>
                       <div className='text-xs text-gray-600'>
                         {t('设置兑换码的基本信息')}
                       </div>
@@ -252,11 +316,39 @@ const EditRedemptionModal = (props) => {
                       />
                     </Col>
                     <Col span={24}>
+                      <Form.Select
+                        field='reward_type'
+                        label={t('奖励类型')}
+                        optionList={[
+                          { label: t('额度'), value: REDEMPTION_REWARD_TYPES.QUOTA },
+                          {
+                            label: t('订阅套餐'),
+                            value: REDEMPTION_REWARD_TYPES.SUBSCRIPTION,
+                          },
+                        ]}
+                      />
+                    </Col>
+                    {values.reward_type === REDEMPTION_REWARD_TYPES.SUBSCRIPTION && (
+                      <Col span={24}>
+                        <Form.Select
+                          field='plan_id'
+                          label={t('订阅套餐')}
+                          placeholder={t('请选择要绑定的订阅套餐')}
+                          loading={plansLoading}
+                          filter
+                          optionList={planOptions}
+                          rules={[
+                            { required: true, message: t('请选择订阅套餐') },
+                          ]}
+                        />
+                      </Col>
+                    )}
+                    <Col span={24}>
                       <Form.DatePicker
                         field='expired_time'
                         label={t('过期时间')}
                         type='dateTime'
-                        placeholder={t('选择过期时间（可选，留空为永久）')}
+                        placeholder={t('选择过期时间（可选，留空为永不过期）')}
                         style={{ width: '100%' }}
                         showClear
                       />
@@ -265,7 +357,6 @@ const EditRedemptionModal = (props) => {
                 </Card>
 
                 <Card className='!rounded-2xl shadow-sm border-0'>
-                  {/* Header: Quota Settings */}
                   <div className='flex items-center mb-2'>
                     <Avatar
                       size='small'
@@ -275,50 +366,56 @@ const EditRedemptionModal = (props) => {
                       <IconCreditCard size={16} />
                     </Avatar>
                     <div>
-                      <Text className='text-lg font-medium'>
-                        {t('额度设置')}
-                      </Text>
+                      <Text className='text-lg font-medium'>{t('兑换设置')}</Text>
                       <div className='text-xs text-gray-600'>
-                        {t('设置兑换码的额度和数量')}
+                        {t('设置兑换码的奖励和数量')}
                       </div>
                     </div>
                   </div>
 
                   <Row gutter={12}>
-                    <Col span={12}>
-                      <Form.AutoComplete
-                        field='quota'
-                        label={t('额度')}
-                        placeholder={t('请输入额度')}
-                        style={{ width: '100%' }}
-                        type='number'
-                        rules={[
-                          { required: true, message: t('请输入额度') },
-                          {
-                            validator: (rule, v) => {
-                              const num = parseInt(v, 10);
-                              return num > 0
-                                ? Promise.resolve()
-                                : Promise.reject(t('额度必须大于0'));
-                            },
-                          },
-                        ]}
-                        extraText={renderQuotaWithPrompt(
-                          Number(values.quota) || 0,
-                        )}
-                        data={[
-                          { value: 500000, label: '1$' },
-                          { value: 5000000, label: '10$' },
-                          { value: 25000000, label: '50$' },
-                          { value: 50000000, label: '100$' },
-                          { value: 250000000, label: '500$' },
-                          { value: 500000000, label: '1000$' },
-                        ]}
-                        showClear
-                      />
-                    </Col>
-                    {!isEdit && (
+                    {values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA && (
                       <Col span={12}>
+                        <Form.AutoComplete
+                          field='quota'
+                          label={t('额度')}
+                          placeholder={t('请输入额度')}
+                          style={{ width: '100%' }}
+                          type='number'
+                          rules={[
+                            { required: true, message: t('请输入额度') },
+                            {
+                              validator: (rule, v) => {
+                                const num = parseInt(v, 10);
+                                return num > 0
+                                  ? Promise.resolve()
+                                  : Promise.reject(t('额度必须大于0'));
+                              },
+                            },
+                          ]}
+                          extraText={renderQuotaWithPrompt(
+                            Number(values.quota) || 0,
+                          )}
+                          data={[
+                            { value: 500000, label: '1$' },
+                            { value: 5000000, label: '10$' },
+                            { value: 25000000, label: '50$' },
+                            { value: 50000000, label: '100$' },
+                            { value: 250000000, label: '500$' },
+                            { value: 500000000, label: '1000$' },
+                          ]}
+                          showClear
+                        />
+                      </Col>
+                    )}
+                    {!isEdit && (
+                      <Col
+                        span={
+                          values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA
+                            ? 12
+                            : 24
+                        }
+                      >
                         <Form.InputNumber
                           field='count'
                           label={t('生成数量')}

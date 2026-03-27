@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -55,12 +56,83 @@ func GetTopUpByTradeNo(tradeNo string) *TopUp {
 	return topUp
 }
 
+func GetUserTotalRechargeAmount(userId int) (float64, error) {
+	var total float64
+	err := DB.Model(&TopUp{}).
+		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Select("COALESCE(SUM(money), 0)").
+		Scan(&total).Error
+	return total, err
+}
+
+func getUserTotalRechargeAmountTx(tx *gorm.DB, userId int) (float64, error) {
+	var total float64
+	err := tx.Model(&TopUp{}).
+		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Select("COALESCE(SUM(money), 0)").
+		Scan(&total).Error
+	return total, err
+}
+
+func applyUserLevelByRechargeTx(tx *gorm.DB, userId int, totalRecharge float64) (bool, string, int, error) {
+	target, found := setting.GetHighestUserLevelByRecharge(totalRecharge)
+	if !found {
+		return false, "", 0, nil
+	}
+
+	user := User{}
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", userId).First(&user).Error; err != nil {
+		return false, "", 0, err
+	}
+
+	if user.UserLevelId == target.ID {
+		return false, target.Level, target.ID, nil
+	}
+
+	err := tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{
+		"user_level_id": target.ID,
+	}).Error
+	if err != nil {
+		return false, "", 0, err
+	}
+
+	return true, target.Level, target.ID, nil
+}
+
+func TryAutoUpgradeUserLevelByRecharge(userId int) error {
+	if userId <= 0 {
+		return nil
+	}
+	var levelChanged bool
+	var upgradedGroup string
+	var upgradedLevelID int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		totalRecharge, err := getUserTotalRechargeAmountTx(tx, userId)
+		if err != nil {
+			return err
+		}
+		levelChanged, upgradedGroup, upgradedLevelID, err = applyUserLevelByRechargeTx(tx, userId, totalRecharge)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if levelChanged {
+		_ = invalidateUserCache(userId)
+		RecordLog(userId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", upgradedGroup, upgradedLevelID))
+	}
+	return nil
+}
+
 func Recharge(referenceId string, customerId string) (err error) {
 	if referenceId == "" {
 		return errors.New("未提供支付单号")
 	}
 
 	var quota float64
+	var levelChanged bool
+	var upgradedGroup string
+	var upgradedLevelID int
 	topUp := &TopUp{}
 
 	refCol := "`trade_no`"
@@ -91,6 +163,15 @@ func Recharge(referenceId string, customerId string) (err error) {
 			return err
 		}
 
+		totalRecharge, err := getUserTotalRechargeAmountTx(tx, topUp.UserId)
+		if err != nil {
+			return err
+		}
+		levelChanged, upgradedGroup, upgradedLevelID, err = applyUserLevelByRechargeTx(tx, topUp.UserId, totalRecharge)
+		if err != nil {
+			return err
+		}
+
 		return nil
 	})
 
@@ -100,6 +181,10 @@ func Recharge(referenceId string, customerId string) (err error) {
 	}
 
 	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(int(quota)), topUp.Amount))
+	if levelChanged {
+		_ = invalidateUserCache(topUp.UserId)
+		RecordLog(topUp.UserId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", upgradedGroup, upgradedLevelID))
+	}
 
 	return nil
 }
@@ -247,6 +332,9 @@ func ManualCompleteTopUp(tradeNo string) error {
 	}
 
 	var userId int
+	var levelChanged bool
+	var upgradedGroup string
+	var upgradedLevelID int
 	var quotaToAdd int
 	var payMoney float64
 
@@ -292,6 +380,14 @@ func ManualCompleteTopUp(tradeNo string) error {
 		if err := tx.Model(&User{}).Where("id = ?", topUp.UserId).Update("quota", gorm.Expr("quota + ?", quotaToAdd)).Error; err != nil {
 			return err
 		}
+		totalRecharge, err := getUserTotalRechargeAmountTx(tx, topUp.UserId)
+		if err != nil {
+			return err
+		}
+		levelChanged, upgradedGroup, upgradedLevelID, err = applyUserLevelByRechargeTx(tx, topUp.UserId, totalRecharge)
+		if err != nil {
+			return err
+		}
 
 		userId = topUp.UserId
 		payMoney = topUp.Money
@@ -304,6 +400,10 @@ func ManualCompleteTopUp(tradeNo string) error {
 
 	// 事务外记录日志，避免阻塞
 	RecordLog(userId, LogTypeTopup, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), payMoney))
+	if levelChanged {
+		_ = invalidateUserCache(userId)
+		RecordLog(userId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", upgradedGroup, upgradedLevelID))
+	}
 	return nil
 }
 func RechargeCreem(referenceId string, customerEmail string, customerName string) (err error) {
@@ -312,6 +412,9 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 	}
 
 	var quota int64
+	var levelChanged bool
+	var upgradedGroup string
+	var upgradedLevelID int
 	topUp := &TopUp{}
 
 	refCol := "`trade_no`"
@@ -363,6 +466,14 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		if err != nil {
 			return err
 		}
+		totalRecharge, err := getUserTotalRechargeAmountTx(tx, topUp.UserId)
+		if err != nil {
+			return err
+		}
+		levelChanged, upgradedGroup, upgradedLevelID, err = applyUserLevelByRechargeTx(tx, topUp.UserId, totalRecharge)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -373,6 +484,10 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 	}
 
 	RecordLog(topUp.UserId, LogTypeTopup, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quota, topUp.Money))
+	if levelChanged {
+		_ = invalidateUserCache(topUp.UserId)
+		RecordLog(topUp.UserId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", upgradedGroup, upgradedLevelID))
+	}
 
 	return nil
 }

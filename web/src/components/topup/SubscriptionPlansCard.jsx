@@ -41,6 +41,18 @@ import {
 
 const { Text } = Typography;
 
+function formatSubscriptionEndTime(endTime) {
+  if (!endTime) return '-';
+  const date = new Date(endTime * 1000);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hour = date.getHours().toString().padStart(2, '0');
+  const minute = date.getMinutes().toString().padStart(2, '0');
+  const second = date.getSeconds().toString().padStart(2, '0');
+  return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+}
+
 // 过滤易支付方式
 function getEpayMethods(payMethods = []) {
   return (payMethods || []).filter(
@@ -235,14 +247,6 @@ const SubscriptionPlansCard = ({
   const getPlanPurchaseCount = (planId) =>
     planPurchaseCountMap.get(planId) || 0;
 
-  // 计算单个订阅的剩余天数
-  const getRemainingDays = (sub) => {
-    if (!sub?.subscription?.end_time) return 0;
-    const now = Date.now() / 1000;
-    const remaining = sub.subscription.end_time - now;
-    return Math.max(0, Math.ceil(remaining / 86400));
-  };
-
   // 计算单个订阅的使用进度
   const getUsagePercent = (sub) => {
     const total = Number(sub?.subscription?.amount_total || 0);
@@ -389,79 +393,36 @@ const SubscriptionPlansCard = ({
                         : 0;
                     const planTitle =
                       planTitleMap.get(subscription?.plan_id) || '';
-                    const remainDays = getRemainingDays(sub);
                     const usagePercent = getUsagePercent(sub);
                     const now = Date.now() / 1000;
                     const isExpired = (subscription?.end_time || 0) < now;
                     const isCancelled = subscription?.status === 'cancelled';
                     const isActive =
                       subscription?.status === 'active' && !isExpired;
+                    const statusText = isActive
+                      ? t('生效')
+                      : isCancelled
+                        ? t('已作废')
+                        : t('已过期');
 
                     return (
                       <div key={subscription?.id || subIndex}>
-                        {/* 订阅概要 */}
-                        <div className='flex items-center justify-between text-xs mb-2'>
-                          <div className='flex items-center gap-2'>
-                            <span className='font-medium'>
-                              {planTitle
-                                ? `${planTitle} · ${t('订阅')} #${subscription?.id}`
-                                : `${t('订阅')} #${subscription?.id}`}
-                            </span>
-                            {isActive ? (
-                              <Tag
-                                color='white'
-                                size='small'
-                                shape='circle'
-                                prefixIcon={<Badge dot type='success' />}
-                              >
-                                {t('生效')}
-                              </Tag>
-                            ) : isCancelled ? (
-                              <Tag color='white' size='small' shape='circle'>
-                                {t('已作废')}
-                              </Tag>
-                            ) : (
-                              <Tag color='white' size='small' shape='circle'>
-                                {t('已过期')}
-                              </Tag>
-                            )}
-                          </div>
-                          {isActive && (
-                            <span className='text-gray-500'>
-                              {t('剩余')} {remainDays} {t('天')}
-                            </span>
-                          )}
+                        <div className='text-xs mb-1'>
+                          <span className='font-medium'>
+                            {planTitle
+                              ? `${planTitle} · ${t('订阅')} #${subscription?.id} ${statusText}`
+                              : `${t('订阅')} #${subscription?.id} ${statusText}`}
+                          </span>
                         </div>
-                        <div className='text-xs text-gray-500 mb-2'>
-                          {isActive
-                            ? t('至')
-                            : isCancelled
-                              ? t('作废于')
-                              : t('过期于')}{' '}
-                          {new Date(
-                            (subscription?.end_time || 0) * 1000,
-                          ).toLocaleString()}
+                        <div className='text-xs text-gray-500 mb-1'>
+                          {t('至')} {formatSubscriptionEndTime(subscription?.end_time || 0)}
                         </div>
-                        <div className='text-xs text-gray-500 mb-2'>
-                          {t('总额度')}:{' '}
-                          {totalAmount > 0 ? (
-                            <Tooltip
-                              content={`${t('原生额度')}：${usedAmount}/${totalAmount} · ${t('剩余')} ${remainAmount}`}
-                            >
-                              <span>
-                                {renderQuota(usedAmount)}/
-                                {renderQuota(totalAmount)} · {t('剩余')}{' '}
-                                {renderQuota(remainAmount)}
-                              </span>
-                            </Tooltip>
-                          ) : (
-                            t('不限')
-                          )}
-                          {totalAmount > 0 && (
-                            <span className='ml-2'>
-                              {t('已用')} {usagePercent}%
-                            </span>
-                          )}
+                        <div className='text-xs text-gray-500'>
+                          {t('总额度')}: {renderQuota(usedAmount)}/
+                          {totalAmount > 0 ? renderQuota(totalAmount) : t('不限')}{' '}
+                          · {t('剩余')}{' '}
+                          {totalAmount > 0 ? renderQuota(remainAmount) : t('不限')}
+                          {totalAmount > 0 ? ` ${t('已用')} ${usagePercent}%` : ''}
                         </div>
                         {!isLast && <Divider margin={12} />}
                       </div>

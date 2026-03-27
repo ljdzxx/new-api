@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -454,6 +455,78 @@ func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	}
 	tx.Where("type = ?", LogTypeConsume).Scan(&token)
 	return token
+}
+
+func GetUserLevelGroupDailyConsumedMoney(userGroup string) (float64, error) {
+	group := strings.TrimSpace(userGroup)
+	if group == "" {
+		return 0, nil
+	}
+
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
+	end := start + 86400
+
+	netQuota, err := getUserLevelGroupDailyNetQuota(group, start, end)
+	if err != nil {
+		return 0, err
+	}
+	if netQuota <= 0 {
+		return 0, nil
+	}
+
+	if common.QuotaPerUnit <= 0 {
+		return float64(netQuota), nil
+	}
+	return float64(netQuota) / common.QuotaPerUnit, nil
+}
+
+func getUserLevelGroupDailyNetQuota(userGroup string, startTimestamp int64, endTimestamp int64) (int64, error) {
+	groupCol := commonGroupCol
+	if strings.TrimSpace(groupCol) == "" {
+		groupCol = "`group`"
+	}
+
+	if LOG_DB == DB {
+		subQuery := DB.Model(&User{}).Select("id").Where(groupCol+" = ?", userGroup)
+		var total int64
+		err := LOG_DB.Model(&Log{}).
+			Select("COALESCE(SUM(CASE WHEN type = ? THEN quota WHEN type = ? THEN -quota ELSE 0 END), 0)", LogTypeConsume, LogTypeRefund).
+			Where("created_at >= ? AND created_at < ?", startTimestamp, endTimestamp).
+			Where("user_id IN (?)", subQuery).
+			Scan(&total).Error
+		return total, err
+	}
+
+	userIDs := make([]int, 0)
+	if err := DB.Model(&User{}).Where(groupCol+" = ?", userGroup).Pluck("id", &userIDs).Error; err != nil {
+		return 0, err
+	}
+	if len(userIDs) == 0 {
+		return 0, nil
+	}
+
+	const chunkSize = 500
+	var total int64
+	for i := 0; i < len(userIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(userIDs) {
+			end = len(userIDs)
+		}
+		chunkIDs := userIDs[i:end]
+
+		var part int64
+		err := LOG_DB.Model(&Log{}).
+			Select("COALESCE(SUM(CASE WHEN type = ? THEN quota WHEN type = ? THEN -quota ELSE 0 END), 0)", LogTypeConsume, LogTypeRefund).
+			Where("created_at >= ? AND created_at < ?", startTimestamp, endTimestamp).
+			Where("user_id IN ?", chunkIDs).
+			Scan(&part).Error
+		if err != nil {
+			return 0, err
+		}
+		total += part
+	}
+	return total, nil
 }
 
 func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {

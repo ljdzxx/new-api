@@ -56,6 +56,7 @@ export default function SettingsSidebarModulesAdmin(props) {
     personal: {
       enabled: true,
       topup: true,
+      level: true,
       personal: true,
     },
     admin: {
@@ -117,6 +118,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       personal: {
         enabled: true,
         topup: true,
+        level: true,
         personal: true,
       },
       admin: {
@@ -174,7 +176,14 @@ export default function SettingsSidebarModulesAdmin(props) {
     if (props.options && props.options.SidebarModulesAdmin) {
       try {
         const modules = JSON.parse(props.options.SidebarModulesAdmin);
-        setSidebarModulesAdmin(modules);
+        setSidebarModulesAdmin((prev) => ({
+          ...prev,
+          ...modules,
+          chat: { ...prev.chat, ...(modules.chat || {}) },
+          console: { ...prev.console, ...(modules.console || {}) },
+          personal: { ...prev.personal, ...(modules.personal || {}) },
+          admin: { ...prev.admin, ...(modules.admin || {}) },
+        }));
       } catch (error) {
         // 使用默认配置
         const defaultModules = {
@@ -187,7 +196,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             midjourney: true,
             task: true,
           },
-          personal: { enabled: true, topup: true, personal: true },
+          personal: { enabled: true, topup: true, level: true, personal: true },
           admin: {
             enabled: true,
             channel: true,
@@ -241,6 +250,11 @@ export default function SettingsSidebarModulesAdmin(props) {
       description: t('用户个人功能'),
       modules: [
         { key: 'topup', title: t('钱包管理'), description: t('余额充值管理') },
+        {
+          key: 'level',
+          title: t('等级/限制'),
+          description: t('查看当前等级与升级权益'),
+        },
         {
           key: 'personal',
           title: t('个人设置'),
