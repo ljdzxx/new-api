@@ -21,6 +21,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Spin, Tag, Typography } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useActualTheme } from '../../context/Theme';
 import { API, showError } from '../../helpers';
 import {
   ArrowRight,
@@ -35,6 +36,12 @@ import {
 } from 'lucide-react';
 
 const { Text } = Typography;
+const textToneTokens = {
+  heading: 'text-gray-900 dark:text-gray-100',
+  primary: 'text-gray-700 dark:text-gray-100',
+  secondary: 'text-gray-600 dark:text-gray-300',
+  tertiary: 'text-gray-500 dark:text-gray-400',
+};
 
 function formatMoney(value) {
   const amount = Number(value || 0);
@@ -75,6 +82,8 @@ function LevelIcon({ level, size = 22 }) {
 const UserLevelPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const actualTheme = useActualTheme();
+  const isDark = actualTheme === 'dark';
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
 
@@ -164,15 +173,15 @@ const UserLevelPage = () => {
                 </div>
               </div>
 
-              <div className='w-full rounded-2xl bg-white/90 p-4 md:w-[290px]'>
-                <div className='mb-2 flex items-center justify-between text-gray-700'>
+              <div className='w-full rounded-2xl bg-white/90 p-4 md:w-[290px] dark:bg-slate-900/80 dark:ring-1 dark:ring-slate-700/70'>
+                <div className={`mb-2 flex items-center justify-between ${textToneTokens.primary}`}>
                   <span className='text-sm'>{t('升级到')}</span>
                   <span className='flex items-center gap-1 font-semibold'>
                     {next?.level || t('最高等级')}
                     {next ? <ChevronRight size={15} /> : null}
                   </span>
                 </div>
-                <div className='h-2 overflow-hidden rounded-full bg-gray-200'>
+                <div className='h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700'>
                   <div
                     className='h-full rounded-full'
                     style={{
@@ -181,11 +190,11 @@ const UserLevelPage = () => {
                     }}
                   />
                 </div>
-                <div className='mt-2 flex items-center justify-between text-xs text-gray-500'>
+                <div className={`mt-2 flex items-center justify-between text-xs ${textToneTokens.tertiary}`}>
                   <span>{formatMoney(data?.current_recharge || 0)}</span>
                   <span>{formatMoney(data?.next_recharge || data?.current_recharge || 0)}</span>
                 </div>
-                <div className='mt-3 flex items-center gap-2 text-xs text-gray-600'>
+                <div className={`mt-3 flex items-center gap-2 text-xs ${textToneTokens.secondary}`}>
                   <TrendingUp size={13} />
                   {next ? `${t('还需')}: ${formatMoney(data?.remaining_recharge || 0)}` : t('已达最高等级')}
                 </div>
@@ -210,22 +219,41 @@ const UserLevelPage = () => {
                     bodyStyle={{ padding: 16 }}
                     style={{
                       borderRadius: 16,
-                      border: isCurrent ? '2px solid #3b82f6' : '1px solid #e7e8eb',
-                      background: isCurrent ? 'rgba(59,130,246,0.06)' : '#fff',
+                      border: isCurrent
+                        ? '2px solid #3b82f6'
+                        : isDark
+                          ? '1px solid rgba(148, 163, 184, 0.35)'
+                          : '1px solid #e7e8eb',
+                      background: isCurrent
+                        ? isDark
+                          ? 'rgba(59,130,246,0.18)'
+                          : 'rgba(59,130,246,0.06)'
+                        : isDark
+                          ? 'rgba(15, 23, 42, 0.9)'
+                          : '#fff',
+                      color: isDark ? '#e5e7eb' : undefined,
                     }}
                   >
                     <div className='space-y-3'>
                       <div className='flex items-start justify-between gap-2'>
                         <div className='flex items-center gap-2'>
                           <div
-                            className='flex items-center justify-center rounded-xl bg-gray-50'
-                            style={{ width: 40, height: 40, color: '#5f6f90' }}
+                            className='flex items-center justify-center rounded-xl bg-gray-50 dark:bg-slate-700/70'
+                            style={{
+                              width: 40,
+                              height: 40,
+                              color: isDark ? '#cbd5e1' : '#5f6f90',
+                            }}
                           >
                             <LevelIcon level={level} size={20} />
                           </div>
                           <div>
-                            <div className='font-semibold'>{level.level}</div>
-                            <Text type='tertiary' size='small'>
+                            <div className={`font-semibold ${textToneTokens.heading}`}>{level.level}</div>
+                            <Text
+                              type='tertiary'
+                              size='small'
+                              style={isDark ? { color: 'rgba(203, 213, 225, 0.88)' } : undefined}
+                            >
                               {t('累计充值')}: {formatMoney(level.recharge)}
                             </Text>
                           </div>
@@ -234,21 +262,21 @@ const UserLevelPage = () => {
                       </div>
 
                       <div className='space-y-2 text-sm'>
-                        <div className='flex items-center justify-between text-gray-600'>
+                        <div className={`flex items-center justify-between ${textToneTokens.secondary}`}>
                           <span className='flex items-center gap-1'>
                             <Zap size={14} />
                             {t('折扣')}
                           </span>
                           <span className='font-medium'>{getDiscountText(level)}</span>
                         </div>
-                        <div className='flex items-center justify-between text-gray-600'>
+                        <div className={`flex items-center justify-between ${textToneTokens.secondary}`}>
                           <span className='flex items-center gap-1'>
                             <Layers size={14} />
                             {t('可用渠道')}
                           </span>
                           <span className='font-medium'>{getChannelText(level)}</span>
                         </div>
-                        <div className='flex items-center justify-between text-gray-600'>
+                        <div className={`flex items-center justify-between ${textToneTokens.secondary}`}>
                           <span className='flex items-center gap-1'>
                             <Clock size={14} />
                             {t('速率限制')}
@@ -281,4 +309,3 @@ const UserLevelPage = () => {
 };
 
 export default UserLevelPage;
-

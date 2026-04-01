@@ -10,7 +10,7 @@ func TestUpdateUserLevelPoliciesAndGetters(t *testing.T) {
 		}
 	}()
 
-	input := `[{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"t1.png","channel":[],"rate":50,"group_day_limit":"100"},{"id":2,"level":"Tier 2","recharge":500,"discount":"0.1","icon":"t2.png","channel":["xxx-openai","xxl-gemini"],"rate":100,"group_day_limit":"0"}]`
+	input := `[{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50,"group_day_limit":"100"},{"id":2,"level":"Tier 2","recharge":500,"discount":"0.1","icon":"/t2.png","channel":["xxx-openai","xxl-gemini"],"rate":100,"group_day_limit":"0"}]`
 	if err := UpdateUserLevelPoliciesByJSONString(input); err != nil {
 		t.Fatalf("update policies failed: %v", err)
 	}

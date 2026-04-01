@@ -168,7 +168,7 @@ export default function SettingsUserLevelPolicies(props) {
                       <li>{t('id：等级主键ID（用户关联该ID）')}</li>
                       <li>{t('recharge：升至该等级所需累计充值金额')}</li>
                       <li>{t('discount：折扣，0.1 表示 10% 折扣')}</li>
-                      <li>{t('icon：等级图标路径，如 t1.png')}</li>
+                      <li>{t('icon：等级图标路径，如 /t1.png')}</li>
                       <li>{t('channel：可用渠道数组，[] 表示不限渠道')}</li>
                       <li>{t('rate：每分钟请求次数，0 表示不限')}</li>
                       <li>{t('group_day_limit：该等级组日消耗金额上限，0 表示不限')}</li>

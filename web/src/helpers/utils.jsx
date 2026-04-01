@@ -48,7 +48,7 @@ export function isRoot() {
 
 export function getSystemName() {
   let system_name = localStorage.getItem('system_name');
-  if (!system_name) return '柠檬AI';
+  if (!system_name) return 'JuCodex';
   return system_name;
 }
 

@@ -11,7 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-const defaultUserLevelPoliciesJSON = `[{"id":1,"level":"Tier 1","icon":"t1.png","discount":"0","channel":[],"rate":50,"recharge":"0","group_day_limit":"100"},{"id":2,"level":"Tier 2","icon":"t2.png","discount":"0.1","channel":[],"rate":100,"recharge":"500","group_day_limit":"0"},{"id":3,"level":"Tier 3","icon":"t3.png","discount":"0.2","channel":[],"rate":500,"recharge":"2000","group_day_limit":"0"},{"id":4,"level":"Tier 4","icon":"t4.png","discount":"0.4","channel":[],"rate":0,"recharge":"10000","group_day_limit":"0"}]`
+const defaultUserLevelPoliciesJSON = `[{"id":1,"level":"Tier 1","icon":"/t1.png","discount":"0","channel":[],"rate":50,"recharge":"0","group_day_limit":"100"},{"id":2,"level":"Tier 2","icon":"/t2.png","discount":"0.1","channel":[],"rate":100,"recharge":"500","group_day_limit":"0"},{"id":3,"level":"Tier 3","icon":"/t3.png","discount":"0.2","channel":[],"rate":500,"recharge":"2000","group_day_limit":"0"},{"id":4,"level":"Tier 4","icon":"/t4.png","discount":"0.4","channel":[],"rate":0,"recharge":"10000","group_day_limit":"0"}]`
 
 type UserLevelPolicy struct {
 	ID            int      `json:"id"`

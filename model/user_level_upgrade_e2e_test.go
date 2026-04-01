@@ -77,9 +77,9 @@ func TestUserRegister_DefaultUserLevelIDIsOne(t *testing.T) {
 
 func TestAutoUpgradeByRecharge_ExactlyThreshold(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
-{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/public/t1.png","channel":[],"rate":50},
-{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/public/t2.png","channel":[],"rate":100},
-{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/public/t3.png","channel":[],"rate":300}
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100},
+{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/t3.png","channel":[],"rate":300}
 ]`)
 
 	user := createRegisteredUser(t, "exactly_threshold")
@@ -96,9 +96,9 @@ func TestAutoUpgradeByRecharge_ExactlyThreshold(t *testing.T) {
 
 func TestAutoUpgradeByRecharge_CrossLevelThreshold(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
-{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/public/t1.png","channel":[],"rate":50},
-{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/public/t2.png","channel":[],"rate":100},
-{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/public/t3.png","channel":[],"rate":300}
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100},
+{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/t3.png","channel":[],"rate":300}
 ]`)
 
 	user := createRegisteredUser(t, "cross_level")
@@ -128,8 +128,8 @@ func TestAutoUpgradeByRecharge_NoPolicyConfigured(t *testing.T) {
 
 func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
-{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/public/t1.png","channel":[],"rate":50},
-{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/public/t2.png","channel":[],"rate":100}
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
 ]`)
 	common.QuotaPerUnit = 100
 
@@ -165,7 +165,7 @@ func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 
 func TestGetUserLevelGroupDailyConsumedMoney_WithRefund(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
-{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"t1.png","channel":[],"rate":50,"group_day_limit":"100"}
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50,"group_day_limit":"100"}
 ]`)
 	common.QuotaPerUnit = 100
 
