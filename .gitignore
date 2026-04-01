@@ -32,3 +32,4 @@ data/
 本地Docker构建指南.txt
 机密.txt
 /guide/*.txt
+/ssl
