@@ -140,6 +140,17 @@ const PaymentConfirmModal = ({
                             size={16}
                             color='#635BFF'
                           />
+                        ) : payMethod.type === 'mall' ? (
+                          <img
+                            src='/taobao_75px.png'
+                            alt='Taobao'
+                            className='mr-2'
+                            style={{
+                              width: 16,
+                              height: 16,
+                              objectFit: 'contain',
+                            }}
+                          />
                         ) : (
                           <CreditCard
                             className='mr-2'
@@ -179,6 +190,24 @@ const PaymentConfirmModal = ({
                           />
                           <Text className='text-slate-900 dark:text-slate-100'>
                             Stripe
+                          </Text>
+                        </>
+                      );
+                    } else if (payWay === 'mall') {
+                      return (
+                        <>
+                          <img
+                            src='/taobao_75px.png'
+                            alt='Taobao'
+                            className='mr-2'
+                            style={{
+                              width: 16,
+                              height: 16,
+                              objectFit: 'contain',
+                            }}
+                          />
+                          <Text className='text-slate-900 dark:text-slate-100'>
+                            Mall
                           </Text>
                         </>
                       );

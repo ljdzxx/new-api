@@ -43,6 +43,7 @@ export default function SettingsPaymentGateway(props) {
     PayMethods: '',
     AmountOptions: '',
     AmountDiscount: '',
+    MallLinks: '',
   });
   const [originInputs, setOriginInputs] = useState({});
   const formApiRef = useRef(null);
@@ -66,6 +67,7 @@ export default function SettingsPaymentGateway(props) {
         PayMethods: props.options.PayMethods || '',
         AmountOptions: props.options.AmountOptions || '',
         AmountDiscount: props.options.AmountDiscount || '',
+        MallLinks: props.options.MallLinks || '',
       };
 
       // 美化 JSON 展示
@@ -82,6 +84,15 @@ export default function SettingsPaymentGateway(props) {
         if (currentInputs.AmountDiscount) {
           currentInputs.AmountDiscount = JSON.stringify(
             JSON.parse(currentInputs.AmountDiscount),
+            null,
+            2,
+          );
+        }
+      } catch {}
+      try {
+        if (currentInputs.MallLinks) {
+          currentInputs.MallLinks = JSON.stringify(
+            JSON.parse(currentInputs.MallLinks),
             null,
             2,
           );
@@ -138,6 +149,16 @@ export default function SettingsPaymentGateway(props) {
       }
     }
 
+    if (
+      originInputs['MallLinks'] !== inputs.MallLinks &&
+      inputs.MallLinks.trim() !== ''
+    ) {
+      if (!verifyJSON(inputs.MallLinks)) {
+        showError(t('商品链接配置不是合法的 JSON 对象'));
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const options = [
@@ -178,6 +199,12 @@ export default function SettingsPaymentGateway(props) {
         options.push({
           key: 'payment_setting.amount_discount',
           value: inputs.AmountDiscount,
+        });
+      }
+      if (originInputs['MallLinks'] !== inputs.MallLinks) {
+        options.push({
+          key: 'payment_setting.mall_links',
+          value: inputs.MallLinks,
         });
       }
 
@@ -234,7 +261,7 @@ export default function SettingsPaymentGateway(props) {
               <Form.Input
                 field='EpayId'
                 label={t('易支付商户ID')}
-                placeholder={t('例如：0001')}
+                placeholder={t('例如：1001')}
               />
             </Col>
             <Col xs={24} sm={24} md={8} lg={8} xl={8}>
@@ -261,15 +288,15 @@ export default function SettingsPaymentGateway(props) {
               <Form.InputNumber
                 field='Price'
                 precision={2}
-                label={t('充值价格（x元/美金）')}
-                placeholder={t('例如：7，就是7元/美金')}
+                label={t('充值价格（x元 / 美金）')}
+                placeholder={t('例如：7.3，就是 1 美金')}
               />
             </Col>
             <Col xs={24} sm={24} md={8} lg={8} xl={8}>
               <Form.InputNumber
                 field='MinTopUp'
-                label={t('最低充值美元数量')}
-                placeholder={t('例如：2，就是最低充值2$')}
+                label={t('最低充值美金数量')}
+                placeholder={t('例如：1，就是最低充值$1')}
               />
             </Col>
           </Row>
@@ -319,6 +346,25 @@ export default function SettingsPaymentGateway(props) {
                 autosize
                 extraText={t(
                   '设置不同充值金额对应的折扣，键为充值金额，值为折扣率，例如：{"100": 0.95, "200": 0.9, "500": 0.85}',
+                )}
+              />
+            </Col>
+          </Row>
+
+          <Row
+            gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
+            style={{ marginTop: 16 }}
+          >
+            <Col span={24}>
+              <Form.TextArea
+                field='MallLinks'
+                label={t('商品链接配置')}
+                placeholder={t(
+                  '为一个 JSON 对象，例如：{"100": "https://taobao.com/a.html", "200": "https://taobao.com/b.html"}',
+                )}
+                autosize
+                extraText={t(
+                  '当支付方式为 mall 时，按所选充值金额匹配对应商品链接并跳转（新窗口），例如：{"100": "https://taobao.com/a.html", "200": "https://taobao.com/b.html"}',
                 )}
               />
             </Col>

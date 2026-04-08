@@ -97,6 +97,7 @@ const AddEditSubscriptionModal = ({
     upgrade_group: '',
     stripe_price_id: '',
     creem_product_id: '',
+    mall_link: '',
   });
 
   const buildFormValues = () => {
@@ -123,6 +124,7 @@ const AddEditSubscriptionModal = ({
       upgrade_group: p.upgrade_group || '',
       stripe_price_id: p.stripe_price_id || '',
       creem_product_id: p.creem_product_id || '',
+      mall_link: p.mall_link || '',
     };
   };
 
@@ -164,6 +166,7 @@ const AddEditSubscriptionModal = ({
           max_purchase_per_user: Number(values.max_purchase_per_user || 0),
           total_amount: displayAmountToQuota(values.total_amount),
           upgrade_group: values.upgrade_group || '',
+          mall_link: (values.mall_link || '').trim(),
         },
       };
       if (editingPlan?.plan?.id) {
@@ -537,6 +540,18 @@ const AddEditSubscriptionModal = ({
                         label='Creem ProductId'
                         placeholder='prod_...'
                         showClear
+                      />
+                    </Col>
+
+                    <Col span={24}>
+                      <Form.Input
+                        field='mall_link'
+                        label={t('商城跳转链接')}
+                        placeholder='https://example.com/product'
+                        showClear
+                        extraText={t(
+                          '填写后用户点击“立即订阅”将直接新窗口跳转到该链接，不再走其他支付方式',
+                        )}
                       />
                     </Col>
                   </Row>

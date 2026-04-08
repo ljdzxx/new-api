@@ -41,6 +41,16 @@ import {
 
 const { Text } = Typography;
 
+function isValidHttpUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function formatSubscriptionEndTime(endTime) {
   if (!endTime) return '-';
   const date = new Date(endTime * 1000);
@@ -575,7 +585,17 @@ const SubscriptionPlansCard = ({
                               block
                               disabled={reached}
                               onClick={() => {
-                                if (!reached) openBuy(p);
+                                if (reached) return;
+                                const mallLink = (p?.plan?.mall_link || '').trim();
+                                if (mallLink) {
+                                  if (!isValidHttpUrl(mallLink)) {
+                                    showError(t('商城跳转链接无效'));
+                                    return;
+                                  }
+                                  window.open(mallLink, '_blank');
+                                  return;
+                                }
+                                openBuy(p);
                               }}
                             >
                               {reached ? t('已达上限') : t('立即订阅')}

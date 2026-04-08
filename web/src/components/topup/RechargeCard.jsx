@@ -73,6 +73,7 @@ const RechargeCard = ({
   renderAmount,
   amountLoading,
   payMethods,
+  hasMallPayMethod = false,
   preTopUp,
   paymentLoading,
   payWay,
@@ -224,19 +225,19 @@ const RechargeCard = ({
           <div className='py-8 flex justify-center'>
             <Spin size='large' />
           </div>
-        ) : enableOnlineTopUp || enableStripeTopUp || enableCreemTopUp ? (
+        ) : enableOnlineTopUp || enableStripeTopUp || enableCreemTopUp || payMethods?.length > 0 ? (
           <Form
             getFormApi={(api) => (onlineFormApiRef.current = api)}
             initValues={{ topUpCount: topUpCount }}
           >
             <div className='space-y-6'>
-              {(enableOnlineTopUp || enableStripeTopUp) && (
+              {(enableOnlineTopUp || enableStripeTopUp || hasMallPayMethod) && (
                 <Row gutter={12}>
                   <Col xs={24} sm={24} md={24} lg={10} xl={10}>
                     <Form.InputNumber
                       field='topUpCount'
                       label={t('充值数量')}
-                      disabled={!enableOnlineTopUp && !enableStripeTopUp}
+                      disabled={!enableOnlineTopUp && !enableStripeTopUp && !hasMallPayMethod}
                       placeholder={
                         t('充值数量，最低 ') + renderQuotaWithAmount(minTopUp)
                       }
@@ -295,8 +296,9 @@ const RechargeCard = ({
                           {payMethods.map((payMethod) => {
                             const minTopupVal = Number(payMethod.min_topup) || 0;
                             const isStripe = payMethod.type === 'stripe';
+                            const isMall = payMethod.type === 'mall';
                             const disabled =
-                              (!enableOnlineTopUp && !isStripe) ||
+                              (!enableOnlineTopUp && !isStripe && !isMall) ||
                               (!enableStripeTopUp && isStripe) ||
                               minTopupVal > Number(topUpCount || 0);
 
@@ -317,6 +319,16 @@ const RechargeCard = ({
                                     <SiWechat size={18} color='#07C160' />
                                   ) : payMethod.type === 'stripe' ? (
                                     <SiStripe size={18} color='#635BFF' />
+                                  ) : payMethod.type === 'mall' ? (
+                                    <img
+                                      src='/taobao_75px.png'
+                                      alt='Taobao'
+                                      style={{
+                                        width: 18,
+                                        height: 18,
+                                        objectFit: 'contain',
+                                      }}
+                                    />
                                   ) : (
                                     <CreditCard
                                       size={18}
@@ -362,7 +374,7 @@ const RechargeCard = ({
                 </Row>
               )}
 
-              {(enableOnlineTopUp || enableStripeTopUp) && (
+              {(enableOnlineTopUp || enableStripeTopUp || hasMallPayMethod) && (
                 <Form.Slot
                   label={
                     <div className='flex items-center gap-2'>

@@ -206,9 +206,15 @@ const renderPaymentConfig = (text, record, t, enableEpay) => {
   const hasStripe = !!record?.plan?.stripe_price_id;
   const hasCreem = !!record?.plan?.creem_product_id;
   const hasEpay = !!enableEpay;
+  const hasMallLink = !!record?.plan?.mall_link;
 
   return (
     <Space spacing={4}>
+      {hasMallLink && (
+        <Tag color='grey' shape='circle'>
+          Mall
+        </Tag>
+      )}
       {hasStripe && (
         <Tag color='violet' shape='circle'>
           Stripe
