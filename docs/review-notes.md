@@ -1,6 +1,6 @@
 # Project Review Notes
 
-Last updated: 2026-04-08
+Last updated: 2026-04-09
 
 This note summarizes the static review findings and codebase entry points that were identified during the review session. It is intended as a quick handoff file for future sessions.
 
@@ -383,3 +383,94 @@ Validation run:
 - `bun run build` (under `web/`)
 
 Both completed successfully in this session.
+### 9.5 Residual Fix (2026-04-09)
+
+Follow-up issue reported after 9.4:
+
+- In wallet recharge preset cards (`/console/topup` -> "选择充值额度"), values like:
+  - `10 $`
+  - `实付 $1.37`
+  - `节省 $0.00`
+  could still use stale exchange logic.
+
+Root cause:
+
+- `web/src/components/topup/RechargeCard.jsx` still read `localStorage.status.usd_exchange_rate` as `usdRate` for card amount conversion.
+- This bypassed the already-fixed `priceRatio` source synced from `/api/user/topup/info.price`.
+
+Code change:
+
+- `web/src/components/topup/RechargeCard.jsx`
+  - Removed local `usdRate` read from `localStorage.status`.
+  - Introduced `topupRate` derived from `priceRatio` prop with safe fallback.
+  - Updated USD/CNY/CUSTOM branches to use `topupRate` for:
+    - `displayActualPay`
+    - `displaySave`
+    - `displayValue` (where applicable)
+
+Result:
+
+- Preset card "实付/节省" now stays aligned with latest recharge price setting (`Price`) instead of stale local status exchange value.
+
+Validation run:
+
+- `bun run build` (under `web/`) passed.
+
+### 9.6 Session Update (2026-04-09): Mall payment flow extensions
+
+This update extends both wallet top-up and subscription purchase flows with mall-style external link redirect behavior.
+
+#### A) Wallet recharge (`/console/topup`) mall flow
+
+Goal:
+
+- Support a `mall` payment method in payment settings.
+- When user selects recharge amount + `mall` payment, redirect to configured product link in a new tab.
+
+Implementation notes:
+
+- Payment method config supports `type: "mall"` in recharge methods JSON.
+- Added payment setting `mall_links` (amount-to-link JSON), similar to discount mapping.
+- Frontend topup flow checks selected amount and selected payment method:
+  - if payment method is `mall` and matched link exists, open target via `target=_blank` (new tab)
+  - otherwise keep existing epay/stripe/creem logic unchanged.
+
+UI/icon update:
+
+- Replaced mall icon from lucide `ShoppingCart` to custom image `/taobao_75px.png` in:
+  - `web/src/components/topup/RechargeCard.jsx`
+  - `web/src/components/topup/modals/PaymentConfirmModal.jsx`
+
+#### B) Subscription management (`/console/subscription`) `mall_link` field
+
+Goal:
+
+- Add `mall_link` to subscription plan create/edit.
+- If `mall_link` is set for a plan, clicking `立即订阅` should directly open this link in a new tab and skip all other payment methods.
+
+Backend changes:
+
+- `model/subscription.go`
+  - `SubscriptionPlan` adds `MallLink string` (`json:"mall_link"`).
+- `controller/subscription.go`
+  - Admin plan update map includes `mall_link`.
+- `model/main.go`
+  - SQLite subscription plan table creation/ensure-column logic adds `mall_link` (`varchar(2048)`), keeping SQLite/MySQL/PostgreSQL compatibility.
+
+Frontend changes:
+
+- `web/src/components/table/subscriptions/modals/AddEditSubscriptionModal.jsx`
+  - Added `mall_link` input in create/edit form.
+  - Included `mall_link` in init values and submit payload.
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+  - `立即订阅` click path now:
+    - if `plan.mall_link` exists and is valid `http/https`, `window.open(mallLink, '_blank')`
+    - if invalid URL, show error
+    - if empty, fallback to existing purchase modal/payment flow.
+- `web/src/components/table/subscriptions/SubscriptionsColumnDefs.jsx`
+  - Payment channel column shows `Mall` tag when `plan.mall_link` is configured.
+
+Validation run for this update:
+
+- `bun run build` (under `web/`) passed.
+- `go build ./...` (project root) passed.
