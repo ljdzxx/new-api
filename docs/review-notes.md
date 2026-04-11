@@ -1,6 +1,6 @@
 # Project Review Notes
 
-Last updated: 2026-04-09
+Last updated: 2026-04-11
 
 This note summarizes the static review findings and codebase entry points that were identified during the review session. It is intended as a quick handoff file for future sessions.
 
@@ -474,3 +474,99 @@ Validation run for this update:
 
 - `bun run build` (under `web/`) passed.
 - `go build ./...` (project root) passed.
+
+## 10. Session Notes (2026-04-11)
+
+This section summarizes the global model ratio feature implementation, related billing-chain verification, and frontend follow-up fixes completed in this session.
+
+### 10.1 Requirement covered
+
+Added a new `GlobalModelRatio` setting under:
+
+- `系统设置 -> 分组与模型定价设置 -> 模型倍率设置`
+
+Target behavior implemented:
+
+- Default is `1`.
+- It participates in real billing calculations (both pre-consume and settlement).
+- It is designed to affect charging even when some free-model pre-consume bypass conditions exist.
+- It is not explicitly displayed as a separate item in usage-log billing detail.
+
+### 10.2 Backend changes
+
+Core setting storage and runtime config:
+
+- `setting/ratio_setting/global_model_ratio.go`
+  - Added atomic global ratio storage.
+  - Default `1.0`.
+  - Getter/setter with invalid/negative value guards.
+- `model/option.go`
+  - Added `GlobalModelRatio` to `OptionMap` initialization and update switch.
+- `controller/option.go`
+  - Added validation for `GlobalModelRatio` (`number` and `>= 0`).
+
+Billing data model propagation:
+
+- `types/price_data.go`
+  - Added `GlobalModelRatio` to `PriceData`.
+
+Pre-consume chain integration:
+
+- `relay/helper/price.go`
+  - `ModelPriceHelper` and `ModelPriceHelperPerCall` now multiply pre-consume quota by `globalModelRatio`.
+  - Free-model pre-consume bypass logic updated to include global ratio condition.
+
+Settlement chain integration:
+
+- `relay/compatible_handler.go`
+  - Global ratio applied in token-based and fixed-price settlement branches.
+  - Global ratio also applied for tool/call-like charges:
+    - web search
+    - file search
+    - claude web search
+    - image generation call
+    - separate audio input pricing path
+- `service/quota.go`
+  - Global ratio used in audio and other quota settlement paths via `PriceData`.
+- `service/task_billing.go`
+  - Async task quota recalculation includes global ratio.
+- `controller/channel-test.go`
+  - Channel billing estimate path includes global ratio.
+
+### 10.3 Frontend changes and fixes
+
+Main UI addition:
+
+- `web/src/pages/Setting/Ratio/ModelRatioSettings.jsx`
+  - Added new input field `GlobalModelRatio`.
+  - Added user-facing hint text for behavior.
+
+Follow-up bugfixes in this session:
+
+1. Fixed false "你似乎并没有修改什么" detection for new field when backend options did not yet include `GlobalModelRatio`.
+2. Fixed regression where unrelated ratio JSON fields could be submitted as empty values, causing backend JSON parse errors.
+3. Finalized default-display behavior so first page load shows `GlobalModelRatio = 1` in the input (not empty).
+4. Normalized frontend value handling:
+   - kept `GlobalModelRatio` as numeric value for `InputNumber`.
+   - converted number/bool to string at submit time for `/api/option/` compatibility.
+
+### 10.4 Billing pre-check verification result
+
+Code-path verification confirms global ratio participates before upstream API call:
+
+- `controller/relay.go`
+  - `ModelPriceHelper(...)` computes pre-consume quota.
+  - `PreConsumeBilling(...)` is executed before relay `DoRequest(...)`.
+- `relay/helper/price.go`
+  - pre-consume formula includes `globalModelRatio`.
+
+Conclusion:
+
+- `GlobalModelRatio` is active in pre-consume pre-check and final settlement.
+
+### 10.5 Validation runs
+
+Validation commands executed during this session:
+
+- `go test ./... -run TestNonExistent -count=1` (compile-level backend sanity)
+- `bun run build` (frontend build sanity; re-run after each frontend fix)
