@@ -47,6 +47,7 @@ const OtherSetting = () => {
     Logo: '',
     Footer: '',
     About: '',
+    Docs: '',
     HomePageContent: '',
   });
   let [loading, setLoading] = useState(false);
@@ -80,6 +81,7 @@ const OtherSetting = () => {
     Logo: false,
     HomePageContent: false,
     About: false,
+    Docs: false,
     Footer: false,
     CheckUpdate: false,
   });
@@ -215,6 +217,20 @@ const OtherSetting = () => {
     }
   };
   // 个性化设置 - 页脚
+  // Personalization settings - Docs
+  const submitDocs = async () => {
+    try {
+      setLoadingInput((loadingInput) => ({ ...loadingInput, Docs: true }));
+      await updateOption('Docs', inputs.Docs);
+      showSuccess('Docs content updated');
+    } catch (error) {
+      console.error('Docs content update failed', error);
+      showError('Docs content update failed');
+    } finally {
+      setLoadingInput((loadingInput) => ({ ...loadingInput, Docs: false }));
+    }
+  };
+
   const submitFooter = async () => {
     try {
       setLoadingInput((loadingInput) => ({ ...loadingInput, Footer: true }));
@@ -473,6 +489,18 @@ const OtherSetting = () => {
               <Button onClick={submitAbout} loading={loadingInput['About']}>
                 {t('设置关于')}
               </Button>
+              <Form.TextArea
+                label={t('\u6587\u6863')}
+                placeholder={t('Input docs content here. Supports Markdown & HTML. If input is a link, it will be used as iframe src for the Docs page.')}
+                field={'Docs'}
+                onChange={handleInputChange}
+                style={{ fontFamily: 'JetBrains Mono, Consolas' }}
+                autosize={{ minRows: 6, maxRows: 12 }}
+              />
+              <Button onClick={submitDocs} loading={loadingInput['Docs']}>
+                {t('\u8bbe\u7f6e\u6587\u6863')}
+              </Button>
+
               {/*  */}
               <Banner
                 fullMode={false}
