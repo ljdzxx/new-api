@@ -469,14 +469,15 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 	info.SetEstimatePromptTokens(usage.PromptTokens)
 
 	quota := 0
+	globalModelRatio := ratio_setting.GetGlobalModelRatio()
 	if !priceData.UsePrice {
 		quota = usage.PromptTokens + int(math.Round(float64(usage.CompletionTokens)*priceData.CompletionRatio))
-		quota = int(math.Round(float64(quota) * priceData.ModelRatio))
+		quota = int(math.Round(float64(quota) * priceData.ModelRatio * globalModelRatio))
 		if priceData.ModelRatio != 0 && quota <= 0 {
 			quota = 1
 		}
 	} else {
-		quota = int(priceData.ModelPrice * common.QuotaPerUnit)
+		quota = int(priceData.ModelPrice * common.QuotaPerUnit * globalModelRatio)
 	}
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()

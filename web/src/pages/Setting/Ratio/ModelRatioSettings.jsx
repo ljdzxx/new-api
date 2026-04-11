@@ -38,10 +38,28 @@ import {
 import { useTranslation } from 'react-i18next';
 
 export default function ModelRatioSettings(props) {
+  const supportedKeys = [
+    'ModelPrice',
+    'ModelRatio',
+    'GlobalModelRatio',
+    'CacheRatio',
+    'CreateCacheRatio',
+    'CompletionRatio',
+    'ImageRatio',
+    'AudioRatio',
+    'AudioCompletionRatio',
+    'ExposeRatioEnabled',
+  ];
+  const normalizeGlobalModelRatio = (value) => {
+    if (value === undefined || value === null || value === '') return 1;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+  };
   const [loading, setLoading] = useState(false);
   const [inputs, setInputs] = useState({
     ModelPrice: '',
     ModelRatio: '',
+    GlobalModelRatio: 1,
     CacheRatio: '',
     CreateCacheRatio: '',
     CompletionRatio: '',
@@ -64,10 +82,11 @@ export default function ModelRatioSettings(props) {
             return showWarning(t('你似乎并没有修改什么'));
 
           const requestQueue = updateArray.map((item) => {
+            const inputValue = inputs[item.key];
             const value =
-              typeof inputs[item.key] === 'boolean'
-                ? String(inputs[item.key])
-                : inputs[item.key];
+              typeof inputValue === 'boolean' || typeof inputValue === 'number'
+                ? String(inputValue)
+                : inputValue;
             return API.put('/api/option/', { key: item.key, value });
           });
 
@@ -125,13 +144,16 @@ export default function ModelRatioSettings(props) {
   useEffect(() => {
     const currentInputs = {};
     for (let key in props.options) {
-      if (Object.keys(inputs).includes(key)) {
+      if (supportedKeys.includes(key)) {
         currentInputs[key] = props.options[key];
       }
     }
+    currentInputs.GlobalModelRatio = normalizeGlobalModelRatio(
+      currentInputs.GlobalModelRatio,
+    );
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
-    refForm.current.setValues(currentInputs);
+    refForm.current?.setValues(currentInputs);
   }, [props.options]);
 
   return (
@@ -179,6 +201,27 @@ export default function ModelRatioSettings(props) {
                 },
               ]}
               onChange={(value) => setInputs({ ...inputs, ModelRatio: value })}
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.InputNumber
+              label={t('全局模型倍率')}
+              extraText={t(
+                '默认 1，真实参与计费链路，不受免费模型免预扣规则影响；该倍率不会展示在使用日志中',
+              )}
+              field={'GlobalModelRatio'}
+              min={0}
+              step={0.01}
+              precision={6}
+              placeholder={'1'}
+              onChange={(value) =>
+                setInputs({
+                  ...inputs,
+                  GlobalModelRatio: normalizeGlobalModelRatio(value),
+                })
+              }
             />
           </Col>
         </Row>

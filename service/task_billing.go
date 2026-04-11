@@ -277,8 +277,9 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		finalGroupRatio = groupRatio
 	}
 
-	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio
-	actualQuota := int(float64(totalTokens) * modelRatio * finalGroupRatio)
+	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * globalModelRatio
+	globalModelRatio := ratio_setting.GetGlobalModelRatio()
+	actualQuota := int(float64(totalTokens) * modelRatio * finalGroupRatio * globalModelRatio)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
 	RecalculateTaskQuota(ctx, task, actualQuota, reason)

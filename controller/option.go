@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -221,6 +222,15 @@ func UpdateOption(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "音频补全倍率设置失败: " + err.Error(),
+			})
+			return
+		}
+	case "GlobalModelRatio":
+		globalRatio, parseErr := strconv.ParseFloat(option.Value.(string), 64)
+		if parseErr != nil || globalRatio < 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "global model ratio must be a number greater than or equal to 0",
 			})
 			return
 		}

@@ -269,11 +269,12 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	dImageRatio := decimal.NewFromFloat(imageRatio)
 	dModelRatio := decimal.NewFromFloat(modelRatio)
 	dGroupRatio := decimal.NewFromFloat(groupRatio)
+	dGlobalModelRatio := decimal.NewFromFloat(relayInfo.PriceData.GlobalModelRatio)
 	dModelPrice := decimal.NewFromFloat(modelPrice)
 	dCachedCreationRatio := decimal.NewFromFloat(cachedCreationRatio)
 	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 
-	ratio := dModelRatio.Mul(dGroupRatio)
+	ratio := dModelRatio.Mul(dGroupRatio).Mul(dGlobalModelRatio)
 
 	// openai web search 工具计费
 	var dWebSearchQuota decimal.Decimal
@@ -285,7 +286,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 			webSearchPrice = operation_setting.GetWebSearchPricePerThousand(modelName, webSearchTool.SearchContextSize)
 			dWebSearchQuota = decimal.NewFromFloat(webSearchPrice).
 				Mul(decimal.NewFromInt(int64(webSearchTool.CallCount))).
-				Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+				Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dGlobalModelRatio).Mul(dQuotaPerUnit)
 			extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，上下文大小 %s，调用花费 %s",
 				webSearchTool.CallCount, webSearchTool.SearchContextSize, dWebSearchQuota.String()))
 		}
@@ -297,7 +298,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		}
 		webSearchPrice = operation_setting.GetWebSearchPricePerThousand(modelName, searchContextSize)
 		dWebSearchQuota = decimal.NewFromFloat(webSearchPrice).
-			Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+			Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dGlobalModelRatio).Mul(dQuotaPerUnit)
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 1 次，上下文大小 %s，调用花费 %s",
 			searchContextSize, dWebSearchQuota.String()))
 	}
@@ -308,7 +309,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	if claudeWebSearchCallCount > 0 {
 		claudeWebSearchPrice = operation_setting.GetClaudeWebSearchPricePerThousand()
 		dClaudeWebSearchQuota = decimal.NewFromFloat(claudeWebSearchPrice).
-			Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit).Mul(decimal.NewFromInt(int64(claudeWebSearchCallCount)))
+			Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dGlobalModelRatio).Mul(dQuotaPerUnit).Mul(decimal.NewFromInt(int64(claudeWebSearchCallCount)))
 		extraContent = append(extraContent, fmt.Sprintf("Claude Web Search 调用 %d 次，调用花费 %s",
 			claudeWebSearchCallCount, dClaudeWebSearchQuota.String()))
 	}
@@ -320,7 +321,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 			fileSearchPrice = operation_setting.GetFileSearchPricePerThousand()
 			dFileSearchQuota = decimal.NewFromFloat(fileSearchPrice).
 				Mul(decimal.NewFromInt(int64(fileSearchTool.CallCount))).
-				Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+				Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dGlobalModelRatio).Mul(dQuotaPerUnit)
 			extraContent = append(extraContent, fmt.Sprintf("File Search 调用 %d 次，调用花费 %s",
 				fileSearchTool.CallCount, dFileSearchQuota.String()))
 		}
@@ -330,6 +331,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	if ctx.GetBool("image_generation_call") {
 		imageGenerationCallPrice = operation_setting.GetGPTImage1PriceOnceCall(ctx.GetString("image_generation_call_quality"), ctx.GetString("image_generation_call_size"))
 		dImageGenerationCallQuota = decimal.NewFromFloat(imageGenerationCallPrice).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+		dImageGenerationCallQuota = dImageGenerationCallQuota.Mul(dGlobalModelRatio)
 		extraContent = append(extraContent, fmt.Sprintf("Image Generation Call 花费 %s", dImageGenerationCallQuota.String()))
 	}
 
@@ -371,7 +373,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 			if audioInputPrice > 0 {
 				// 重新计算 base tokens
 				baseTokens = baseTokens.Sub(dAudioTokens)
-				audioInputQuota = decimal.NewFromFloat(audioInputPrice).Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+				audioInputQuota = decimal.NewFromFloat(audioInputPrice).Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dGroupRatio).Mul(dGlobalModelRatio).Mul(dQuotaPerUnit)
 				extraContent = append(extraContent, fmt.Sprintf("Audio Input 花费 %s", audioInputQuota.String()))
 			}
 		}
@@ -387,7 +389,7 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
 	} else {
-		quotaCalculateDecimal = dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
+		quotaCalculateDecimal = dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio).Mul(dGlobalModelRatio)
 	}
 	// 添加 responses tools call 调用的配额
 	quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)

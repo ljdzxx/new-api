@@ -51,6 +51,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
+	globalModelRatio := ratio_setting.GetGlobalModelRatio()
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -91,28 +92,28 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		imageRatio, _ = ratio_setting.GetImageRatio(info.OriginModelName)
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
-		ratio := modelRatio * groupRatioInfo.GroupRatio
+		ratio := modelRatio * groupRatioInfo.GroupRatio * globalModelRatio
 		preConsumedQuota = int(float64(preConsumedTokens) * ratio)
 	} else {
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * globalModelRatio)
 	}
 
 	// check if free model pre-consume is disabled
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 		// if model price or ratio is 0, do not pre-consume quota
-		if groupRatioInfo.GroupRatio == 0 {
+		if groupRatioInfo.GroupRatio == 0 && globalModelRatio == 0 {
 			preConsumedQuota = 0
 			freeModel = true
 		} else if usePrice {
-			if modelPrice == 0 {
+			if modelPrice == 0 && globalModelRatio == 0 {
 				preConsumedQuota = 0
 				freeModel = true
 			}
 		} else {
-			if modelRatio == 0 {
+			if modelRatio == 0 && globalModelRatio == 0 {
 				preConsumedQuota = 0
 				freeModel = true
 			}
@@ -123,6 +124,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		FreeModel:            freeModel,
 		ModelPrice:           modelPrice,
 		ModelRatio:           modelRatio,
+		GlobalModelRatio:     globalModelRatio,
 		CompletionRatio:      completionRatio,
 		GroupRatioInfo:       groupRatioInfo,
 		UsePrice:             usePrice,
@@ -146,6 +148,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
+	globalModelRatio := ratio_setting.GetGlobalModelRatio()
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	// 如果没有配置价格，检查模型倍率配置
@@ -170,22 +173,23 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		}
 
 	}
-	quota := int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+	quota := int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * globalModelRatio)
 
 	// 免费模型检测（与 ModelPriceHelper 对齐）
 	freeModel := false
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
-		if groupRatioInfo.GroupRatio == 0 || modelPrice == 0 {
+		if (groupRatioInfo.GroupRatio == 0 || modelPrice == 0) && globalModelRatio == 0 {
 			quota = 0
 			freeModel = true
 		}
 	}
 
 	priceData := types.PriceData{
-		FreeModel:      freeModel,
-		ModelPrice:     modelPrice,
-		Quota:          quota,
-		GroupRatioInfo: groupRatioInfo,
+		FreeModel:        freeModel,
+		ModelPrice:       modelPrice,
+		GlobalModelRatio: globalModelRatio,
+		Quota:            quota,
+		GroupRatioInfo:   groupRatioInfo,
 	}
 	return priceData, nil
 }
