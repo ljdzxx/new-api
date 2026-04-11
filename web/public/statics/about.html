@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>关于-JuCodex</title>
+  <title>联系我们 - JuCodex</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -154,6 +154,23 @@
 	.tool-url a:hover {
 	  text-decoration: underline;
 	}
+
+	.wx-inline{
+	  display: flex;
+	  align-items: center;      /* 关键：图片和文字垂直居中 */
+	  justify-content: flex-start; /* 保持左对齐 */
+	  gap: 10px;
+	}
+
+	.group-img{
+	  margin-top: 0;            /* 去掉原先的 margin-top */
+	  width: 160px;
+	  flex-shrink: 0;
+	}
+
+	.wx-text{
+	  margin: 0;                /* 去掉 .muted 默认 margin-bottom，避免视觉偏移 */
+	}
   </style>
 </head>
 <body>
@@ -163,23 +180,20 @@
       <h2>联系我们</h2>
       <div class="contact-grid">
         <article class="card">
-          <h3 class="card-title">JuCodex 客服 QQ</h3>
-          <div class="muted">QQ：41341828</div>
-          <a
-            class="qq-link"
-            href="tencent://message/?uin=41341828&Site=qq&Menu=yes"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <img src="http://wpa.qq.com/pa?p=2:41341828:52" alt="点击咨询" />
-            <span>点击发起咨询</span>
-          </a>
+          <h3 class="card-title">JuCodex 客服</h3>
+          
+          <div class="wx-inline">
+			<img class="group-img" src="wx.png" alt="JuCodex客服 微信二维码" />
+			<div class="muted wx-text">扫码添加微信客服</div>
+		  </div>
         </article>
 
         <article class="card">
           <h3 class="card-title">JuCodex 官方QQ群</h3>
-          <div class="muted">群号：1017503869</div>
-          <img class="group-img" src="qq-group.png" alt="JuCodex 官方QQ群二维码" />
+          <div class="wx-inline">
+			<img class="group-img" src="qq-group.png" alt="JuCodex 官方QQ群二维码" />
+			<div class="muted wx-text">QQ群号：1017503869</div>
+		  </div>
         </article>
       </div>
     </section>
