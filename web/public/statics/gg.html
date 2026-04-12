@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>公告</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --sub: #6b7280;
+      --line: #e5e7eb;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px 16px 40px; /* 顶部保留 20px */
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      display: flex;
+      justify-content: center; /* 页面居中 */
+    }
+
+    .container {
+      width: 100%;
+      max-width: 860px;
+    }
+
+    .section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px;
+      margin-bottom: 16px;
+    }
+
+    .section h2 {
+      margin: 0 0 14px;
+      font-size: 22px;
+      line-height: 1.3;
+    }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .card-title {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .muted {
+      color: var(--sub);
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .qq-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .qq-link img {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      object-fit: cover;
+      background: #fff;
+    }
+
+    .group-img {
+      width: 160px;
+      max-width: 100%;
+      height: auto;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      display: block;
+      margin-top: 8px;
+    }
+
+	.wx-inline{
+	  display: flex;
+	  align-items: center;      /* 关键：图片和文字垂直居中 */
+	  justify-content: flex-start; /* 保持左对齐 */
+	  gap: 10px;
+	}
+
+	.group-img{
+	  margin-top: 0;            /* 去掉原先的 margin-top */
+	  width: 160px;
+	  flex-shrink: 0;
+	}
+
+	.wx-text{
+	  margin: 0;                /* 去掉 .muted 默认 margin-bottom，避免视觉偏移 */
+	}
+  </style>
+</head>
+<body>
+  <main class="container">
+    <!-- 联系我们 -->
+    <section class="section">
+      
+      <div class="contact-grid">
+        <article class="card">
+          <h3 class="card-title">JuCodex 客服</h3>
+          
+          <div class="wx-inline">
+			<img class="group-img" src="wx.png" alt="JuCodex客服 微信二维码" />
+			<div class="muted wx-text">扫码添加微信客服</div>
+		  </div>
+        </article>
+
+        <article class="card">
+          <h3 class="card-title">JuCodex 官方QQ群</h3>
+          <div class="wx-inline">
+			<img class="group-img" src="qq-group.png" alt="JuCodex 官方QQ群二维码" />
+			<div class="muted wx-text">QQ群号：1017503869</div>
+		  </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+
+
