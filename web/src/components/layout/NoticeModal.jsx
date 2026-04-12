@@ -36,6 +36,22 @@ import {
 import { StatusContext } from '../../context/Status';
 import { Bell, Megaphone } from 'lucide-react';
 
+const htmlTagPattern = /^<(?:!DOCTYPE|!--|\/?[a-zA-Z][\w:-]*)(?:\s[^>]*)?>/i;
+
+const renderRichContent = (content) => {
+  if (typeof content !== 'string') return '';
+  const normalized = content.replace(/\r\n?/g, '\n');
+  const trimmed = normalized.trim();
+  if (!trimmed) return '';
+
+  // If it starts like HTML (even if user pasted with indentation), render as raw HTML.
+  // Otherwise, treat it as Markdown.
+  if (htmlTagPattern.test(trimmed)) {
+    return trimmed;
+  }
+  return marked.parse(normalized);
+};
+
 const NoticeModal = ({
   visible,
   onClose,
@@ -89,7 +105,7 @@ const NoticeModal = ({
       const { success, message, data } = res.data;
       if (success) {
         if (data !== '') {
-          const htmlNotice = marked.parse(data);
+          const htmlNotice = renderRichContent(data);
           setNoticeContent(htmlNotice);
         } else {
           setNoticeContent('');
@@ -170,8 +186,8 @@ const NoticeModal = ({
       <div className='max-h-[55vh] overflow-y-auto pr-2 card-content-scroll'>
         <Timeline mode='left'>
           {processedAnnouncements.map((item, idx) => {
-            const htmlContent = marked.parse(item.content || '');
-            const htmlExtra = item.extra ? marked.parse(item.extra) : '';
+            const htmlContent = renderRichContent(item.content || '');
+            const htmlExtra = item.extra ? renderRichContent(item.extra) : '';
             return (
               <Timeline.Item
                 key={idx}

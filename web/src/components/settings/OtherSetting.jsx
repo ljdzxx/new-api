@@ -60,17 +60,21 @@ const OtherSetting = () => {
 
   const updateOption = async (key, value) => {
     setLoading(true);
-    const res = await API.put('/api/option/', {
-      key,
-      value,
-    });
-    const { success, message } = res.data;
-    if (success) {
-      setInputs((inputs) => ({ ...inputs, [key]: value }));
-    } else {
+    try {
+      const res = await API.put('/api/option/', {
+        key,
+        value,
+      });
+      const { success, message } = res.data;
+      if (success) {
+        setInputs((inputs) => ({ ...inputs, [key]: value }));
+        return true;
+      }
       showError(message);
+      throw new Error(message || 'update option failed');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const [loadingInput, setLoadingInput] = useState({
@@ -85,9 +89,8 @@ const OtherSetting = () => {
     Footer: false,
     CheckUpdate: false,
   });
-  const handleInputChange = async (value, e) => {
-    const name = e.target.id;
-    setInputs((inputs) => ({ ...inputs, [name]: value }));
+  const handleInputChange = (field) => (value) => {
+    setInputs((prev) => ({ ...prev, [field]: value }));
   };
 
   // 通用设置
@@ -384,7 +387,7 @@ const OtherSetting = () => {
                   '在此输入新的公告内容，支持 Markdown & HTML 代码',
                 )}
                 field={'Notice'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('Notice')}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}
                 autosize={{ minRows: 6, maxRows: 12 }}
               />
@@ -397,7 +400,7 @@ const OtherSetting = () => {
                   '在此输入用户协议内容，支持 Markdown & HTML 代码',
                 )}
                 field={LEGAL_USER_AGREEMENT_KEY}
-                onChange={handleInputChange}
+                onChange={handleInputChange(LEGAL_USER_AGREEMENT_KEY)}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}
                 autosize={{ minRows: 6, maxRows: 12 }}
                 helpText={t(
@@ -416,7 +419,7 @@ const OtherSetting = () => {
                   '在此输入隐私政策内容，支持 Markdown & HTML 代码',
                 )}
                 field={LEGAL_PRIVACY_POLICY_KEY}
-                onChange={handleInputChange}
+                onChange={handleInputChange(LEGAL_PRIVACY_POLICY_KEY)}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}
                 autosize={{ minRows: 6, maxRows: 12 }}
                 helpText={t(
@@ -443,7 +446,7 @@ const OtherSetting = () => {
                 label={t('系统名称')}
                 placeholder={t('在此输入系统名称')}
                 field={'SystemName'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('SystemName')}
               />
               <Button
                 onClick={submitSystemName}
@@ -455,7 +458,7 @@ const OtherSetting = () => {
                 label={t('Logo 图片地址')}
                 placeholder={t('在此输入 Logo 图片地址')}
                 field={'Logo'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('Logo')}
               />
               <Button onClick={submitLogo} loading={loadingInput['Logo']}>
                 {t('设置 Logo')}
@@ -466,7 +469,7 @@ const OtherSetting = () => {
                   '在此输入首页内容，支持 Markdown & HTML 代码，设置后首页的状态信息将不再显示。如果输入的是一个链接，则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页',
                 )}
                 field={'HomePageContent'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('HomePageContent')}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}
                 autosize={{ minRows: 6, maxRows: 12 }}
               />
@@ -482,7 +485,7 @@ const OtherSetting = () => {
                   '在此输入新的关于内容，支持 Markdown & HTML 代码。如果输入的是一个链接，则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为关于页面',
                 )}
                 field={'About'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('About')}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}
                 autosize={{ minRows: 6, maxRows: 12 }}
               />
@@ -493,7 +496,7 @@ const OtherSetting = () => {
                 label={t('\u6587\u6863')}
                 placeholder={t('Input docs content here. Supports Markdown & HTML. If input is a link, it will be used as iframe src for the Docs page.')}
                 field={'Docs'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('Docs')}
                 style={{ fontFamily: 'JetBrains Mono, Consolas' }}
                 autosize={{ minRows: 6, maxRows: 12 }}
               />
@@ -517,7 +520,7 @@ const OtherSetting = () => {
                   '在此输入新的页脚，留空则使用默认页脚，支持 HTML 代码',
                 )}
                 field={'Footer'}
-                onChange={handleInputChange}
+                onChange={handleInputChange('Footer')}
               />
               <Button onClick={submitFooter} loading={loadingInput['Footer']}>
                 {t('设置页脚')}
