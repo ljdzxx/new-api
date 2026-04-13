@@ -24,6 +24,7 @@ import {
   API,
   getTodayStartTimestamp,
   isAdmin,
+  isRoot,
   showError,
   showSuccess,
   timestamp2string,
@@ -75,6 +76,7 @@ export const useLogsData = () => {
 
   // User and admin
   const isAdminUser = isAdmin();
+  const isRootUser = isRoot();
   // Role-specific storage key to prevent different roles from overwriting each other
   const STORAGE_KEY = isAdminUser
     ? 'logs-table-columns-admin'
@@ -479,7 +481,7 @@ export const useLogsData = () => {
           other?.is_model_mapped &&
           other?.upstream_model_name &&
           other?.upstream_model_name !== '';
-        if (modelMapped) {
+        if (isRootUser && modelMapped) {
           expandDataLocal.push({
             key: t('请求并计费模型'),
             value: logs[i].model_name,
@@ -810,6 +812,7 @@ export const useLogsData = () => {
     logType,
     stat,
     isAdminUser,
+    isRootUser,
 
     // Form state
     formApi,

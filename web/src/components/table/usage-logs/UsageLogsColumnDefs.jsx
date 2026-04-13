@@ -222,13 +222,13 @@ function renderBillingTag(record, t) {
   return null;
 }
 
-function renderModelName(record, copyText, t) {
+function renderModelName(record, copyText, t, isRootUser = false) {
   let other = getLogOther(record.other);
   let modelMapped =
     other?.is_model_mapped &&
     other?.upstream_model_name &&
     other?.upstream_model_name !== '';
-  if (!modelMapped) {
+  if (!modelMapped || !isRootUser) {
     return renderModelTag(record.model_name, {
       onClick: (event) => {
         copyText(event, record.model_name).then((r) => {});
@@ -466,6 +466,7 @@ export const getLogsColumns = ({
   showUserInfoFunc,
   openChannelAffinityUsageCacheModal,
   isAdminUser,
+  isRootUser,
   billingDisplayMode = 'price',
 }) => {
   return [
@@ -673,7 +674,7 @@ export const getLogsColumns = ({
           record.type === 2 ||
           record.type === 5 ||
           record.type === 6 ? (
-          <>{renderModelName(record, copyText, t)}</>
+          <>{renderModelName(record, copyText, t, isRootUser)}</>
         ) : (
           <></>
         );
