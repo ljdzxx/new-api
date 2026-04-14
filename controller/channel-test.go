@@ -776,6 +776,9 @@ func TestChannel(c *gin.Context) {
 		})
 		return
 	}
+	if clearErr := service.ClearChannelQuotaInsufficientDailyMark(channel.Id); clearErr != nil {
+		common.SysLog(fmt.Sprintf("clear channel daily quota-insufficient mark failed: channel_id=%d, err=%s", channel.Id, clearErr.Error()))
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

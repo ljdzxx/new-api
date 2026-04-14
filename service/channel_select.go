@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -18,6 +19,19 @@ type RetryParam struct {
 	ModelName    string
 	Retry        *int
 	resetNextTry bool
+
+	retryCandidates      []retryChannelCandidate
+	retryCandidatesBuilt bool
+	retryCursor          int
+	failedChannels       map[int]struct{}
+}
+
+type retryChannelCandidate struct {
+	ChannelID  int
+	Group      string
+	Priority   int64
+	Weight     int
+	GroupOrder int
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -44,6 +58,136 @@ func (p *RetryParam) IncreaseRetry() {
 
 func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
+}
+
+func (p *RetryParam) MarkChannelFailed(channelID int) {
+	if channelID <= 0 {
+		return
+	}
+	if p.failedChannels == nil {
+		p.failedChannels = make(map[int]struct{})
+	}
+	p.failedChannels[channelID] = struct{}{}
+}
+
+func (p *RetryParam) isFailedChannel(channelID int) bool {
+	if len(p.failedChannels) == 0 {
+		return false
+	}
+	_, failed := p.failedChannels[channelID]
+	return failed
+}
+
+func getUserLevelAllowedChannelSet(ctx *gin.Context) map[string]struct{} {
+	userLevelID := common.GetContextKeyInt(ctx, constant.ContextKeyUserLevelID)
+	levelName, levelFound := setting.GetUserLevelPolicyLevelByID(userLevelID)
+	allowedChannels, hasUserLevelPolicy := setting.GetUserLevelAllowedChannels(levelName)
+	if !levelFound || !hasUserLevelPolicy || len(allowedChannels) == 0 {
+		return nil
+	}
+	allowedChannelSet := make(map[string]struct{}, len(allowedChannels))
+	for _, name := range allowedChannels {
+		allowedChannelSet[strings.TrimSpace(name)] = struct{}{}
+	}
+	return allowedChannelSet
+}
+
+func (p *RetryParam) buildRetryCandidates() error {
+	if p.retryCandidatesBuilt {
+		return nil
+	}
+	p.retryCandidatesBuilt = true
+
+	allowedChannelSet := getUserLevelAllowedChannelSet(p.Ctx)
+	candidates := make([]retryChannelCandidate, 0, 16)
+	channelSeen := make(map[int]struct{})
+
+	appendGroupChannels := func(group string, groupOrder int) error {
+		channels, err := model.ListSatisfiedChannelsWithNameFilter(group, p.ModelName, allowedChannelSet)
+		if err != nil {
+			return err
+		}
+		for _, ch := range channels {
+			if ch == nil {
+				continue
+			}
+			if _, exists := channelSeen[ch.Id]; exists {
+				continue
+			}
+			channelSeen[ch.Id] = struct{}{}
+			candidates = append(candidates, retryChannelCandidate{
+				ChannelID:  ch.Id,
+				Group:      group,
+				Priority:   ch.GetPriority(),
+				Weight:     ch.GetWeight(),
+				GroupOrder: groupOrder,
+			})
+		}
+		return nil
+	}
+
+	if p.TokenGroup == "auto" {
+		if len(setting.GetAutoGroups()) == 0 {
+			return errors.New("auto groups is not enabled")
+		}
+		userGroup := common.GetContextKeyString(p.Ctx, constant.ContextKeyUserGroup)
+		autoGroups := GetUserAutoGroup(userGroup)
+		for i, autoGroup := range autoGroups {
+			if err := appendGroupChannels(autoGroup, i); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := appendGroupChannels(p.TokenGroup, 0); err != nil {
+			return err
+		}
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority > candidates[j].Priority
+		}
+		if candidates[i].GroupOrder != candidates[j].GroupOrder {
+			return candidates[i].GroupOrder < candidates[j].GroupOrder
+		}
+		if candidates[i].Weight != candidates[j].Weight {
+			return candidates[i].Weight > candidates[j].Weight
+		}
+		return candidates[i].ChannelID < candidates[j].ChannelID
+	})
+
+	p.retryCandidates = candidates
+	p.retryCursor = 0
+	return nil
+}
+
+// GetNextRetryChannel selects the next retry channel from a pre-built candidate list.
+// Candidate list is built once per request and sorted by priority (high -> low),
+// then retries walk the list in order while skipping channels already marked as failed.
+func GetNextRetryChannel(param *RetryParam) (*model.Channel, string, error) {
+	if err := param.buildRetryCandidates(); err != nil {
+		return nil, param.TokenGroup, err
+	}
+	for param.retryCursor < len(param.retryCandidates) {
+		candidate := param.retryCandidates[param.retryCursor]
+		param.retryCursor++
+
+		if param.isFailedChannel(candidate.ChannelID) {
+			continue
+		}
+		channel, err := model.CacheGetChannel(candidate.ChannelID)
+		if err != nil || channel == nil {
+			continue
+		}
+		if channel.Status != common.ChannelStatusEnabled {
+			continue
+		}
+		if param.TokenGroup == "auto" {
+			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, candidate.Group)
+		}
+		return channel, candidate.Group, nil
+	}
+	return nil, param.TokenGroup, nil
 }
 
 // CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
@@ -86,16 +230,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	var err error
 	selectGroup := param.TokenGroup
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
-	userLevelID := common.GetContextKeyInt(param.Ctx, constant.ContextKeyUserLevelID)
-	levelName, levelFound := setting.GetUserLevelPolicyLevelByID(userLevelID)
-	allowedChannels, hasUserLevelPolicy := setting.GetUserLevelAllowedChannels(levelName)
-	var allowedChannelSet map[string]struct{}
-	if levelFound && hasUserLevelPolicy && len(allowedChannels) > 0 {
-		allowedChannelSet = make(map[string]struct{}, len(allowedChannels))
-		for _, name := range allowedChannels {
-			allowedChannelSet[strings.TrimSpace(name)] = struct{}{}
-		}
-	}
+	allowedChannelSet := getUserLevelAllowedChannelSet(param.Ctx)
 
 	if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {

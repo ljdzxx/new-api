@@ -132,6 +132,14 @@ func GetRandomSatisfiedChannelWithNameFilter(group string, model string, retry i
 	if len(channels) == 0 {
 		return nil, nil
 	}
+	filteredIDs, err := FilterOutQuotaInsufficientMarkedChannelIDs(channels)
+	if err != nil {
+		return nil, err
+	}
+	channels = filteredIDs
+	if len(channels) == 0 {
+		return nil, nil
+	}
 
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
@@ -206,6 +214,100 @@ func GetRandomSatisfiedChannelWithNameFilter(group string, model string, retry i
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+func ListSatisfiedChannelsWithNameFilter(group string, model string, allowedNames map[string]struct{}) ([]*Channel, error) {
+	// if memory cache is disabled, list from db query result
+	if !common.MemoryCacheEnabled {
+		return listChannelsFromDB(group, model, allowedNames)
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	// First, try to find channels with the exact model name.
+	channelIDs := group2model2channels[group][model]
+
+	// If no channels found, try to find channels with the normalized model name.
+	if len(channelIDs) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		channelIDs = group2model2channels[group][normalizedModel]
+	}
+
+	if len(channelIDs) == 0 {
+		return nil, nil
+	}
+
+	channels := make([]*Channel, 0, len(channelIDs))
+	for _, channelID := range channelIDs {
+		channel, ok := channelsIDM[channelID]
+		if !ok {
+			return nil, fmt.Errorf("data consistency error, channel #%d not found", channelID)
+		}
+		if len(allowedNames) > 0 {
+			if _, allowed := allowedNames[channel.Name]; !allowed {
+				continue
+			}
+		}
+		channels = append(channels, channel)
+	}
+	filtered, err := FilterOutQuotaInsufficientMarkedChannels(channels)
+	if err != nil {
+		return nil, err
+	}
+	channels = filtered
+	return channels, nil
+}
+
+func listChannelsFromDB(group string, model string, allowedNames map[string]struct{}) ([]*Channel, error) {
+	queryModel := model
+	abilities := make([]Ability, 0)
+	query := DB.Model(&Ability{}).
+		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, queryModel, true)
+	if len(allowedNames) > 0 {
+		subQuery := DB.Model(&Channel{}).Select("id").Where("name IN ?", allowedNamesSlice(allowedNames))
+		query = query.Where("channel_id IN (?)", subQuery)
+	}
+	if err := query.Order("priority DESC, weight DESC").Find(&abilities).Error; err != nil {
+		return nil, err
+	}
+	if len(abilities) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		if normalizedModel != model {
+			queryModel = normalizedModel
+			query = DB.Model(&Ability{}).
+				Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, queryModel, true)
+			if len(allowedNames) > 0 {
+				subQuery := DB.Model(&Channel{}).Select("id").Where("name IN ?", allowedNamesSlice(allowedNames))
+				query = query.Where("channel_id IN (?)", subQuery)
+			}
+			if err := query.Order("priority DESC, weight DESC").Find(&abilities).Error; err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(abilities) == 0 {
+		return nil, nil
+	}
+	seen := make(map[int]struct{}, len(abilities))
+	channels := make([]*Channel, 0, len(abilities))
+	for _, ability := range abilities {
+		if _, ok := seen[ability.ChannelId]; ok {
+			continue
+		}
+		seen[ability.ChannelId] = struct{}{}
+		channel := &Channel{}
+		if err := DB.First(channel, "id = ?", ability.ChannelId).Error; err != nil {
+			continue
+		}
+		channels = append(channels, channel)
+	}
+	filtered, err := FilterOutQuotaInsufficientMarkedChannels(channels)
+	if err != nil {
+		return nil, err
+	}
+	channels = filtered
+	return channels, nil
 }
 
 func allowedNamesSlice(allowedNames map[string]struct{}) []string {
