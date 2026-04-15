@@ -271,6 +271,64 @@ type SubscriptionSummary struct {
 	Subscription *UserSubscription `json:"subscription"`
 }
 
+type DailySubscriptionQuotaStat struct {
+	UserId    int
+	Total     int64
+	Remain    int64
+	Unlimited bool
+}
+
+// GetDailySubscriptionQuotaStatsByUserIDs returns active daily-reset subscription quota stats by user.
+func GetDailySubscriptionQuotaStatsByUserIDs(userIDs []int) (map[int]DailySubscriptionQuotaStat, error) {
+	result := make(map[int]DailySubscriptionQuotaStat)
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+
+	now := GetDBTimestamp()
+	type statRow struct {
+		UserId         int   `gorm:"column:user_id"`
+		Total          int64 `gorm:"column:daily_total"`
+		Remain         int64 `gorm:"column:daily_remain"`
+		UnlimitedCount int64 `gorm:"column:unlimited_count"`
+	}
+	rows := make([]statRow, 0)
+
+	err := DB.Table("user_subscriptions AS us").
+		Select(`us.user_id AS user_id,
+COALESCE(SUM(CASE WHEN us.amount_total > 0 THEN us.amount_total ELSE 0 END), 0) AS daily_total,
+COALESCE(SUM(CASE WHEN us.amount_total > 0 THEN CASE WHEN us.amount_total - us.amount_used > 0 THEN us.amount_total - us.amount_used ELSE 0 END ELSE 0 END), 0) AS daily_remain,
+COALESCE(SUM(CASE WHEN us.amount_total <= 0 THEN 1 ELSE 0 END), 0) AS unlimited_count`).
+		Joins("JOIN subscription_plans AS sp ON sp.id = us.plan_id").
+		Where("us.user_id IN ? AND us.status = ? AND us.end_time > ? AND sp.quota_reset_period = ?", userIDs, "active", now, SubscriptionResetDaily).
+		Group("us.user_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, row := range rows {
+		total := row.Total
+		remain := row.Remain
+		if total < 0 {
+			total = 0
+		}
+		if remain < 0 {
+			remain = 0
+		}
+		if total > 0 && remain > total {
+			remain = total
+		}
+		result[row.UserId] = DailySubscriptionQuotaStat{
+			UserId:    row.UserId,
+			Total:     total,
+			Remain:    remain,
+			Unlimited: row.UnlimitedCount > 0,
+		}
+	}
+	return result, nil
+}
+
 func calcPlanEndTime(start time.Time, plan *SubscriptionPlan) (int64, error) {
 	if plan == nil {
 		return 0, errors.New("plan is nil")

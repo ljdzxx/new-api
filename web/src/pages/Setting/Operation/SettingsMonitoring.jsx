@@ -26,6 +26,7 @@ import {
   showSuccess,
   showWarning,
   parseHttpStatusCodeRules,
+  verifyJSON,
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 import HttpStatusCodeRulesInput from '../../../components/settings/HttpStatusCodeRulesInput';
@@ -44,6 +45,17 @@ export default function SettingsMonitoring(props) {
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
+    'monitor_setting.global_quota_insufficient_keywords': JSON.stringify(
+      [
+        'insufficient',
+        'insufficient_quota',
+        'insufficient_user_quota',
+        '额度不足',
+        '余额不足',
+      ],
+      null,
+      2,
+    ),
   });
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -72,6 +84,22 @@ export default function SettingsMonitoring(props) {
           ? `: ${parsedAutoRetryStatusCodes.invalidTokens.join(', ')}`
           : '';
       return showError(`${t('自动重试状态码格式不正确')}${details}`);
+    }
+    const quotaKeywordRaw =
+      inputs['monitor_setting.global_quota_insufficient_keywords'] || '';
+    if (!verifyJSON(quotaKeywordRaw)) {
+      return showError(t('全局余额不足关键词不是合法的 JSON 数组'));
+    }
+    try {
+      const parsed = JSON.parse(quotaKeywordRaw);
+      if (!Array.isArray(parsed)) {
+        return showError(t('全局余额不足关键词不是合法的 JSON 数组'));
+      }
+      if (!parsed.every((item) => typeof item === 'string')) {
+        return showError(t('全局余额不足关键词必须为字符串 JSON 数组'));
+      }
+    } catch {
+      return showError(t('全局余额不足关键词不是合法的 JSON 数组'));
     }
     const requestQueue = updateArray.map((item) => {
       let value = '';
@@ -273,6 +301,24 @@ export default function SettingsMonitoring(props) {
                   autosize={{ minRows: 6, maxRows: 12 }}
                   onChange={(value) =>
                     setInputs({ ...inputs, AutomaticDisableKeywords: value })
+                  }
+                />
+                <Form.TextArea
+                  label={t('全局余额不足关键词')}
+                  placeholder={t(
+                    '请输入 JSON 数组，例如：["insufficient","余额不足"]',
+                  )}
+                  extraText={t(
+                    '当上游错误码或错误消息包含这些关键词时（不区分大小写），触发渠道“日内余额不足标记”',
+                  )}
+                  field={'monitor_setting.global_quota_insufficient_keywords'}
+                  autosize={{ minRows: 4, maxRows: 10 }}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.global_quota_insufficient_keywords':
+                        value,
+                    })
                   }
                 />
               </Col>

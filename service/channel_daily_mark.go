@@ -1,27 +1,20 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 )
-
-var insufficientQuotaKeywords = []string{
-	"insufficient",
-	"insufficient_quota",
-	"insufficient_user_quota",
-	"quota",
-	"\u4f59\u989d\u4e0d\u8db3",
-	"\u989d\u5ea6\u4e0d\u8db3",
-}
 
 func containsInsufficientQuotaKeyword(msg string) bool {
 	if strings.TrimSpace(msg) == "" {
 		return false
 	}
 	lower := strings.ToLower(msg)
-	for _, keyword := range insufficientQuotaKeywords {
+	for _, keyword := range operation_setting.GetGlobalQuotaInsufficientKeywords() {
 		if strings.Contains(lower, strings.ToLower(keyword)) {
 			return true
 		}
@@ -65,10 +58,5 @@ func anyToString(v interface{}) string {
 	if v == nil {
 		return ""
 	}
-	switch t := v.(type) {
-	case string:
-		return t
-	default:
-		return ""
-	}
+	return fmt.Sprintf("%v", v)
 }

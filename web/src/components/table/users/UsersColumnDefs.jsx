@@ -29,7 +29,12 @@ import {
   Dropdown,
 } from '@douyinfe/semi-ui';
 import { IconMore } from '@douyinfe/semi-icons';
-import { renderGroup, renderNumber, renderQuota } from '../../../helpers';
+import {
+  renderGroup,
+  renderNumber,
+  renderQuota,
+  timestamp2string,
+} from '../../../helpers';
 
 /**
  * Render user role
@@ -168,6 +173,68 @@ const renderQuotaUsage = (text, record, t) => {
       </Tag>
     </Popover>
   );
+};
+
+const getDailySubscriptionUsageValue = (record) => {
+  const total = Number(record?.daily_subscription_total || 0);
+  const remain = Number(record?.daily_subscription_remain || 0);
+  const used = Math.max(0, total - remain);
+  return { total, remain, used };
+};
+
+const renderDailySubscriptionUsage = (text, record, t) => {
+  const { Paragraph } = Typography;
+  const { total, remain, used } = getDailySubscriptionUsageValue(record);
+  const unlimited = !!record?.daily_subscription_unlimited;
+  const percent = total > 0 ? (remain / total) * 100 : 0;
+
+  const displayTotal = unlimited && total <= 0 ? t('不限') : renderQuota(total);
+  const displayRemain =
+    unlimited && total <= 0 ? t('不限') : renderQuota(remain);
+  const displayUsed = renderQuota(used);
+
+  const popoverContent = (
+    <div className='text-xs p-2'>
+      <Paragraph copyable={{ content: displayUsed }}>
+        {t('已用额度')}: {displayUsed}
+      </Paragraph>
+      <Paragraph copyable={{ content: displayRemain }}>
+        {t('剩余额度')}: {displayRemain}
+        {total > 0 ? ` (${percent.toFixed(0)}%)` : ''}
+      </Paragraph>
+      <Paragraph copyable={{ content: displayTotal }}>
+        {t('总额度')}: {displayTotal}
+      </Paragraph>
+    </div>
+  );
+
+  return (
+    <Popover content={popoverContent} position='top'>
+      <Tag color='white' shape='circle'>
+        <div className='flex flex-col items-end min-w-[140px]'>
+          <span className='text-xs leading-none'>{`${displayRemain} / ${displayTotal}`}</span>
+          {total > 0 ? (
+            <Progress
+              percent={percent}
+              aria-label='daily subscription usage'
+              format={() => `${percent.toFixed(0)}%`}
+              style={{ width: '100%', marginTop: '1px', marginBottom: 0 }}
+            />
+          ) : (
+            <div style={{ width: '100%', marginTop: '3px', height: '4px' }} />
+          )}
+        </div>
+      </Tag>
+    </Popover>
+  );
+};
+
+const renderRegisterTime = (text) => {
+  const ts = Number(text || 0);
+  if (ts <= 0) {
+    return '-';
+  }
+  return <span>{timestamp2string(ts)}</span>;
 };
 
 /**
@@ -330,6 +397,24 @@ export const getUsersColumns = ({
       title: t('剩余额度/总额度'),
       key: 'quota_usage',
       render: (text, record) => renderQuotaUsage(text, record, t),
+    },
+    {
+      title: '日余订阅额/日总订阅额',
+      dataIndex: 'daily_subscription_total',
+      key: 'daily_subscription_usage',
+      render: (text, record) => renderDailySubscriptionUsage(text, record, t),
+      sorter: (a, b) => {
+        const aUsage = getDailySubscriptionUsageValue(a).used;
+        const bUsage = getDailySubscriptionUsageValue(b).used;
+        return aUsage - bUsage;
+      },
+    },
+    {
+      title: '注册时间',
+      dataIndex: 'created_at',
+      sorter: (a, b) =>
+        Number(a?.created_at || 0) - Number(b?.created_at || 0),
+      render: (text) => renderRegisterTime(text),
     },
     {
       title: t('分组'),

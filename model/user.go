@@ -45,10 +45,22 @@ type User struct {
 	AffHistoryQuota  int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
 	InviterId        int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
 	DeletedAt        gorm.DeletedAt `gorm:"index"`
+	CreatedAt        int64          `json:"created_at" gorm:"type:bigint;column:created_at;index"`
 	LinuxDOId        string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
 	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
 	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+
+	DailySubscriptionTotal     int64 `json:"daily_subscription_total" gorm:"-"`
+	DailySubscriptionRemain    int64 `json:"daily_subscription_remain" gorm:"-"`
+	DailySubscriptionUnlimited bool  `json:"daily_subscription_unlimited" gorm:"-"`
+}
+
+func (user *User) BeforeCreate(tx *gorm.DB) error {
+	if user.CreatedAt == 0 {
+		user.CreatedAt = common.GetTimestamp()
+	}
+	return nil
 }
 
 func (user *User) ToBaseUser() *UserBase {

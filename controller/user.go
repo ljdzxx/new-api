@@ -232,6 +232,9 @@ func GetAllUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := fillUsersDailySubscriptionQuota(users); err != nil {
+		common.SysError("failed to fill daily subscription quota for users: " + err.Error())
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
@@ -249,11 +252,50 @@ func SearchUsers(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err := fillUsersDailySubscriptionQuota(users); err != nil {
+		common.SysError("failed to fill daily subscription quota for users: " + err.Error())
+	}
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(users)
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+func fillUsersDailySubscriptionQuota(users []*model.User) error {
+	if len(users) == 0 {
+		return nil
+	}
+	userIDs := make([]int, 0, len(users))
+	for _, user := range users {
+		if user == nil || user.Id <= 0 {
+			continue
+		}
+		userIDs = append(userIDs, user.Id)
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+	statsByUserID, err := model.GetDailySubscriptionQuotaStatsByUserIDs(userIDs)
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		stat, ok := statsByUserID[user.Id]
+		if !ok {
+			user.DailySubscriptionTotal = 0
+			user.DailySubscriptionRemain = 0
+			user.DailySubscriptionUnlimited = false
+			continue
+		}
+		user.DailySubscriptionTotal = stat.Total
+		user.DailySubscriptionRemain = stat.Remain
+		user.DailySubscriptionUnlimited = stat.Unlimited
+	}
+	return nil
 }
 
 func GetUser(c *gin.Context) {
