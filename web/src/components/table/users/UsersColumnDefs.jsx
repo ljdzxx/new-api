@@ -403,17 +403,12 @@ export const getUsersColumns = ({
       dataIndex: 'daily_subscription_total',
       key: 'daily_subscription_usage',
       render: (text, record) => renderDailySubscriptionUsage(text, record, t),
-      sorter: (a, b) => {
-        const aUsage = getDailySubscriptionUsageValue(a).used;
-        const bUsage = getDailySubscriptionUsageValue(b).used;
-        return aUsage - bUsage;
-      },
+      sorter: true,
     },
     {
       title: '注册时间',
       dataIndex: 'created_at',
-      sorter: (a, b) =>
-        Number(a?.created_at || 0) - Number(b?.created_at || 0),
+      sorter: true,
       render: (text) => renderRegisterTime(text),
     },
     {

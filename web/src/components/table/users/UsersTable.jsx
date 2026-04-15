@@ -48,6 +48,7 @@ const UsersTable = (usersData) => {
     setShowEditUser,
     manageUser,
     refresh,
+    handleTableSortChange,
     resetUserPasskey,
     resetUserTwoFA,
     t,
@@ -185,6 +186,11 @@ const UsersTable = (usersData) => {
         }}
         hidePagination={true}
         loading={loading}
+        onChange={(changeInfo) => {
+          if (changeInfo?.extra?.changeType === 'sorter') {
+            handleTableSortChange?.(changeInfo?.sorter);
+          }
+        }}
         onRow={handleRow}
         empty={
           <Empty

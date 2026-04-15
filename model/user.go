@@ -201,7 +201,34 @@ func GetMaxUserId() int {
 	return user.Id
 }
 
-func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err error) {
+func normalizeUserSortDirection(sortOrder string) string {
+	switch strings.ToLower(strings.TrimSpace(sortOrder)) {
+	case "asc":
+		return "asc"
+	default:
+		return "desc"
+	}
+}
+
+func buildUserSortConfig(sortField string, sortOrder string) (useDailyUsedSort bool, orderClauses []string) {
+	direction := normalizeUserSortDirection(sortOrder)
+	switch strings.TrimSpace(sortField) {
+	case "daily_subscription_used":
+		return true, []string{
+			"COALESCE(ds.daily_total, 0) - COALESCE(ds.daily_remain, 0) " + direction,
+			"id desc",
+		}
+	case "created_at":
+		return false, []string{
+			"created_at " + direction,
+			"id desc",
+		}
+	default:
+		return false, []string{"id desc"}
+	}
+}
+
+func GetAllUsers(pageInfo *common.PageInfo, sortField string, sortOrder string) (users []*User, total int64, err error) {
 	// Start transaction
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -220,8 +247,26 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 		return nil, 0, err
 	}
 
+	useDailyUsedSort, orderClauses := buildUserSortConfig(sortField, sortOrder)
+	listQuery := tx.Unscoped().Model(&User{})
+	if useDailyUsedSort {
+		now := GetDBTimestamp()
+		listQuery = listQuery.Joins(`LEFT JOIN (
+SELECT us.user_id AS user_id,
+COALESCE(SUM(CASE WHEN us.amount_total > 0 THEN us.amount_total ELSE 0 END), 0) AS daily_total,
+COALESCE(SUM(CASE WHEN us.amount_total > 0 THEN CASE WHEN us.amount_total - us.amount_used > 0 THEN us.amount_total - us.amount_used ELSE 0 END ELSE 0 END), 0) AS daily_remain
+FROM user_subscriptions AS us
+JOIN subscription_plans AS sp ON sp.id = us.plan_id
+WHERE us.status = ? AND us.end_time > ? AND sp.quota_reset_period = ?
+GROUP BY us.user_id
+) AS ds ON ds.user_id = users.id`, "active", now, SubscriptionResetDaily)
+	}
+	for _, orderClause := range orderClauses {
+		listQuery = listQuery.Order(orderClause)
+	}
+
 	// Get paginated users within same transaction
-	err = tx.Unscoped().Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password").Find(&users).Error
+	err = listQuery.Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password").Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -235,7 +280,7 @@ func GetAllUsers(pageInfo *common.PageInfo) (users []*User, total int64, err err
 	return users, total, nil
 }
 
-func SearchUsers(keyword string, group string, startIdx int, num int) ([]*User, int64, error) {
+func SearchUsers(keyword string, group string, startIdx int, num int, sortField string, sortOrder string) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -253,6 +298,19 @@ func SearchUsers(keyword string, group string, startIdx int, num int) ([]*User, 
 
 	// 构建基础查询
 	query := tx.Unscoped().Model(&User{})
+	useDailyUsedSort, orderClauses := buildUserSortConfig(sortField, sortOrder)
+	if useDailyUsedSort {
+		now := GetDBTimestamp()
+		query = query.Joins(`LEFT JOIN (
+SELECT us.user_id AS user_id,
+COALESCE(SUM(CASE WHEN us.amount_total > 0 THEN us.amount_total ELSE 0 END), 0) AS daily_total,
+COALESCE(SUM(CASE WHEN us.amount_total > 0 THEN CASE WHEN us.amount_total - us.amount_used > 0 THEN us.amount_total - us.amount_used ELSE 0 END ELSE 0 END), 0) AS daily_remain
+FROM user_subscriptions AS us
+JOIN subscription_plans AS sp ON sp.id = us.plan_id
+WHERE us.status = ? AND us.end_time > ? AND sp.quota_reset_period = ?
+GROUP BY us.user_id
+) AS ds ON ds.user_id = users.id`, "active", now, SubscriptionResetDaily)
+	}
 
 	// 构建搜索条件
 	likeCondition := "username LIKE ? OR email LIKE ? OR display_name LIKE ?"
@@ -288,7 +346,11 @@ func SearchUsers(keyword string, group string, startIdx int, num int) ([]*User, 
 	}
 
 	// 获取分页数据
-	err = query.Omit("password").Order("id desc").Limit(num).Offset(startIdx).Find(&users).Error
+	findQuery := query.Omit("password")
+	for _, orderClause := range orderClauses {
+		findQuery = findQuery.Order(orderClause)
+	}
+	err = findQuery.Limit(num).Offset(startIdx).Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err

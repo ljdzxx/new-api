@@ -35,6 +35,8 @@ export const useUsersData = () => {
   const [searching, setSearching] = useState(false);
   const [groupOptions, setGroupOptions] = useState([]);
   const [userCount, setUserCount] = useState(0);
+  const [sortField, setSortField] = useState('');
+  const [sortOrder, setSortOrder] = useState('');
 
   // Modal states
   const [showAddUser, setShowAddUser] = useState(false);
@@ -70,9 +72,24 @@ export const useUsersData = () => {
   };
 
   // Load users data
-  const loadUsers = async (startIdx, pageSize) => {
+  const loadUsers = async (
+    startIdx,
+    pageSize,
+    currentSortField = sortField,
+    currentSortOrder = sortOrder,
+  ) => {
     setLoading(true);
-    const res = await API.get(`/api/user/?p=${startIdx}&page_size=${pageSize}`);
+    const params = new URLSearchParams({
+      p: String(startIdx),
+      page_size: String(pageSize),
+    });
+    if (currentSortField) {
+      params.append('sort_field', currentSortField);
+    }
+    if (currentSortOrder) {
+      params.append('sort_order', currentSortOrder);
+    }
+    const res = await API.get(`/api/user/?${params.toString()}`);
     const { success, message, data } = res.data;
     if (success) {
       const newPageData = data.items;
@@ -91,6 +108,8 @@ export const useUsersData = () => {
     pageSize,
     searchKeyword = null,
     searchGroup = null,
+    currentSortField = sortField,
+    currentSortOrder = sortOrder,
   ) => {
     // If no parameters passed, get values from form
     if (searchKeyword === null || searchGroup === null) {
@@ -101,13 +120,23 @@ export const useUsersData = () => {
 
     if (searchKeyword === '' && searchGroup === '') {
       // If keyword is blank, load files instead
-      await loadUsers(startIdx, pageSize);
+      await loadUsers(startIdx, pageSize, currentSortField, currentSortOrder);
       return;
     }
     setSearching(true);
-    const res = await API.get(
-      `/api/user/search?keyword=${searchKeyword}&group=${searchGroup}&p=${startIdx}&page_size=${pageSize}`,
-    );
+    const params = new URLSearchParams({
+      keyword: searchKeyword,
+      group: searchGroup,
+      p: String(startIdx),
+      page_size: String(pageSize),
+    });
+    if (currentSortField) {
+      params.append('sort_field', currentSortField);
+    }
+    if (currentSortOrder) {
+      params.append('sort_order', currentSortOrder);
+    }
+    const res = await API.get(`/api/user/search?${params.toString()}`);
     const { success, message, data } = res.data;
     if (success) {
       const newPageData = data.items;
@@ -193,9 +222,9 @@ export const useUsersData = () => {
     setActivePage(page);
     const { searchKeyword, searchGroup } = getFormValues();
     if (searchKeyword === '' && searchGroup === '') {
-      loadUsers(page, pageSize).then();
+      loadUsers(page, pageSize, sortField, sortOrder).then();
     } else {
-      searchUsers(page, pageSize, searchKeyword, searchGroup).then();
+      searchUsers(page, pageSize, searchKeyword, searchGroup, sortField, sortOrder).then();
     }
   };
 
@@ -204,11 +233,44 @@ export const useUsersData = () => {
     localStorage.setItem('page-size', size + '');
     setPageSize(size);
     setActivePage(1);
-    loadUsers(activePage, size)
+    loadUsers(activePage, size, sortField, sortOrder)
       .then()
       .catch((reason) => {
         showError(reason);
       });
+  };
+
+  const handleTableSortChange = async (sorter) => {
+    const nextSortField =
+      sorter?.dataIndex === 'daily_subscription_total' && sorter?.sortOrder
+        ? 'daily_subscription_used'
+        : sorter?.dataIndex === 'created_at' && sorter?.sortOrder
+          ? 'created_at'
+          : '';
+    const nextSortOrder =
+      sorter?.sortOrder === 'ascend'
+        ? 'asc'
+        : sorter?.sortOrder === 'descend'
+          ? 'desc'
+          : '';
+
+    setSortField(nextSortField);
+    setSortOrder(nextSortOrder);
+    setActivePage(1);
+
+    const { searchKeyword, searchGroup } = getFormValues();
+    if (searchKeyword === '' && searchGroup === '') {
+      await loadUsers(1, pageSize, nextSortField, nextSortOrder);
+    } else {
+      await searchUsers(
+        1,
+        pageSize,
+        searchKeyword,
+        searchGroup,
+        nextSortField,
+        nextSortOrder,
+      );
+    }
   };
 
   // Handle table row styling for disabled/deleted users
@@ -309,6 +371,7 @@ export const useUsersData = () => {
     resetUserTwoFA,
     handlePageChange,
     handlePageSizeChange,
+    handleTableSortChange,
     handleRow,
     refresh,
     closeAddUser,
