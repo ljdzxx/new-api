@@ -115,6 +115,7 @@ var RetryTimes = 0
 //var RootUserEmail = ""
 
 var IsMasterNode bool
+var NoWeb bool
 
 var requestInterval int
 var RequestInterval time.Duration
