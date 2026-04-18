@@ -18,31 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Button } from '@douyinfe/semi-ui';
-import { useNavigate } from 'react-router-dom';
+import SubscriptionUsageRankPage from '../../components/table/subscription-usage-rank';
 
-const UsersActions = ({ setShowAddUser, t }) => {
-  const navigate = useNavigate();
-
-  const handleAddUser = () => {
-    setShowAddUser(true);
-  };
-
+const SubscriptionUsageRank = () => {
   return (
-    <div className='flex gap-2 w-full md:w-auto order-2 md:order-1'>
-      <Button
-        className='w-full md:w-auto'
-        type='tertiary'
-        size='small'
-        onClick={() => navigate('/console/subscription-rank')}
-      >
-        {t('订阅使用榜')}
-      </Button>
-      <Button className='w-full md:w-auto' onClick={handleAddUser} size='small'>
-        {t('添加用户')}
-      </Button>
+    <div className='mt-[60px] px-2'>
+      <SubscriptionUsageRankPage />
     </div>
   );
 };
 
-export default UsersActions;
+export default SubscriptionUsageRank;

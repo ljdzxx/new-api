@@ -15,14 +15,15 @@ import (
 
 // UserBase struct remains the same as it represents the cached data structure
 type UserBase struct {
-	Id          int    `json:"id"`
-	Group       string `json:"group"`
-	UserLevelID int    `json:"user_level_id"`
-	Email       string `json:"email"`
-	Quota       int    `json:"quota"`
-	Status      int    `json:"status"`
-	Username    string `json:"username"`
-	Setting     string `json:"setting"`
+	Id               int     `json:"id"`
+	Group            string  `json:"group"`
+	UserLevelID      int     `json:"user_level_id"`
+	Email            string  `json:"email"`
+	Quota            int     `json:"quota"`
+	Status           int     `json:"status"`
+	Username         string  `json:"username"`
+	Setting          string  `json:"setting"`
+	GlobalModelRatio float64 `json:"-"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -102,14 +103,15 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 
 	// Create cache object from user data
 	userCache = &UserBase{
-		Id:          user.Id,
-		Group:       user.Group,
-		UserLevelID: user.UserLevelId,
-		Quota:       user.Quota,
-		Status:      user.Status,
-		Username:    user.Username,
-		Setting:     user.Setting,
-		Email:       user.Email,
+		Id:               user.Id,
+		Group:            user.Group,
+		UserLevelID:      user.UserLevelId,
+		Quota:            user.Quota,
+		Status:           user.Status,
+		Username:         user.Username,
+		Setting:          user.Setting,
+		Email:            user.Email,
+		GlobalModelRatio: user.GlobalModelRatio,
 	}
 
 	return userCache, nil
@@ -119,7 +121,7 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 	if !common.RedisEnabled {
 		return nil, fmt.Errorf("redis is not enabled")
 	}
-	var userCache UserBase
+	userCache := UserBase{GlobalModelRatio: 1}
 	// Try getting from Redis first
 	err := common.RedisHGetObj(getUserCacheKey(userId), &userCache)
 	if err != nil {
@@ -181,6 +183,14 @@ func getUserSettingCache(userId int) (dto.UserSetting, error) {
 	return cache.GetSetting(), nil
 }
 
+func getUserGlobalModelRatioCache(userId int) (float64, error) {
+	cache, err := GetUserCache(userId)
+	if err != nil {
+		return 0, err
+	}
+	return cache.GlobalModelRatio, nil
+}
+
 // New functions for individual field updates
 func updateUserStatusCache(userId int, status bool) error {
 	if !common.RedisEnabled {
@@ -223,6 +233,13 @@ func updateUserSettingCache(userId int, setting string) error {
 		return nil
 	}
 	return common.RedisHSetField(getUserCacheKey(userId), "Setting", setting)
+}
+
+func updateUserGlobalModelRatioCache(userId int, ratio float64) error {
+	if !common.RedisEnabled {
+		return nil
+	}
+	return common.RedisHSetField(getUserCacheKey(userId), "GlobalModelRatio", fmt.Sprintf("%f", ratio))
 }
 
 // GetUserLanguage returns the user's language preference from cache

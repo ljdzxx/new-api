@@ -232,9 +232,10 @@ func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
 
 // User subscription instance
 type UserSubscription struct {
-	Id     int `json:"id"`
-	UserId int `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
-	PlanId int `json:"plan_id" gorm:"index"`
+	Id           int `json:"id"`
+	UserId       int `json:"user_id" gorm:"index;index:idx_user_sub_active,priority:1"`
+	PlanId       int `json:"plan_id" gorm:"index"`
+	RedemptionId int `json:"redemption_id" gorm:"type:int;default:0;index"`
 
 	AmountTotal int64 `json:"amount_total" gorm:"type:bigint;not null;default:0"`
 	AmountUsed  int64 `json:"amount_used" gorm:"type:bigint;not null;default:0"`
@@ -560,6 +561,9 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
 	}
+	if err := SyncUserSubscriptionDailyStatTx(tx, sub, plan, nowUnix); err != nil {
+		return nil, err
+	}
 	return sub, nil
 }
 
@@ -793,6 +797,16 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 		}).Error; err != nil {
 			return err
 		}
+		sub.Status = "cancelled"
+		sub.EndTime = now
+		sub.UpdatedAt = now
+		plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+		if err != nil {
+			return err
+		}
+		if err := SyncUserSubscriptionDailyStatTx(tx, &sub, plan, now); err != nil {
+			return err
+		}
 		target, err := downgradeUserGroupForSubscriptionTx(tx, &sub, now)
 		if err != nil {
 			return err
@@ -948,6 +962,22 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 			_ = UpdateUserGroupCache(userId, cacheGroup)
 		}
 	}
+	for _, sub := range subs {
+		subCopy := sub
+		subCopy.Status = "expired"
+		if subCopy.EndTime <= 0 {
+			subCopy.EndTime = now
+		}
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			plan, err := getSubscriptionPlanByIdTx(tx, subCopy.PlanId)
+			if err != nil {
+				return err
+			}
+			return SyncUserSubscriptionDailyStatTx(tx, &subCopy, plan, now)
+		}); err != nil {
+			return expiredCount, err
+		}
+	}
 	return expiredCount, nil
 }
 
@@ -1001,14 +1031,20 @@ func maybeResetUserSubscriptionWithPlanTx(tx *gorm.DB, sub *UserSubscription, pl
 		if sub.NextResetTime == 0 && next > 0 {
 			sub.NextResetTime = next
 			sub.LastResetTime = base.Unix()
-			return tx.Save(sub).Error
+			if err := tx.Save(sub).Error; err != nil {
+				return err
+			}
+			return SyncUserSubscriptionDailyStatTx(tx, sub, plan, now)
 		}
 		return nil
 	}
 	sub.AmountUsed = 0
 	sub.LastResetTime = base.Unix()
 	sub.NextResetTime = next
-	return tx.Save(sub).Error
+	if err := tx.Save(sub).Error; err != nil {
+		return err
+	}
+	return SyncUserSubscriptionDailyStatTx(tx, sub, plan, now)
 }
 
 // PreConsumeUserSubscription pre-consumes from any active subscription total quota.
@@ -1098,6 +1134,9 @@ func PreConsumeUserSubscription(requestId string, userId int, modelName string, 
 			}
 			sub.AmountUsed += amount
 			if err := tx.Save(&sub).Error; err != nil {
+				return err
+			}
+			if err := SyncUserSubscriptionDailyStatTx(tx, &sub, plan, now); err != nil {
 				return err
 			}
 			returnValue.UserSubscriptionId = sub.Id
@@ -1246,6 +1285,13 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 			return fmt.Errorf("subscription used exceeds total, used=%d total=%d", newUsed, sub.AmountTotal)
 		}
 		sub.AmountUsed = newUsed
-		return tx.Save(&sub).Error
+		if err := tx.Save(&sub).Error; err != nil {
+			return err
+		}
+		plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+		if err != nil {
+			return err
+		}
+		return SyncUserSubscriptionDailyStatTx(tx, &sub, plan, GetDBTimestamp())
 	})
 }

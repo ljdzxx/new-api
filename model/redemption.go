@@ -200,9 +200,14 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 			if !plan.Enabled {
 				return errors.New("订阅套餐未启用")
 			}
-			_, err = CreateUserSubscriptionFromPlanTx(tx, userId, plan, "redemption")
+			sub, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "redemption")
 			if err != nil {
 				return err
+			}
+			if sub != nil && sub.Id > 0 {
+				if err = tx.Model(sub).Update("redemption_id", redemption.Id).Error; err != nil {
+					return err
+				}
 			}
 			upgradedSubscriptionGroup = strings.TrimSpace(plan.UpgradeGroup)
 			result.PlanId = redemption.PlanId

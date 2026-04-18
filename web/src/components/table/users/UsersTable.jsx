@@ -32,6 +32,8 @@ import DeleteUserModal from './modals/DeleteUserModal';
 import ResetPasskeyModal from './modals/ResetPasskeyModal';
 import ResetTwoFAModal from './modals/ResetTwoFAModal';
 import UserSubscriptionsModal from './modals/UserSubscriptionsModal';
+import UserSubscriptionStatsModal from './modals/UserSubscriptionStatsModal';
+import UserRedemptionRecordsModal from './modals/UserRedemptionRecordsModal';
 
 const UsersTable = (usersData) => {
   const {
@@ -64,6 +66,10 @@ const UsersTable = (usersData) => {
   const [showResetPasskeyModal, setShowResetPasskeyModal] = useState(false);
   const [showResetTwoFAModal, setShowResetTwoFAModal] = useState(false);
   const [showUserSubscriptionsModal, setShowUserSubscriptionsModal] =
+    useState(false);
+  const [showUserRedemptionRecordsModal, setShowUserRedemptionRecordsModal] =
+    useState(false);
+  const [showUserSubscriptionStatsModal, setShowUserSubscriptionStatsModal] =
     useState(false);
 
   // Modal handlers
@@ -101,6 +107,16 @@ const UsersTable = (usersData) => {
   const showUserSubscriptionsUserModal = (user) => {
     setModalUser(user);
     setShowUserSubscriptionsModal(true);
+  };
+
+  const showUserRedemptionRecordsUserModal = (user) => {
+    setModalUser(user);
+    setShowUserRedemptionRecordsModal(true);
+  };
+
+  const showUserSubscriptionStatsUserModal = (user) => {
+    setModalUser(user);
+    setShowUserSubscriptionStatsModal(true);
   };
 
   // Modal confirm handlers
@@ -142,6 +158,8 @@ const UsersTable = (usersData) => {
       showResetPasskeyModal: showResetPasskeyUserModal,
       showResetTwoFAModal: showResetTwoFAUserModal,
       showUserSubscriptionsModal: showUserSubscriptionsUserModal,
+      showUserRedemptionRecordsModal: showUserRedemptionRecordsUserModal,
+      showUserSubscriptionStatsModal: showUserSubscriptionStatsUserModal,
     });
   }, [
     t,
@@ -154,13 +172,15 @@ const UsersTable = (usersData) => {
     showResetPasskeyUserModal,
     showResetTwoFAUserModal,
     showUserSubscriptionsUserModal,
+    showUserRedemptionRecordsUserModal,
+    showUserSubscriptionStatsUserModal,
   ]);
 
   // Handle compact mode by removing fixed positioning
   const tableColumns = useMemo(() => {
     return compactMode
       ? columns.map((col) => {
-          if (col.dataIndex === 'operate') {
+          if (col.fixed) {
             const { fixed, ...rest } = col;
             return rest;
           }
@@ -202,7 +222,7 @@ const UsersTable = (usersData) => {
             style={{ padding: 30 }}
           />
         }
-        className='overflow-hidden'
+        className='overflow-x-auto'
         size='middle'
       />
 
@@ -265,6 +285,20 @@ const UsersTable = (usersData) => {
         user={modalUser}
         t={t}
         onSuccess={() => refresh?.()}
+      />
+
+      <UserRedemptionRecordsModal
+        visible={showUserRedemptionRecordsModal}
+        onCancel={() => setShowUserRedemptionRecordsModal(false)}
+        user={modalUser}
+        t={t}
+      />
+
+      <UserSubscriptionStatsModal
+        visible={showUserSubscriptionStatsModal}
+        onCancel={() => setShowUserSubscriptionStatsModal(false)}
+        user={modalUser}
+        t={t}
       />
     </>
   );

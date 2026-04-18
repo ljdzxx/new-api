@@ -1,4 +1,4 @@
-/*
+﻿/*
 Copyright (C) 2025 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
@@ -78,7 +78,7 @@ const renderUsername = (text, record) => {
   }
   const maxLen = 10;
   const displayRemark =
-    remark.length > maxLen ? remark.slice(0, maxLen) + '…' : remark;
+    remark.length > maxLen ? remark.slice(0, maxLen) + '...' : remark;
   return (
     <Space spacing={2}>
       <span>{text}</span>
@@ -229,6 +229,41 @@ const renderDailySubscriptionUsage = (text, record, t) => {
   );
 };
 
+const formatGlobalModelRatio = (ratio) => {
+  const value = Number(ratio);
+  if (!Number.isFinite(value)) {
+    return '1';
+  }
+  return value.toFixed(4).replace(/\.?0+$/, '');
+};
+
+const renderGlobalModelRatio = (text, record, t) => {
+  const ratio = Number(record?.global_model_ratio);
+  const value = Number.isFinite(ratio) ? ratio : 1;
+  const formattedValue = formatGlobalModelRatio(value);
+
+  let color = 'grey';
+  let label = `${t('默认')} ${formattedValue}`;
+  if (value === 0) {
+    color = 'red';
+    label = `${t('免费')} ${formattedValue}`;
+  } else if (value !== 1) {
+    color = value > 1 ? 'orange' : 'blue';
+    label = `${t('自定义')} ${formattedValue}`;
+  }
+
+  return (
+    <Tooltip
+      content={`${t('该倍率仅对当前用户生效，并与系统全局模型倍率叠乘')}: ${formattedValue}`}
+      position='top'
+    >
+      <Tag color={color} shape='circle'>
+        {label}
+      </Tag>
+    </Tooltip>
+  );
+};
+
 const renderRegisterTime = (text) => {
   const ts = Number(text || 0);
   if (ts <= 0) {
@@ -243,7 +278,7 @@ const renderRegisterTime = (text) => {
 const renderInviteInfo = (text, record, t) => {
   return (
     <div>
-      <Space spacing={1}>
+      <Space spacing={1} wrap>
         <Tag color='white' shape='circle' className='!text-xs'>
           {t('邀请')}: {renderNumber(record.aff_count)}
         </Tag>
@@ -267,6 +302,7 @@ const renderOperations = (
   text,
   record,
   {
+    showUserSubscriptionStatsModal,
     setEditingUser,
     setShowEditUser,
     showPromoteModal,
@@ -315,6 +351,14 @@ const renderOperations = (
 
   return (
     <Space>
+      <Button
+        type='primary'
+        theme='light'
+        size='small'
+        onClick={() => showUserSubscriptionStatsModal(record)}
+      >
+        {t('统计')}
+      </Button>
       {record.status === 1 ? (
         <Button
           type='danger'
@@ -362,6 +406,49 @@ const renderOperations = (
   );
 };
 
+const renderStatsAction = (
+  text,
+  record,
+  { showUserSubscriptionStatsModal, t },
+) => {
+  if (record.DeletedAt !== null) {
+    return <></>;
+  }
+
+  return (
+    <Button
+      type='primary'
+      theme='light'
+      size='small'
+      onClick={() => showUserSubscriptionStatsModal(record)}
+    >
+      {t('统计')}
+    </Button>
+  );
+};
+
+const renderRedemptionRecordsAction = (
+  text,
+  record,
+  { showUserRedemptionRecordsModal, t },
+) => {
+  if (record.DeletedAt !== null) {
+    return <></>;
+  }
+
+  const count = Number(record?.redemption_count || 0);
+  return (
+    <Button
+      theme='light'
+      size='small'
+      onClick={() => showUserRedemptionRecordsModal(record)}
+    >
+      {t('{{count}} 个', { count })}
+    </Button>
+  );
+};
+
+
 /**
  * Get users table column definitions
  */
@@ -376,51 +463,59 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  showUserRedemptionRecordsModal,
+  showUserSubscriptionStatsModal,
 }) => {
   return [
     {
       title: 'ID',
       dataIndex: 'id',
+      width: 50,
     },
     {
       title: t('用户名'),
       dataIndex: 'username',
+      width: 100,
       render: (text, record) => renderUsername(text, record),
     },
     {
       title: t('状态'),
       dataIndex: 'info',
+      width: 80,
       render: (text, record, index) =>
         renderStatistics(text, record, showEnableDisableModal, t),
     },
     {
       title: t('剩余额度/总额度'),
       key: 'quota_usage',
+      width: 150,
       render: (text, record) => renderQuotaUsage(text, record, t),
     },
     {
-      title: '日余订阅额/日总订阅额',
+      title: '日内剩余订阅额度/日内总订阅额度',
       dataIndex: 'daily_subscription_total',
       key: 'daily_subscription_usage',
       render: (text, record) => renderDailySubscriptionUsage(text, record, t),
       sorter: true,
     },
     {
-      title: '注册时间',
-      dataIndex: 'created_at',
-      sorter: true,
-      render: (text) => renderRegisterTime(text),
-    },
-    {
       title: t('分组'),
       dataIndex: 'group',
+      width: 60,
       render: (text, record, index) => {
         return <div>{renderGroup(text)}</div>;
       },
     },
     {
+      title: t('用户倍率'),
+      dataIndex: 'global_model_ratio',
+      width: 120,
+      render: (text, record) => renderGlobalModelRatio(text, record, t),
+    },
+    {
       title: t('角色'),
       dataIndex: 'role',
+      width: 80,
       render: (text, record, index) => {
         return <div>{renderRole(text, t)}</div>;
       },
@@ -428,15 +523,34 @@ export const getUsersColumns = ({
     {
       title: t('邀请信息'),
       dataIndex: 'invite',
+      width: 280,
       render: (text, record, index) => renderInviteInfo(text, record, t),
+    },
+    {
+      title: t('兑换记录'),
+      dataIndex: 'redemption_records',
+      width: 80,
+      render: (text, record) =>
+        renderRedemptionRecordsAction(text, record, {
+          showUserRedemptionRecordsModal,
+          t,
+        }),
+    },
+    {
+      title: '注册时间',
+      dataIndex: 'created_at',
+      width: 160,
+      sorter: true,
+      render: (text) => renderRegisterTime(text),
     },
     {
       title: '',
       dataIndex: 'operate',
       fixed: 'right',
-      width: 200,
+      width: 380,
       render: (text, record, index) =>
         renderOperations(text, record, {
+          showUserSubscriptionStatsModal,
           setEditingUser,
           setShowEditUser,
           showPromoteModal,
@@ -451,3 +565,8 @@ export const getUsersColumns = ({
     },
   ];
 };
+
+
+
+
+

@@ -49,6 +49,8 @@ export const useUsersData = () => {
   const formInitValues = {
     searchKeyword: '',
     searchGroup: '',
+    searchRedemption: '',
+    searchGlobalModelRatio: '',
   };
 
   // Form API reference
@@ -60,6 +62,8 @@ export const useUsersData = () => {
     return {
       searchKeyword: formValues.searchKeyword || '',
       searchGroup: formValues.searchGroup || '',
+      searchRedemption: formValues.searchRedemption || '',
+      searchGlobalModelRatio: formValues.searchGlobalModelRatio || '',
     };
   };
 
@@ -83,6 +87,10 @@ export const useUsersData = () => {
       p: String(startIdx),
       page_size: String(pageSize),
     });
+    const { searchGlobalModelRatio } = getFormValues();
+    if (searchGlobalModelRatio) {
+      params.append('global_model_ratio_filter', searchGlobalModelRatio);
+    }
     if (currentSortField) {
       params.append('sort_field', currentSortField);
     }
@@ -108,17 +116,29 @@ export const useUsersData = () => {
     pageSize,
     searchKeyword = null,
     searchGroup = null,
+    searchRedemption = null,
     currentSortField = sortField,
     currentSortOrder = sortOrder,
   ) => {
     // If no parameters passed, get values from form
-    if (searchKeyword === null || searchGroup === null) {
+    if (
+      searchKeyword === null ||
+      searchGroup === null ||
+      searchRedemption === null
+    ) {
       const formValues = getFormValues();
       searchKeyword = formValues.searchKeyword;
       searchGroup = formValues.searchGroup;
+      searchRedemption = formValues.searchRedemption;
     }
+    const { searchGlobalModelRatio } = getFormValues();
 
-    if (searchKeyword === '' && searchGroup === '') {
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchRedemption === '' &&
+      searchGlobalModelRatio === ''
+    ) {
       // If keyword is blank, load files instead
       await loadUsers(startIdx, pageSize, currentSortField, currentSortOrder);
       return;
@@ -127,9 +147,13 @@ export const useUsersData = () => {
     const params = new URLSearchParams({
       keyword: searchKeyword,
       group: searchGroup,
+      redemption: searchRedemption,
       p: String(startIdx),
       page_size: String(pageSize),
     });
+    if (searchGlobalModelRatio) {
+      params.append('global_model_ratio_filter', searchGlobalModelRatio);
+    }
     if (currentSortField) {
       params.append('sort_field', currentSortField);
     }
@@ -220,11 +244,29 @@ export const useUsersData = () => {
   // Handle page change
   const handlePageChange = (page) => {
     setActivePage(page);
-    const { searchKeyword, searchGroup } = getFormValues();
-    if (searchKeyword === '' && searchGroup === '') {
+    const {
+      searchKeyword,
+      searchGroup,
+      searchRedemption,
+      searchGlobalModelRatio,
+    } = getFormValues();
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchRedemption === '' &&
+      searchGlobalModelRatio === ''
+    ) {
       loadUsers(page, pageSize, sortField, sortOrder).then();
     } else {
-      searchUsers(page, pageSize, searchKeyword, searchGroup, sortField, sortOrder).then();
+      searchUsers(
+        page,
+        pageSize,
+        searchKeyword,
+        searchGroup,
+        searchRedemption,
+        sortField,
+        sortOrder,
+      ).then();
     }
   };
 
@@ -233,11 +275,30 @@ export const useUsersData = () => {
     localStorage.setItem('page-size', size + '');
     setPageSize(size);
     setActivePage(1);
-    loadUsers(activePage, size, sortField, sortOrder)
-      .then()
-      .catch((reason) => {
-        showError(reason);
-      });
+    const {
+      searchKeyword,
+      searchGroup,
+      searchRedemption,
+      searchGlobalModelRatio,
+    } = getFormValues();
+    const loader =
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchRedemption === '' &&
+      searchGlobalModelRatio === ''
+        ? loadUsers(1, size, sortField, sortOrder)
+        : searchUsers(
+            1,
+            size,
+            searchKeyword,
+            searchGroup,
+            searchRedemption,
+            sortField,
+            sortOrder,
+          );
+    loader.catch((reason) => {
+      showError(reason);
+    });
   };
 
   const handleTableSortChange = async (sorter) => {
@@ -258,8 +319,18 @@ export const useUsersData = () => {
     setSortOrder(nextSortOrder);
     setActivePage(1);
 
-    const { searchKeyword, searchGroup } = getFormValues();
-    if (searchKeyword === '' && searchGroup === '') {
+    const {
+      searchKeyword,
+      searchGroup,
+      searchRedemption,
+      searchGlobalModelRatio,
+    } = getFormValues();
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchRedemption === '' &&
+      searchGlobalModelRatio === ''
+    ) {
       await loadUsers(1, pageSize, nextSortField, nextSortOrder);
     } else {
       await searchUsers(
@@ -267,6 +338,7 @@ export const useUsersData = () => {
         pageSize,
         searchKeyword,
         searchGroup,
+        searchRedemption,
         nextSortField,
         nextSortOrder,
       );
@@ -288,11 +360,27 @@ export const useUsersData = () => {
 
   // Refresh data
   const refresh = async (page = activePage) => {
-    const { searchKeyword, searchGroup } = getFormValues();
-    if (searchKeyword === '' && searchGroup === '') {
+    const {
+      searchKeyword,
+      searchGroup,
+      searchRedemption,
+      searchGlobalModelRatio,
+    } = getFormValues();
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchRedemption === '' &&
+      searchGlobalModelRatio === ''
+    ) {
       await loadUsers(page, pageSize);
     } else {
-      await searchUsers(page, pageSize, searchKeyword, searchGroup);
+      await searchUsers(
+        page,
+        pageSize,
+        searchKeyword,
+        searchGroup,
+        searchRedemption,
+      );
     }
   };
 

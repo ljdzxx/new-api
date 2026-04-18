@@ -279,6 +279,10 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * globalModelRatio
 	globalModelRatio := ratio_setting.GetGlobalModelRatio()
+	userGlobalModelRatio, err := model.GetUserGlobalModelRatio(task.UserId, false)
+	if err == nil {
+		globalModelRatio *= userGlobalModelRatio
+	}
 	actualQuota := int(float64(totalTokens) * modelRatio * finalGroupRatio * globalModelRatio)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)

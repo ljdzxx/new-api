@@ -37,6 +37,7 @@ const routerMap = {
   redemption: '/console/redemption',
   topup: '/console/topup',
   user: '/console/user',
+  subscription_rank: '/console/subscription-rank',
   subscription: '/console/subscription',
   log: '/console/log',
   midjourney: '/console/midjourney',
@@ -187,6 +188,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('用户管理'),
         itemKey: 'user',
         to: '/user',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('订阅使用榜'),
+        itemKey: 'subscription_rank',
+        to: '/console/subscription-rank',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

@@ -229,17 +229,23 @@ func GetAllUsers(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	sortField := c.Query("sort_field")
 	sortOrder := c.Query("sort_order")
-	users, total, err := model.GetAllUsers(pageInfo, sortField, sortOrder)
+	ratioFilter := c.Query("global_model_ratio_filter")
+	users, total, err := model.GetAllUsers(pageInfo, sortField, sortOrder, ratioFilter)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if err := fillUsersDailySubscriptionQuota(users); err != nil {
-		common.SysError("failed to fill daily subscription quota for users: " + err.Error())
+	if err := model.FillUsersListingExtras(users); err != nil {
+		common.SysError("failed to fill users listing extras: " + err.Error())
+	}
+	responseItems, err := buildAdminUserListResponseItems(users)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(users)
+	pageInfo.SetItems(responseItems)
 
 	common.ApiSuccess(c, pageInfo)
 	return
@@ -248,58 +254,50 @@ func GetAllUsers(c *gin.Context) {
 func SearchUsers(c *gin.Context) {
 	keyword := c.Query("keyword")
 	group := c.Query("group")
+	redemptionKey := c.Query("redemption")
 	sortField := c.Query("sort_field")
 	sortOrder := c.Query("sort_order")
+	ratioFilter := c.Query("global_model_ratio_filter")
 	pageInfo := common.GetPageQuery(c)
-	users, total, err := model.SearchUsers(keyword, group, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortField, sortOrder)
+	users, total, err := model.SearchUsers(keyword, group, redemptionKey, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), sortField, sortOrder, ratioFilter)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if err := fillUsersDailySubscriptionQuota(users); err != nil {
-		common.SysError("failed to fill daily subscription quota for users: " + err.Error())
+	if err := model.FillUsersListingExtras(users); err != nil {
+		common.SysError("failed to fill users listing extras: " + err.Error())
+	}
+	responseItems, err := buildAdminUserListResponseItems(users)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
 
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(users)
+	pageInfo.SetItems(responseItems)
 	common.ApiSuccess(c, pageInfo)
 	return
 }
 
-func fillUsersDailySubscriptionQuota(users []*model.User) error {
+func buildAdminUserListResponseItems(users []*model.User) ([]map[string]interface{}, error) {
 	if len(users) == 0 {
-		return nil
+		return []map[string]interface{}{}, nil
 	}
-	userIDs := make([]int, 0, len(users))
-	for _, user := range users {
-		if user == nil || user.Id <= 0 {
-			continue
-		}
-		userIDs = append(userIDs, user.Id)
-	}
-	if len(userIDs) == 0 {
-		return nil
-	}
-	statsByUserID, err := model.GetDailySubscriptionQuotaStatsByUserIDs(userIDs)
+	dataBytes, err := common.Marshal(users)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	for _, user := range users {
-		if user == nil {
+	responseItems := make([]map[string]interface{}, 0, len(users))
+	if err = common.Unmarshal(dataBytes, &responseItems); err != nil {
+		return nil, err
+	}
+	for i, user := range users {
+		if i >= len(responseItems) || user == nil {
 			continue
 		}
-		stat, ok := statsByUserID[user.Id]
-		if !ok {
-			user.DailySubscriptionTotal = 0
-			user.DailySubscriptionRemain = 0
-			user.DailySubscriptionUnlimited = false
-			continue
-		}
-		user.DailySubscriptionTotal = stat.Total
-		user.DailySubscriptionRemain = stat.Remain
-		user.DailySubscriptionUnlimited = stat.Unlimited
+		responseItems[i]["global_model_ratio"] = user.GlobalModelRatio
 	}
-	return nil
+	return responseItems, nil
 }
 
 func GetUser(c *gin.Context) {
@@ -318,10 +316,21 @@ func GetUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionSameLevel)
 		return
 	}
+	dataBytes, err := common.Marshal(user)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	responseData := make(map[string]interface{})
+	if err = common.Unmarshal(dataBytes, &responseData); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	responseData["global_model_ratio"] = user.GlobalModelRatio
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    user,
+		"data":    responseData,
 	})
 	return
 }
@@ -584,20 +593,32 @@ func GetUserModels(c *gin.Context) {
 }
 
 func UpdateUser(c *gin.Context) {
-	var updatedUser model.User
-	err := common.DecodeJson(c.Request.Body, &updatedUser)
-	if err != nil || updatedUser.Id == 0 {
+	type updateUserRequest struct {
+		Id               int      `json:"id"`
+		Username         string   `json:"username" validate:"max=20"`
+		Password         string   `json:"password" validate:"omitempty,min=8,max=20"`
+		DisplayName      string   `json:"display_name" validate:"max=20"`
+		Group            string   `json:"group"`
+		Quota            int      `json:"quota"`
+		Remark           string   `json:"remark" validate:"max=255"`
+		GlobalModelRatio *float64 `json:"global_model_ratio"`
+	}
+
+	var req updateUserRequest
+	err := common.DecodeJson(c.Request.Body, &req)
+	if err != nil || req.Id == 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	if updatedUser.Password == "" {
-		updatedUser.Password = "$I_LOVE_U" // make Validator happy :)
+	if req.GlobalModelRatio != nil && *req.GlobalModelRatio < 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
 	}
-	if err := common.Validate.Struct(&updatedUser); err != nil {
+	if err := common.Validate.Struct(&req); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
-	originUser, err := model.GetUserById(updatedUser.Id, false)
+	originUser, err := model.GetUserById(req.Id, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -606,6 +627,25 @@ func UpdateUser(c *gin.Context) {
 	if myRole <= originUser.Role && myRole != common.RoleRootUser {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionHigherLevel)
 		return
+	}
+	globalModelRatio := originUser.GlobalModelRatio
+	if req.GlobalModelRatio != nil {
+		globalModelRatio = *req.GlobalModelRatio
+	}
+
+	updatedUser := model.User{
+		Id:               req.Id,
+		Username:         req.Username,
+		Password:         req.Password,
+		DisplayName:      req.DisplayName,
+		Group:            req.Group,
+		Quota:            req.Quota,
+		Remark:           req.Remark,
+		GlobalModelRatio: globalModelRatio,
+		Role:             originUser.Role,
+	}
+	if updatedUser.Password == "" {
+		updatedUser.Password = "$I_LOVE_U"
 	}
 	if myRole <= updatedUser.Role && myRole != common.RoleRootUser {
 		common.ApiErrorI18n(c, i18n.MsgUserCannotCreateHigherLevel)

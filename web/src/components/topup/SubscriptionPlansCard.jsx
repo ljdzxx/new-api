@@ -409,20 +409,32 @@ const SubscriptionPlansCard = ({
                     const isCancelled = subscription?.status === 'cancelled';
                     const isActive =
                       subscription?.status === 'active' && !isExpired;
-                    const statusText = isActive
-                      ? t('生效')
-                      : isCancelled
-                        ? t('已作废')
-                        : t('已过期');
-
                     return (
                       <div key={subscription?.id || subIndex}>
-                        <div className='text-xs mb-1'>
+                        <div className='flex items-center gap-2 text-xs mb-1 flex-wrap'>
                           <span className='font-medium'>
                             {planTitle
-                              ? `${planTitle} · ${t('订阅')} #${subscription?.id} ${statusText}`
-                              : `${t('订阅')} #${subscription?.id} ${statusText}`}
+                              ? `${planTitle} · ${t('订阅')} #${subscription?.id}`
+                              : `${t('订阅')} #${subscription?.id}`}
                           </span>
+                          {isActive ? (
+                            <Tag
+                              color='white'
+                              size='small'
+                              shape='circle'
+                              prefixIcon={<Badge dot type='success' />}
+                            >
+                              {t('生效')}
+                            </Tag>
+                          ) : isCancelled ? (
+                            <Tag color='white' size='small' shape='circle'>
+                              {t('已作废')}
+                            </Tag>
+                          ) : (
+                            <Tag color='white' size='small' shape='circle'>
+                              {t('已过期')}
+                            </Tag>
+                          )}
                         </div>
                         <div className='text-xs text-gray-500 mb-1'>
                           {t('至')} {formatSubscriptionEndTime(subscription?.end_time || 0)}

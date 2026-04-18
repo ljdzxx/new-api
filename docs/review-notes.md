@@ -198,6 +198,215 @@ Historical SQL files exist under `bin/`, but they appear to be upgrade scripts r
 If a future session needs prior context, ask the agent to read:
 
 - `AGENTS.md`
+
+## 8. 2026-04-18 User Management Changes
+
+This section summarizes the user-management related feature work and UI adjustments completed after the earlier review notes.
+
+### 8.1 Daily subscription usage statistics
+
+Goal:
+
+- Support real-time daily subscription quota statistics per user.
+- Persist daily records instead of only relying on the mutable `user_subscriptions.amount_used` current-cycle value.
+- Expose the data from the admin user list via a modal with pagination.
+
+Backend changes:
+
+- Added daily statistics model:
+  - `model/subscription_daily_stat.go`
+- Added migration registration:
+  - `model/main.go`
+- Added real-time/stateless synchronization hooks around subscription lifecycle changes:
+  - `model/subscription.go`
+- Added periodic补全/snapshot maintenance from the reset task:
+  - `service/subscription_reset_task.go`
+- Added admin query API:
+  - `controller/user_subscription_daily_stat.go`
+  - `router/api-router.go`
+
+Frontend changes:
+
+- Added user statistics modal:
+  - `web/src/components/table/users/modals/UserSubscriptionStatsModal.jsx`
+- Added entry point wiring from the user list:
+  - `web/src/components/table/users/UsersTable.jsx`
+  - `web/src/components/table/users/UsersColumnDefs.jsx`
+
+UI behavior:
+
+- Summary cards for today's total/used/remain quota and active subscriptions.
+- Tabbed display for daily aggregates and per-subscription details.
+- Supports filters and server-side pagination.
+
+### 8.2 User list support for redemption-code reverse lookup
+
+Goal:
+
+- Allow admin to search users by redemption code, so a specific redeemed code can be traced back to the user who used it.
+
+Changed files:
+
+- `web/src/components/table/users/UsersFilters.jsx`
+- `web/src/hooks/users/useUsersData.jsx`
+- `controller/user.go`
+- `model/user.go`
+
+Notes:
+
+- The redemption code field was added to the user-list query conditions.
+- Search logic was extended on the backend instead of doing page-local filtering.
+
+### 8.3 Redemption records modal
+
+Goal:
+
+- Show how many redemption codes a user has used.
+- Provide a paginated detail modal for each user's redemption history.
+
+Backend changes:
+
+- Added redemption-record query endpoint:
+  - `controller/user_redemption.go`
+  - `model/user_redemption.go`
+  - `router/api-router.go`
+
+Model changes:
+
+- Added `redemption_id` association on subscription records so redemption-created subscriptions can be linked more accurately:
+  - `model/subscription.go`
+  - `model/redemption.go`
+
+Frontend changes:
+
+- Added redemption records modal:
+  - `web/src/components/table/users/modals/UserRedemptionRecordsModal.jsx`
+- Added user-list column and action:
+  - `web/src/components/table/users/UsersColumnDefs.jsx`
+  - `web/src/components/table/users/UsersTable.jsx`
+
+Display rules:
+
+- Subscription redemption and quota redemption are shown separately.
+- For quota redemption:
+  - source/status are shown explicitly instead of pretending it is a subscription.
+  - subscription start/end time remain empty.
+- Admin-granted subscriptions are intentionally excluded from redemption records because they are not redemption events.
+
+Later enhancement:
+
+- Added status filter support in the redemption modal.
+- Added a dedicated `来源` column to explicitly distinguish:
+  - `兑换订阅`
+  - `额度兑换`
+
+### 8.4 Subscription source records
+
+Goal:
+
+- Provide a unified view of how a subscription was created:
+  - admin gift
+  - redemption
+  - paid purchase
+
+Backend work completed:
+
+- `model/user_subscription_source.go`
+- `controller/user_subscription_source.go`
+- `router/api-router.go`
+
+Frontend work completed:
+
+- `web/src/components/table/users/modals/UserSubscriptionSourcesModal.jsx`
+
+Current status:
+
+- The backend endpoint and modal component exist.
+- The `订阅来源` column was later removed from the user list to reduce table width pressure.
+- So this capability is currently implemented but not exposed from the user table entry column.
+
+### 8.5 User list table layout and interaction adjustments
+
+The `/console/user` table had grown significantly, which caused multiple rounds of layout tuning.
+
+Final direction in the current branch:
+
+- Keep horizontal scrolling enabled for the ordinary columns.
+- Keep `操作` as the right-fixed column.
+- Move `统计` into the `operate` actions rather than keeping it as a standalone column.
+- Keep `兑换记录` as an ordinary column.
+- Move `注册时间` to the end of the ordinary columns.
+- Remove the `订阅来源` column from the visible user table.
+
+Key files:
+
+- `web/src/components/table/users/UsersColumnDefs.jsx`
+- `web/src/components/table/users/UsersTable.jsx`
+
+Specific adjustments made:
+
+- Rebalanced column widths to reduce overlap and clipping.
+- Added or adjusted explicit widths for multiple columns.
+- Restored horizontal scrolling behavior for wide tables.
+- Put `统计` back into the fixed right-side action area as the first action button.
+- Increased the `operate` column width so action buttons are not silently clipped.
+
+Important implementation note:
+
+- `showUserSubscriptionStatsModal` was already passed from `UsersTable`.
+- The reason the stats button previously did not render was that `renderOperations()` did not destructure or render it.
+- This was fixed by wiring the prop into `renderOperations()` and rendering the button explicitly.
+
+### 8.6 Frontend text cleanup
+
+The user-management files contained visible garbled Chinese strings/mojibake.
+
+Primary cleanup file:
+
+- `web/src/components/table/users/UsersColumnDefs.jsx`
+
+Representative fixes:
+
+- user role labels
+- user status labels
+- quota labels
+- invite info labels
+- operation labels
+- `重置 Passkey`
+- `重置 2FA`
+
+There may still be additional garbled strings in some modal files under:
+
+- `web/src/components/table/users/modals/`
+
+Those should be checked separately if `/console/user` still shows mojibake in modal content.
+
+### 8.7 Wallet/top-up page note
+
+The wallet page subscription status display was restored from plain text back to styled tag/badge presentation.
+
+Changed file:
+
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+
+Context:
+
+- A historical change had replaced status tags with plain text such as `生效` / `已过期` / `已作废`.
+- The styled badge/tag rendering was restored for clarity and UI consistency.
+
+### 8.8 Build verification during this round
+
+Verified successfully:
+
+- Backend API-only build:
+  - `go build -tags noweb -o new-api-api`
+- Frontend build:
+  - `bun run build`
+
+Additional note:
+
+- On Windows, `vite build` previously hit `EPERM unlink web/dist/favicon.lemon.ico`.
+- Root cause was an external process locking the icon file rather than a code issue.
 - `docs/review-notes.md`
 
 This should restore the main review context quickly without repeating the full static reading pass.

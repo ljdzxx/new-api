@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -17,6 +18,19 @@ import (
 
 // https://docs.claude.com/en/docs/build-with-claude/prompt-caching#1-hour-cache-duration
 const claudeCacheCreation1hMultiplier = 6 / 3.75
+
+func getEffectiveGlobalModelRatio(userID int) float64 {
+	effectiveRatio := ratio_setting.GetGlobalModelRatio()
+	if userID <= 0 {
+		return effectiveRatio
+	}
+	userRatio, err := model.GetUserGlobalModelRatio(userID, false)
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to get user global model ratio, user_id=%d: %s", userID, err.Error()))
+		return effectiveRatio
+	}
+	return effectiveRatio * userRatio
+}
 
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
 func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.GroupRatioInfo {
@@ -51,7 +65,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
-	globalModelRatio := ratio_setting.GetGlobalModelRatio()
+	globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -148,7 +162,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
-	globalModelRatio := ratio_setting.GetGlobalModelRatio()
+	globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	// 如果没有配置价格，检查模型倍率配置

@@ -37,6 +37,7 @@ type User struct {
 	Quota            int            `json:"quota" gorm:"type:int;default:0"`
 	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	GlobalModelRatio float64        `json:"-" gorm:"type:decimal(12,6);default:1;column:global_model_ratio"`
 	Group            string         `json:"group" gorm:"type:varchar(64);default:'default'"`
 	UserLevelId      int            `json:"user_level_id" gorm:"type:int;default:1;column:user_level_id;index"`
 	AffCode          string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
@@ -54,6 +55,7 @@ type User struct {
 	DailySubscriptionTotal     int64 `json:"daily_subscription_total" gorm:"-"`
 	DailySubscriptionRemain    int64 `json:"daily_subscription_remain" gorm:"-"`
 	DailySubscriptionUnlimited bool  `json:"daily_subscription_unlimited" gorm:"-"`
+	RedemptionCount            int64 `json:"redemption_count" gorm:"-"`
 }
 
 func (user *User) BeforeCreate(tx *gorm.DB) error {
@@ -65,14 +67,15 @@ func (user *User) BeforeCreate(tx *gorm.DB) error {
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:          user.Id,
-		Group:       user.Group,
-		UserLevelID: user.UserLevelId,
-		Quota:       user.Quota,
-		Status:      user.Status,
-		Username:    user.Username,
-		Setting:     user.Setting,
-		Email:       user.Email,
+		Id:               user.Id,
+		Group:            user.Group,
+		UserLevelID:      user.UserLevelId,
+		Quota:            user.Quota,
+		Status:           user.Status,
+		Username:         user.Username,
+		Setting:          user.Setting,
+		Email:            user.Email,
+		GlobalModelRatio: user.GlobalModelRatio,
 	}
 	return cache
 }
@@ -228,7 +231,20 @@ func buildUserSortConfig(sortField string, sortOrder string) (useDailyUsedSort b
 	}
 }
 
-func GetAllUsers(pageInfo *common.PageInfo, sortField string, sortOrder string) (users []*User, total int64, err error) {
+func applyUserGlobalModelRatioFilter(query *gorm.DB, ratioFilter string) *gorm.DB {
+	switch strings.TrimSpace(ratioFilter) {
+	case "default":
+		return query.Where("global_model_ratio = ?", 1)
+	case "custom":
+		return query.Where("global_model_ratio <> ?", 1)
+	case "free":
+		return query.Where("global_model_ratio = ?", 0)
+	default:
+		return query
+	}
+}
+
+func GetAllUsers(pageInfo *common.PageInfo, sortField string, sortOrder string, ratioFilter string) (users []*User, total int64, err error) {
 	// Start transaction
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -241,14 +257,15 @@ func GetAllUsers(pageInfo *common.PageInfo, sortField string, sortOrder string) 
 	}()
 
 	// Get total count within transaction
-	err = tx.Unscoped().Model(&User{}).Count(&total).Error
+	countQuery := applyUserGlobalModelRatioFilter(tx.Unscoped().Model(&User{}), ratioFilter)
+	err = countQuery.Count(&total).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
 	}
 
 	useDailyUsedSort, orderClauses := buildUserSortConfig(sortField, sortOrder)
-	listQuery := tx.Unscoped().Model(&User{})
+	listQuery := applyUserGlobalModelRatioFilter(tx.Unscoped().Model(&User{}), ratioFilter)
 	if useDailyUsedSort {
 		now := GetDBTimestamp()
 		listQuery = listQuery.Joins(`LEFT JOIN (
@@ -280,7 +297,7 @@ GROUP BY us.user_id
 	return users, total, nil
 }
 
-func SearchUsers(keyword string, group string, startIdx int, num int, sortField string, sortOrder string) ([]*User, int64, error) {
+func SearchUsers(keyword string, group string, redemptionKey string, startIdx int, num int, sortField string, sortOrder string, ratioFilter string) ([]*User, int64, error) {
 	var users []*User
 	var total int64
 	var err error
@@ -297,7 +314,7 @@ func SearchUsers(keyword string, group string, startIdx int, num int, sortField 
 	}()
 
 	// 构建基础查询
-	query := tx.Unscoped().Model(&User{})
+	query := applyUserGlobalModelRatioFilter(tx.Unscoped().Model(&User{}), ratioFilter)
 	useDailyUsedSort, orderClauses := buildUserSortConfig(sortField, sortOrder)
 	if useDailyUsedSort {
 		now := GetDBTimestamp()
@@ -310,6 +327,13 @@ JOIN subscription_plans AS sp ON sp.id = us.plan_id
 WHERE us.status = ? AND us.end_time > ? AND sp.quota_reset_period = ?
 GROUP BY us.user_id
 ) AS ds ON ds.user_id = users.id`, "active", now, SubscriptionResetDaily)
+	}
+	redemptionKey = strings.TrimSpace(redemptionKey)
+	if redemptionKey != "" {
+		redemptionSubQuery := tx.Model(&Redemption{}).
+			Select("used_user_id").
+			Where("used_user_id > 0 AND "+commonKeyCol+" LIKE ?", "%"+redemptionKey+"%")
+		query = query.Where("id IN (?)", redemptionSubQuery)
 	}
 
 	// 构建搜索条件
@@ -601,11 +625,12 @@ func (user *User) Edit(updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":     newUser.Username,
-		"display_name": newUser.DisplayName,
-		"group":        newUser.Group,
-		"quota":        newUser.Quota,
-		"remark":       newUser.Remark,
+		"username":           newUser.Username,
+		"display_name":       newUser.DisplayName,
+		"group":              newUser.Group,
+		"quota":              newUser.Quota,
+		"remark":             newUser.Remark,
+		"global_model_ratio": newUser.GlobalModelRatio,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password
@@ -950,6 +975,31 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 		Setting: setting,
 	}
 	return userBase.GetSetting(), nil
+}
+
+func GetUserGlobalModelRatio(id int, fromDB bool) (ratio float64, err error) {
+	defer func() {
+		if shouldUpdateRedis(fromDB, err) {
+			gopool.Go(func() {
+				if err := updateUserGlobalModelRatioCache(id, ratio); err != nil {
+					common.SysLog("failed to update user global model ratio cache: " + err.Error())
+				}
+			})
+		}
+	}()
+	if !fromDB && common.RedisEnabled {
+		ratio, err := getUserGlobalModelRatioCache(id)
+		if err == nil {
+			return ratio, nil
+		}
+	}
+	fromDB = true
+	ratio = 1
+	err = DB.Model(&User{}).Where("id = ?", id).Select("global_model_ratio").Find(&ratio).Error
+	if err != nil {
+		return 1, err
+	}
+	return ratio, nil
 }
 
 func IncreaseUserQuota(id int, quota int, db bool) (err error) {

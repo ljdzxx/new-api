@@ -88,6 +88,7 @@ const NotificationSettings = ({
       channel: true,
       models: true,
       deployment: true,
+      subscription_rank: true,
       subscription: true,
       redemption: true,
       user: true,
@@ -172,6 +173,7 @@ const NotificationSettings = ({
         channel: true,
         models: true,
         deployment: true,
+        subscription_rank: true,
         subscription: true,
         redemption: true,
         user: true,
@@ -309,6 +311,11 @@ const NotificationSettings = ({
           key: 'subscription',
           title: t('订阅管理'),
           description: t('订阅套餐管理'),
+        },
+        {
+          key: 'subscription_rank',
+          title: t('订阅使用榜'),
+          description: t('查看订阅用户近 1/3/7 日使用量排行榜'),
         },
         {
           key: 'redemption',

@@ -1,0 +1,12 @@
+name = "jucodex-worker"
+main = "src/index.js"
+compatibility_date = "2025-02-01"
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "jucodex"
+
+[vars]
+BACKEND_HOST = "api.jucodex.com"
+BACKEND_PROTO = "https"
+BACKEND_PORT = ""

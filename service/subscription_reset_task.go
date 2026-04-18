@@ -24,6 +24,7 @@ var (
 	subscriptionResetOnce    sync.Once
 	subscriptionResetRunning atomic.Bool
 	subscriptionCleanupLast  atomic.Int64
+	subscriptionSnapshotDay  atomic.Int64
 )
 
 func StartSubscriptionQuotaResetTask() {
@@ -80,6 +81,23 @@ func runSubscriptionQuotaResetOnce() {
 		if n < subscriptionResetBatchSize {
 			break
 		}
+	}
+	currentDayKey := model.SubscriptionStatDayKeyFromUnix(model.GetDBTimestamp())
+	if subscriptionSnapshotDay.Load() != currentDayKey {
+		for {
+			n, err := model.EnsureTodaySubscriptionDailyStats(subscriptionResetBatchSize)
+			if err != nil {
+				logger.LogWarn(ctx, fmt.Sprintf("subscription daily snapshot task failed: %v", err))
+				return
+			}
+			if n == 0 {
+				break
+			}
+			if n < subscriptionResetBatchSize {
+				break
+			}
+		}
+		subscriptionSnapshotDay.Store(currentDayKey)
 	}
 	lastCleanup := time.Unix(subscriptionCleanupLast.Load(), 0)
 	if time.Since(lastCleanup) >= subscriptionCleanupInterval {

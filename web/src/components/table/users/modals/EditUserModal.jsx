@@ -85,6 +85,7 @@ const EditUserModal = (props) => {
     linux_do_id: '',
     email: '',
     quota: 0,
+    global_model_ratio: 1,
     group: 'default',
     remark: '',
   });
@@ -134,6 +135,9 @@ const EditUserModal = (props) => {
     let payload = { ...values };
     if (typeof payload.quota === 'string')
       payload.quota = parseInt(payload.quota) || 0;
+    if (typeof payload.global_model_ratio === 'string') {
+      payload.global_model_ratio = parseFloat(payload.global_model_ratio) || 0;
+    }
     if (userId) {
       payload.id = parseInt(userId);
     }
@@ -322,6 +326,21 @@ const EditUserModal = (props) => {
                             onClick={() => setIsModalOpen(true)}
                           />
                         </Form.Slot>
+                      </Col>
+
+                      <Col span={24}>
+                        <Form.InputNumber
+                          field='global_model_ratio'
+                          label={t('用户全局模型倍率')}
+                          placeholder='1'
+                          min={0}
+                          step={0.01}
+                          precision={6}
+                          extraText={t(
+                            '默认 1，仅对该用户生效，会与系统全局模型倍率叠乘参与所有计费场景，不显示在使用日志中',
+                          )}
+                          style={{ width: '100%' }}
+                        />
                       </Col>
                     </Row>
                   </Card>

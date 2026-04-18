@@ -26,7 +26,6 @@ const UsersFilters = ({
   setFormApi,
   searchUsers,
   loadUsers,
-  activePage,
   pageSize,
   groupOptions,
   loading,
@@ -40,6 +39,12 @@ const UsersFilters = ({
     formApiRef.current.reset();
     setTimeout(() => {
       loadUsers(1, pageSize);
+    }, 100);
+  };
+
+  const triggerSearch = () => {
+    setTimeout(() => {
+      searchUsers(1, pageSize);
     }, 100);
   };
 
@@ -65,7 +70,19 @@ const UsersFilters = ({
           <Form.Input
             field='searchKeyword'
             prefix={<IconSearch />}
-            placeholder={t('支持搜索用户的 ID、用户名、显示名称和邮箱地址')}
+            placeholder={t(
+              '支持搜索用户的 ID、用户名、显示名称和邮箱地址',
+            )}
+            showClear
+            pure
+            size='small'
+          />
+        </div>
+        <div className='relative w-full md:w-56'>
+          <Form.Input
+            field='searchRedemption'
+            prefix={<IconSearch />}
+            placeholder={t('按兑换码搜索已使用该兑换码的用户')}
             showClear
             pure
             size='small'
@@ -76,12 +93,23 @@ const UsersFilters = ({
             field='searchGroup'
             placeholder={t('选择分组')}
             optionList={groupOptions}
-            onChange={(value) => {
-              // Group change triggers automatic search
-              setTimeout(() => {
-                searchUsers(1, pageSize);
-              }, 100);
-            }}
+            onChange={triggerSearch}
+            className='w-full'
+            showClear
+            pure
+            size='small'
+          />
+        </div>
+        <div className='w-full md:w-52'>
+          <Form.Select
+            field='searchGlobalModelRatio'
+            placeholder={t('用户倍率筛选')}
+            optionList={[
+              { label: t('默认倍率 (1)'), value: 'default' },
+              { label: t('自定义倍率 (!=1)'), value: 'custom' },
+              { label: t('免费倍率 (0)'), value: 'free' },
+            ]}
+            onChange={triggerSearch}
             className='w-full'
             showClear
             pure
