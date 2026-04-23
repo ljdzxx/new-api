@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
@@ -40,19 +41,18 @@ import { useIsMobile } from '../../../hooks/common/useIsMobile';
 
 const { Text } = Typography;
 
-// 状态映射配置
 const STATUS_CONFIG = {
   success: { type: 'success', key: '成功' },
   pending: { type: 'warning', key: '待支付' },
   expired: { type: 'danger', key: '已过期' },
 };
 
-// 支付方式映射
 const PAYMENT_METHOD_MAP = {
   stripe: 'Stripe',
   creem: 'Creem',
   alipay: '支付宝',
   wxpay: '微信',
+  mall: '商城',
 };
 
 const TopupHistoryModal = ({ visible, onCancel, t }) => {
@@ -64,11 +64,12 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   const [keyword, setKeyword] = useState('');
 
   const isMobile = useIsMobile();
+  const userIsAdmin = useMemo(() => isAdmin(), []);
 
   const loadTopups = async (currentPage, currentPageSize) => {
     setLoading(true);
     try {
-      const base = isAdmin() ? '/api/user/topup' : '/api/user/topup/self';
+      const base = userIsAdmin ? '/api/user/topup' : '/api/user/topup/self';
       const qs =
         `p=${currentPage}&page_size=${currentPageSize}` +
         (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '');
@@ -95,21 +96,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     }
   }, [visible, page, pageSize, keyword]);
 
-  const handlePageChange = (currentPage) => {
-    setPage(currentPage);
-  };
-
-  const handlePageSizeChange = (currentPageSize) => {
-    setPageSize(currentPageSize);
-    setPage(1);
-  };
-
-  const handleKeywordChange = (value) => {
-    setKeyword(value);
-    setPage(1);
-  };
-
-  // 管理员补单
   const handleAdminComplete = async (tradeNo) => {
     try {
       const res = await API.post('/api/user/topup/complete', {
@@ -135,7 +121,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     });
   };
 
-  // 渲染状态徽章
   const renderStatusBadge = (status) => {
     const config = STATUS_CONFIG[status] || { type: 'primary', key: status };
     return (
@@ -146,7 +131,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     );
   };
 
-  // 渲染支付方式
   const renderPaymentMethod = (pm) => {
     const displayName = PAYMENT_METHOD_MAP[pm];
     return <Text>{displayName ? t(displayName) : pm || '-'}</Text>;
@@ -156,9 +140,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     const tradeNo = (record?.trade_no || '').toLowerCase();
     return Number(record?.amount || 0) === 0 && tradeNo.startsWith('sub');
   };
-
-  // 检查是否为管理员
-  const userIsAdmin = useMemo(() => isAdmin(), []);
 
   const columns = useMemo(() => {
     const baseColumns = [
@@ -198,7 +179,9 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('支付金额'),
         dataIndex: 'money',
         key: 'money',
-        render: (money) => <Text type='danger'>¥{money.toFixed(2)}</Text>,
+        render: (money) => (
+          <Text type='danger'>¥{Number(money || 0).toFixed(2)}</Text>
+        ),
       },
       {
         title: t('状态'),
@@ -208,7 +191,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       },
     ];
 
-    // 管理员才显示操作列
     if (userIsAdmin) {
       baseColumns.push({
         title: t('操作'),
@@ -250,12 +232,16 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       <div className='mb-3'>
         <Input
           prefix={<IconSearch />}
-          placeholder={t('订单号')}
+          placeholder={t('搜索订单号')}
           value={keyword}
-          onChange={handleKeywordChange}
+          onChange={(value) => {
+            setKeyword(value);
+            setPage(1);
+          }}
           showClear
         />
       </div>
+
       <Table
         columns={columns}
         dataSource={topups}
@@ -267,8 +253,11 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           total: total,
           showSizeChanger: true,
           pageSizeOpts: [10, 20, 50, 100],
-          onPageChange: handlePageChange,
-          onPageSizeChange: handlePageSizeChange,
+          onPageChange: (currentPage) => setPage(currentPage),
+          onPageSizeChange: (currentPageSize) => {
+            setPageSize(currentPageSize);
+            setPage(1);
+          },
         }}
         size='small'
         empty={

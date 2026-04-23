@@ -1,8 +1,8 @@
-# Codex 配置脚本 (Windows)
+# Codex 配置脚本 (Windows) - ExecutionPolicy 修复版
 # 用法:
-#   powershell -ExecutionPolicy Bypass -File setup-codex.ps1 -BaseUrl https://api.jucodex.com -ApiKey sk-xxxx
+#   powershell -ExecutionPolicy Bypass -File setup-codex.ps1 -BaseUrl https://api.jucodex.com/v1 -ApiKey sk-xxxx
 #   powershell -ExecutionPolicy Bypass -File setup-codex.ps1 -Show
-#   powershell -ExecutionPolicy Bypass -File setup-codex.ps1 -Test -BaseUrl https://api.jucodex.com -ApiKey sk-xxxx
+#   powershell -ExecutionPolicy Bypass -File setup-codex.ps1 -Test -BaseUrl https://api.jucodex.com/v1 -ApiKey sk-xxxx
 
 param(
     [string]$BaseUrl,
@@ -17,7 +17,7 @@ if (-not $BaseUrl -and (Test-Path Variable:url)) { $BaseUrl = $url }
 if (-not $ApiKey -and (Test-Path Variable:key)) { $ApiKey = $key }
 
 # 配置路径
-$DefaultBaseUrl = "https://api.jucodex.com"
+$DefaultBaseUrl = "https://api.jucodex.com/v1"
 $CodexConfigDir = "$env:USERPROFILE\.codex"
 $CodexConfigFile = "$CodexConfigDir\config.toml"
 $CodexAuthFile = "$CodexConfigDir\auth.json"
@@ -34,13 +34,13 @@ function Write-Success {
     Write-Host " $Message"
 }
 
-function Write-Warning {
+function Write-Warn {
     param([string]$Message)
     Write-Host "[WARNING]" -ForegroundColor Yellow -NoNewline
     Write-Host " $Message"
 }
 
-function Write-Error {
+function Write-Err {
     param([string]$Message)
     Write-Host "[ERROR]" -ForegroundColor Red -NoNewline
     Write-Host " $Message"
@@ -48,7 +48,7 @@ function Write-Error {
 
 function Show-Help {
     Write-Host @"
-Codex Configuration Script (Windows)
+Codex Configuration Script (Windows, ExecutionPolicy-fixed)
 
 Usage:
   powershell -ExecutionPolicy Bypass -File setup-codex.ps1 [OPTIONS]
@@ -66,16 +66,50 @@ Compatibility mode (this script writes BOTH files):
 "@
 }
 
+function Resolve-CommandPath {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Names,
+        [string[]]$HardcodedPaths = @()
+    )
+
+    foreach ($p in $HardcodedPaths) {
+        if ([string]::IsNullOrWhiteSpace($p)) { continue }
+        if (Test-Path $p) { return $p }
+    }
+
+    foreach ($n in $Names) {
+        try {
+            $cmd = Get-Command $n -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { return $cmd.Source }
+        } catch {}
+    }
+
+    return $null
+}
+
+function Get-NpmPath {
+    $hardcoded = @(
+        "$env:ProgramFiles\nodejs\npm.cmd",
+        "$env:ProgramFiles(x86)\nodejs\npm.cmd"
+    )
+    return Resolve-CommandPath -Names @("npm.cmd", "npm.exe", "npm") -HardcodedPaths $hardcoded
+}
+
+function Get-CodexPath {
+    # 优先 cmd/exe，避免 codex.ps1 受执行策略影响
+    return Resolve-CommandPath -Names @("codex.cmd", "codex.exe", "codex")
+}
+
 function Test-Codex {
     try {
-        $cmd = Get-Command codex -ErrorAction SilentlyContinue
-        if ($cmd) {
-            $ver = & codex --version 2>$null
+        $codexPath = Get-CodexPath
+        if ($codexPath) {
+            $ver = & $codexPath --version 2>$null
             if ($LASTEXITCODE -eq 0 -and $ver) {
                 Write-Success "Codex is already installed: $ver"
                 return $true
             }
-            Write-Success "Codex command exists"
+            Write-Success "Codex command exists: $codexPath"
             return $true
         }
     }
@@ -93,7 +127,7 @@ function Test-NodeJS {
                     Write-Success "Node.js is installed: $nodeVersion"
                     return $true
                 }
-                Write-Warning "Node.js version is too old: $nodeVersion (requires >= 18.0.0)"
+                Write-Warn "Node.js version is too old: $nodeVersion (requires >= 18.0.0)"
             }
         }
     }
@@ -111,12 +145,13 @@ function Install-NodeJS {
 
     try {
         Write-Info "Downloading Node.js installer from: $nodeUrl"
+        $oldProgress = $ProgressPreference
         $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $nodeUrl -OutFile $installerPath -UseBasicParsing
-        $ProgressPreference = 'Continue'
+        $ProgressPreference = $oldProgress
 
         if (-not (Test-Path $installerPath)) {
-            Write-Error "Failed to download Node.js installer"
+            Write-Err "Failed to download Node.js installer"
             return $false
         }
 
@@ -127,16 +162,20 @@ function Install-NodeJS {
         Remove-Item -Path $installerPath -Force -ErrorAction SilentlyContinue
 
         if ($process.ExitCode -ne 0) {
-            Write-Error "Node.js installation failed with exit code: $($process.ExitCode)"
+            Write-Err "Node.js installation failed with exit code: $($process.ExitCode)"
             return $false
         }
 
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        # 刷新当前进程 PATH（避免新装后当前窗口找不到命令）
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = "$machinePath;$userPath"
+
         Write-Success "Node.js installed successfully"
         return $true
     }
     catch {
-        Write-Error "Failed to install Node.js: $($_.Exception.Message)"
+        Write-Err "Failed to install Node.js: $($_.Exception.Message)"
         return $false
     }
 }
@@ -145,31 +184,45 @@ function Install-Codex {
     Write-Info "Installing Codex CLI..."
 
     try {
-        $npmVersion = & npm --version 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "npm is not available. Please restart PowerShell after Node.js installation."
+        $npmPath = Get-NpmPath
+        if (-not $npmPath) {
+            Write-Err "npm is not available. Please restart PowerShell after Node.js installation."
+            return $false
+        }
+
+        Write-Info "Using npm executable: $npmPath"
+        $npmVersion = & $npmPath --version 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $npmVersion) {
+            Write-Err "npm is found but not runnable."
             return $false
         }
 
         Write-Info "npm version: $npmVersion"
-        Write-Info "Running: npm install -g @openai/codex"
-        & npm install -g @openai/codex 2>&1 | ForEach-Object { Write-Host $_ }
+        Write-Info "Running: `"$npmPath`" install -g @openai/codex"
+
+        # 关键：使用 npm.cmd，规避 npm.ps1 执行策略限制
+        & $npmPath install -g @openai/codex 2>&1 | ForEach-Object { Write-Host $_ }
 
         if ($LASTEXITCODE -eq 0) {
-            $ver = & codex --version 2>$null
-            if ($LASTEXITCODE -eq 0 -and $ver) {
-                Write-Success "Codex installed successfully: $ver"
+            $codexPath = Get-CodexPath
+            if ($codexPath) {
+                $ver = & $codexPath --version 2>$null
+                if ($LASTEXITCODE -eq 0 -and $ver) {
+                    Write-Success "Codex installed successfully: $ver"
+                } else {
+                    Write-Success "Codex installed, command path: $codexPath"
+                }
             } else {
                 Write-Success "Codex install command finished"
             }
             return $true
         }
 
-        Write-Error "Failed to install Codex via npm"
+        Write-Err "Failed to install Codex via npm"
         return $false
     }
     catch {
-        Write-Error "Failed to install Codex: $($_.Exception.Message)"
+        Write-Err "Failed to install Codex: $($_.Exception.Message)"
         return $false
     }
 }
@@ -181,11 +234,11 @@ function Ensure-Codex {
         return $true
     }
 
-    Write-Warning "Codex is not installed"
+    Write-Warn "Codex is not installed"
 
     if (-not (Test-NodeJS)) {
         if (-not (Install-NodeJS)) {
-            Write-Warning "Failed to install Node.js automatically"
+            Write-Warn "Failed to install Node.js automatically"
             Write-Info "Please install Node.js manually from: https://nodejs.org/"
             return $false
         }
@@ -224,7 +277,7 @@ function Test-ApiKey {
         return $true
     }
 
-    Write-Error "Invalid API key format. Allowed chars: letters, numbers, dot, underscore, hyphen."
+    Write-Err "Invalid API key format. Allowed chars: letters, numbers, dot, underscore, hyphen."
     return $false
 }
 
@@ -237,7 +290,7 @@ function Test-ApiConnection {
     try {
         $uri = "$($BaseUrl.TrimEnd('/'))/health"
         $headers = @{
-            "Content-Type" = "application/json"
+            "Content-Type"  = "application/json"
             "Authorization" = "Bearer $ApiKey"
         }
 
@@ -247,11 +300,11 @@ function Test-ApiConnection {
     }
     catch {
         if ($_.Exception.Response -and $_.Exception.Response.StatusCode -eq 401) {
-            Write-Error "API key authentication failed (401)."
+            Write-Err "API key authentication failed (401)."
         } elseif ($_.Exception.Message -like "*Unable to connect*" -or $_.Exception.Message -like "*could not be resolved*") {
-            Write-Error "Cannot connect to API server. Check BaseUrl and network."
+            Write-Err "Cannot connect to API server. Check BaseUrl and network."
         } else {
-            Write-Error "API test failed: $($_.Exception.Message)"
+            Write-Err "API test failed: $($_.Exception.Message)"
         }
         return $false
     }
@@ -290,7 +343,6 @@ requires_openai_auth = true
         Set-Content -Path $CodexAuthFile -Value $auth -Encoding UTF8
         Write-Success "Codex auth written to: $CodexAuthFile"
 
-        # 同时写入环境变量，兼容依赖 env 的场景
         [Environment]::SetEnvironmentVariable("OPENAI_API_KEY", $ApiKey, [EnvironmentVariableTarget]::User)
         [Environment]::SetEnvironmentVariable("CODEX_API_KEY", $ApiKey, [EnvironmentVariableTarget]::User)
         $env:OPENAI_API_KEY = $ApiKey
@@ -300,7 +352,7 @@ requires_openai_auth = true
         return $true
     }
     catch {
-        Write-Error "Failed to create configuration: $($_.Exception.Message)"
+        Write-Err "Failed to create configuration: $($_.Exception.Message)"
         return $false
     }
 }
@@ -355,7 +407,10 @@ function Main {
 
     # 仅测试时不安装
     if (-not $Test) {
-        Ensure-Codex | Out-Null
+        if (-not (Ensure-Codex)) {
+            Write-Err "Codex installation check failed. Aborting configuration write."
+            return
+        }
         Write-Host ""
     }
 
@@ -373,7 +428,7 @@ function Main {
         while ([string]::IsNullOrWhiteSpace($ApiKey)) {
             $ApiKey = Read-Host "Enter your API key"
             if ([string]::IsNullOrWhiteSpace($ApiKey)) {
-                Write-Warning "API key is required"
+                Write-Warn "API key is required"
             } elseif (-not (Test-ApiKey $ApiKey)) {
                 $ApiKey = ""
             }
@@ -381,7 +436,7 @@ function Main {
     }
 
     if ([string]::IsNullOrWhiteSpace($BaseUrl) -or [string]::IsNullOrWhiteSpace($ApiKey)) {
-        Write-Error "Both BaseUrl and ApiKey are required"
+        Write-Err "Both BaseUrl and ApiKey are required"
         Write-Info "Use -Help for usage information"
         return
     }
@@ -412,15 +467,15 @@ function Main {
         Write-Info "  - $CodexConfigFile"
         Write-Info "  - $CodexAuthFile"
 
-        $codexCmd = Get-Command codex -ErrorAction SilentlyContinue
-        if ($codexCmd) {
-            Write-Info "Run 'codex --version' or start codex in a new terminal to verify."
+        $codexPath = Get-CodexPath
+        if ($codexPath) {
+            Write-Info "Run `"$codexPath --version`" or start codex in a new terminal to verify."
         }
 
         Write-Host ""
         Show-Settings
     } else {
-        Write-Error "Failed to write settings"
+        Write-Err "Failed to write settings"
     }
 }
 

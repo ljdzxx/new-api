@@ -1,4 +1,4 @@
-/*
+﻿/*
 Copyright (C) 2025 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
@@ -30,9 +30,15 @@ import {
   Tooltip,
   Typography,
 } from '@douyinfe/semi-ui';
-import { API, showError, showSuccess, renderQuota } from '../../helpers';
-import { getCurrencyConfig } from '../../helpers/render';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import {
+  API,
+  executePaymentCheckout,
+  showError,
+  showSuccess,
+  renderQuota,
+} from '../../helpers';
+import { getPaymentCurrencyConfig } from '../../helpers/render';
+import { RefreshCw } from 'lucide-react';
 import SubscriptionPurchaseModal from './modals/SubscriptionPurchaseModal';
 import {
   formatSubscriptionDuration,
@@ -41,14 +47,17 @@ import {
 
 const { Text } = Typography;
 
-function isValidHttpUrl(url) {
-  if (!url) return false;
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-  } catch {
-    return false;
+const PAYMENT_PROVIDER_EXCLUDED_TYPES = new Set(['stripe', 'creem', 'mall']);
+
+function getEpayMethods(rawMethods) {
+  if (!Array.isArray(rawMethods)) {
+    return [];
   }
+  return rawMethods.filter(
+    (method) =>
+      method?.type &&
+      !PAYMENT_PROVIDER_EXCLUDED_TYPES.has(method.type),
+  );
 }
 
 function formatSubscriptionEndTime(endTime) {
@@ -61,34 +70,6 @@ function formatSubscriptionEndTime(endTime) {
   const minute = date.getMinutes().toString().padStart(2, '0');
   const second = date.getSeconds().toString().padStart(2, '0');
   return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
-}
-
-// 过滤易支付方式
-function getEpayMethods(payMethods = []) {
-  return (payMethods || []).filter(
-    (m) => m?.type && m.type !== 'stripe' && m.type !== 'creem',
-  );
-}
-
-// 提交易支付表单
-function submitEpayForm({ url, params }) {
-  const form = document.createElement('form');
-  form.action = url;
-  form.method = 'POST';
-  const isSafari =
-    navigator.userAgent.indexOf('Safari') > -1 &&
-    navigator.userAgent.indexOf('Chrome') < 1;
-  if (!isSafari) form.target = '_blank';
-  Object.keys(params || {}).forEach((key) => {
-    const input = document.createElement('input');
-    input.type = 'hidden';
-    input.name = key;
-    input.value = params[key];
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
-  form.submit();
-  document.body.removeChild(form);
 }
 
 const SubscriptionPlansCard = ({
@@ -111,18 +92,43 @@ const SubscriptionPlansCard = ({
   const [paying, setPaying] = useState(false);
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedProviderMeta, setSelectedProviderMeta] = useState(null);
 
   const epayMethods = useMemo(() => getEpayMethods(payMethods), [payMethods]);
 
-  const openBuy = (p) => {
-    setSelectedPlan(p);
-    setSelectedEpayMethod(epayMethods?.[0]?.type || '');
-    setOpen(true);
+  const openBuy = async (p) => {
+    setPaying(true);
+    try {
+      const res = await API.get('/api/payment/subscription/meta', {
+        params: { plan_id: p?.plan?.id },
+      });
+      if (!res.data?.success) {
+        showError(res.data?.message || t('加载支付信息失败'));
+        return;
+      }
+      const providerMeta = res.data?.data?.provider_meta || null;
+      const availableChannels =
+        providerMeta?.available_channels?.length > 0
+          ? getEpayMethods(providerMeta.available_channels)
+          : epayMethods;
+      setSelectedPlan(p);
+      setSelectedProviderMeta(providerMeta);
+      setSelectedEpayMethod(availableChannels?.[0]?.type || '');
+      setOpen(true);
+    } catch (e) {
+      showError(t('加载支付信息失败'));
+    } finally {
+      setPaying(false);
+    }
   };
 
   const closeBuy = () => {
     setOpen(false);
+  };
+
+  const handleBuyAfterClose = () => {
     setSelectedPlan(null);
+    setSelectedProviderMeta(null);
     setPaying(false);
   };
 
@@ -135,92 +141,78 @@ const SubscriptionPlansCard = ({
     }
   };
 
+  const paySubscriptionWithUnifiedCheckout = async (paymentMethod = '') => {
+    const planId = selectedPlan?.plan?.id;
+    if (!planId) {
+      throw new Error(t('请选择订阅套餐'));
+    }
+    const res = await API.post('/api/payment/subscription/checkout', {
+      plan_id: planId,
+      payment_method: paymentMethod,
+    });
+    if (!res.data?.success) {
+      throw new Error(res.data?.message || t('发起支付失败'));
+    }
+    executePaymentCheckout(res.data.data);
+    showSuccess(t('已发起支付'));
+    closeBuy();
+  };
+
   const payStripe = async () => {
     if (!selectedPlan?.plan?.stripe_price_id) {
-      showError(t('该套餐未配置 Stripe'));
+      showError(t('当前套餐未配置 Stripe 价格'));
       return;
     }
     setPaying(true);
     try {
-      const res = await API.post('/api/subscription/stripe/pay', {
-        plan_id: selectedPlan.plan.id,
-      });
-      if (res.data?.message === 'success') {
-        window.open(res.data.data?.pay_link, '_blank');
-        showSuccess(t('已打开支付页面'));
-        closeBuy();
-      } else {
-        const errorMsg =
-          typeof res.data?.data === 'string'
-            ? res.data.data
-            : res.data?.message || t('支付失败');
-        showError(errorMsg);
-      }
+      await paySubscriptionWithUnifiedCheckout('stripe');
     } catch (e) {
-      showError(t('支付请求失败'));
+      showError(e.message || t('发起支付失败'));
     } finally {
       setPaying(false);
     }
   };
-
   const payCreem = async () => {
     if (!selectedPlan?.plan?.creem_product_id) {
-      showError(t('该套餐未配置 Creem'));
+      showError(t('当前套餐未配置 Creem 商品'));
       return;
     }
     setPaying(true);
     try {
-      const res = await API.post('/api/subscription/creem/pay', {
-        plan_id: selectedPlan.plan.id,
-      });
-      if (res.data?.message === 'success') {
-        window.open(res.data.data?.checkout_url, '_blank');
-        showSuccess(t('已打开支付页面'));
-        closeBuy();
-      } else {
-        const errorMsg =
-          typeof res.data?.data === 'string'
-            ? res.data.data
-            : res.data?.message || t('支付失败');
-        showError(errorMsg);
-      }
+      await paySubscriptionWithUnifiedCheckout('creem');
     } catch (e) {
-      showError(t('支付请求失败'));
+      showError(e.message || t('发起支付失败'));
     } finally {
       setPaying(false);
     }
   };
-
-  const payEpay = async () => {
-    if (!selectedEpayMethod) {
+  const payEpay = async (paymentMethod = selectedEpayMethod) => {
+    if (!paymentMethod) {
       showError(t('请选择支付方式'));
       return;
     }
     setPaying(true);
     try {
-      const res = await API.post('/api/subscription/epay/pay', {
-        plan_id: selectedPlan.plan.id,
-        payment_method: selectedEpayMethod,
-      });
-      if (res.data?.message === 'success') {
-        submitEpayForm({ url: res.data.url, params: res.data.data });
-        showSuccess(t('已发起支付'));
-        closeBuy();
-      } else {
-        const errorMsg =
-          typeof res.data?.data === 'string'
-            ? res.data.data
-            : res.data?.message || t('支付失败');
-        showError(errorMsg);
-      }
+      setSelectedEpayMethod(paymentMethod);
+      await paySubscriptionWithUnifiedCheckout(paymentMethod);
     } catch (e) {
-      showError(t('支付请求失败'));
+      showError(e.message || t('发起支付失败'));
+    } finally {
+      setPaying(false);
+    }
+  };
+  const payMall = async () => {
+    setPaying(true);
+    try {
+      await paySubscriptionWithUnifiedCheckout('mall');
+    } catch (e) {
+      showError(e.message || t('发起支付失败'));
     } finally {
       setPaying(false);
     }
   };
 
-  // 当前订阅信息 - 支持多个订阅
+  // Billing preference falls back to wallet modes when no active subscription exists.
   const hasActiveSubscription = activeSubscriptions.length > 0;
   const hasAnySubscription = allSubscriptions.length > 0;
   const disableSubscriptionPreference = !hasActiveSubscription;
@@ -232,7 +224,9 @@ const SubscriptionPlansCard = ({
       ? 'wallet_first'
       : billingPreference;
   const subscriptionPreferenceLabel =
-    billingPreference === 'subscription_only' ? t('仅用订阅') : t('优先订阅');
+    billingPreference === 'subscription_only'
+      ? t('仅订阅扣费')
+      : t('优先订阅扣费');
 
   const planPurchaseCountMap = useMemo(() => {
     const map = new Map();
@@ -257,20 +251,139 @@ const SubscriptionPlansCard = ({
   const getPlanPurchaseCount = (planId) =>
     planPurchaseCountMap.get(planId) || 0;
 
-  // 计算单个订阅的使用进度
-  const getUsagePercent = (sub) => {
-    const total = Number(sub?.subscription?.amount_total || 0);
-    const used = Number(sub?.subscription?.amount_used || 0);
-    if (total <= 0) return 0;
-    return Math.round((used / total) * 100);
+  const getDurationApproxSeconds = (plan) => {
+    const unit = plan?.duration_unit || 'month';
+    const value = Number(plan?.duration_value || 1);
+    if (unit === 'custom') {
+      return Number(plan?.custom_seconds || 0);
+    }
+    const unitSecondsMap = {
+      year: 365 * 24 * 60 * 60,
+      month: 30 * 24 * 60 * 60,
+      week: 7 * 24 * 60 * 60,
+      day: 24 * 60 * 60,
+      hour: 60 * 60,
+    };
+    return (unitSecondsMap[unit] || 0) * value;
+  };
+
+  const getResetApproxSeconds = (plan) => {
+    const period = plan?.quota_reset_period || 'never';
+    if (period === 'daily') return 24 * 60 * 60;
+    if (period === 'weekly') return 7 * 24 * 60 * 60;
+    if (period === 'monthly') return 30 * 24 * 60 * 60;
+    if (period === 'custom') {
+      return Number(plan?.quota_reset_custom_seconds || 0);
+    }
+    return 0;
+  };
+
+  const getPeriodicQuotaLabels = (plan) => {
+    const resetPeriod = plan?.quota_reset_period || 'never';
+    const durationUnit = plan?.duration_unit || 'month';
+    const totalAmount = Number(plan?.total_amount || 0);
+
+    if (resetPeriod === 'never' || totalAmount <= 0) {
+      return null;
+    }
+
+    const resetLabelMap = {
+      daily: t('日限额'),
+      weekly: t('周限额'),
+      monthly: t('月限额'),
+      custom: t('周期限额'),
+    };
+
+    const durationMaxLabelMap = {
+      year: t('年度拉满'),
+      month: t('月度拉满'),
+      week: t('周度拉满'),
+      day: t('日度拉满'),
+      hour: t('时段拉满'),
+      custom: t('周期拉满'),
+    };
+
+    const durationSeconds = getDurationApproxSeconds(plan);
+    const resetSeconds = getResetApproxSeconds(plan);
+    const cycleCount =
+      durationSeconds > 0 && resetSeconds > 0
+        ? Math.max(1, Math.floor(durationSeconds / resetSeconds))
+        : 1;
+    const maxQuota = totalAmount * cycleCount;
+
+    return {
+      limitLabel: resetLabelMap[resetPeriod] || t('周期限额'),
+      limitValue: renderQuota(totalAmount),
+      maxLabel: durationMaxLabelMap[durationUnit] || t('周期拉满'),
+      maxValue: renderQuota(maxQuota),
+      maxTooltip: `${t('按当前重置周期估算')} × ${cycleCount}`,
+    };
+  };
+
+  const renderSubscriptionQuotaBar = (usedAmount, totalAmount) => {
+    if (totalAmount <= 0) {
+      return (
+        <div className='text-xs text-gray-500'>
+          {t('额度')}: {t('不限')}
+        </div>
+      );
+    }
+
+    const remainAmount = Math.max(0, totalAmount - usedAmount);
+    const usagePercent = Math.max(
+      0,
+      Math.min(100, Math.round((usedAmount / totalAmount) * 100)),
+    );
+    const remainPercent = Math.max(0, 100 - usagePercent);
+    const dividerLeft = `${usagePercent}%`;
+
+    return (
+      <div className='mt-1'>
+        <div className='mb-1.5 flex items-center justify-between gap-3'>
+          <span className='text-xs font-medium text-gray-600'>{t('额度')}</span>
+          <span className='text-[11px] font-medium text-gray-500'>
+            {usagePercent}% / {remainPercent}%
+          </span>
+        </div>
+        <Tooltip
+          content={`${t('已用额度')}: ${renderQuota(usedAmount)}/${renderQuota(totalAmount)} · ${t('剩余')} ${renderQuota(remainAmount)} · ${t('使用率')} ${usagePercent}%`}
+        >
+          <div className='relative h-2.5 cursor-help overflow-hidden rounded-full bg-gray-200 ring-1 ring-inset ring-gray-300'>
+            <div
+              className='absolute inset-0 rounded-full'
+              style={{
+                background:
+                  'linear-gradient(90deg, #16a34a 0%, #22c55e 55%, #4ade80 100%)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35)',
+              }}
+            />
+            <div
+              className='absolute inset-y-0 left-0 rounded-full transition-all duration-300'
+              style={{
+                width: `${usagePercent}%`,
+                background:
+                  'linear-gradient(90deg, #dc2626 0%, #ef4444 55%, #f87171 100%)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.35)',
+              }}
+            />
+            {usagePercent > 0 && remainPercent > 0 && (
+              <div
+                className='absolute inset-y-0 w-px bg-white/80'
+                style={{ left: dividerLeft }}
+              />
+            )}
+          </div>
+        </Tooltip>
+      </div>
+    );
   };
 
   const cardContent = (
     <>
-      {/* 卡片头部 */}
+      {/* Subscription overview skeleton */}
       {loading ? (
         <div className='space-y-4'>
-          {/* 我的订阅骨架屏 */}
+          {/* Subscription overview */}
           <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
             <div className='flex items-center justify-between mb-3'>
               <Skeleton.Title active style={{ width: 100, height: 20 }} />
@@ -280,7 +393,7 @@ const SubscriptionPlansCard = ({
               <Skeleton.Paragraph active rows={2} />
             </div>
           </Card>
-          {/* 套餐列表骨架屏 */}
+          {/* Subscription plans skeleton */}
           <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5 w-full px-1'>
             {[1, 2, 3].map((i) => (
               <Card
@@ -315,7 +428,7 @@ const SubscriptionPlansCard = ({
         </div>
       ) : (
         <Space vertical style={{ width: '100%' }} spacing={8}>
-          {/* 当前订阅状态 */}
+          {/* Subscription list */}
           <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
             <div className='flex items-center justify-between mb-2 gap-3'>
               <div className='flex items-center gap-2 flex-1 min-w-0'>
@@ -331,13 +444,13 @@ const SubscriptionPlansCard = ({
                   </Tag>
                 ) : (
                   <Tag color='white' size='small' shape='circle'>
-                    {t('无生效')}
+                    {t('暂无激活订阅')}
                   </Tag>
                 )}
                 {allSubscriptions.length > activeSubscriptions.length && (
                   <Tag color='white' size='small' shape='circle'>
                     {allSubscriptions.length - activeSubscriptions.length}{' '}
-                    {t('个已过期')}
+                    {t('个已结束')}
                   </Tag>
                 )}
               </div>
@@ -350,19 +463,19 @@ const SubscriptionPlansCard = ({
                     {
                       value: 'subscription_first',
                       label: disableSubscriptionPreference
-                        ? `${t('优先订阅')} (${t('无生效')})`
-                        : t('优先订阅'),
+                        ? `${t('优先订阅扣费')} (${t('暂无激活订阅')})`
+                        : t('优先订阅扣费'),
                       disabled: disableSubscriptionPreference,
                     },
-                    { value: 'wallet_first', label: t('优先钱包') },
+                    { value: 'wallet_first', label: t('优先钱包扣费') },
                     {
                       value: 'subscription_only',
                       label: disableSubscriptionPreference
-                        ? `${t('仅用订阅')} (${t('无生效')})`
-                        : t('仅用订阅'),
+                        ? `${t('仅订阅扣费')} (${t('暂无激活订阅')})`
+                        : t('仅订阅扣费'),
                       disabled: disableSubscriptionPreference,
                     },
-                    { value: 'wallet_only', label: t('仅用钱包') },
+                    { value: 'wallet_only', label: t('仅钱包扣费') },
                   ]}
                 />
                 <Button
@@ -382,9 +495,9 @@ const SubscriptionPlansCard = ({
             </div>
             {disableSubscriptionPreference && isSubscriptionPreference && (
               <Text type='tertiary' size='small'>
-                {t('已保存偏好为')}
+                {t('当前没有可用订阅，已自动切换为')}
                 {subscriptionPreferenceLabel}
-                {t('，当前无生效订阅，将自动使用钱包')}
+                {t('，你也可以手动切换到钱包扣费。')}
               </Text>
             )}
 
@@ -397,13 +510,8 @@ const SubscriptionPlansCard = ({
                     const subscription = sub.subscription;
                     const totalAmount = Number(subscription?.amount_total || 0);
                     const usedAmount = Number(subscription?.amount_used || 0);
-                    const remainAmount =
-                      totalAmount > 0
-                        ? Math.max(0, totalAmount - usedAmount)
-                        : 0;
                     const planTitle =
                       planTitleMap.get(subscription?.plan_id) || '';
-                    const usagePercent = getUsagePercent(sub);
                     const now = Date.now() / 1000;
                     const isExpired = (subscription?.end_time || 0) < now;
                     const isCancelled = subscription?.status === 'cancelled';
@@ -424,11 +532,11 @@ const SubscriptionPlansCard = ({
                               shape='circle'
                               prefixIcon={<Badge dot type='success' />}
                             >
-                              {t('生效')}
+                              {t('生效中')}
                             </Tag>
                           ) : isCancelled ? (
                             <Tag color='white' size='small' shape='circle'>
-                              {t('已作废')}
+                              {t('已取消')}
                             </Tag>
                           ) : (
                             <Tag color='white' size='small' shape='circle'>
@@ -437,15 +545,9 @@ const SubscriptionPlansCard = ({
                           )}
                         </div>
                         <div className='text-xs text-gray-500 mb-1'>
-                          {t('至')} {formatSubscriptionEndTime(subscription?.end_time || 0)}
+                          {t('到期时间')} {formatSubscriptionEndTime(subscription?.end_time || 0)}
                         </div>
-                        <div className='text-xs text-gray-500'>
-                          {t('总额度')}: {renderQuota(usedAmount)}/
-                          {totalAmount > 0 ? renderQuota(totalAmount) : t('不限')}{' '}
-                          · {t('剩余')}{' '}
-                          {totalAmount > 0 ? renderQuota(remainAmount) : t('不限')}
-                          {totalAmount > 0 ? ` ${t('已用')} ${usagePercent}%` : ''}
-                        </div>
+                        {renderSubscriptionQuotaBar(usedAmount, totalAmount)}
                         {!isLast && <Divider margin={12} />}
                       </div>
                     );
@@ -454,26 +556,26 @@ const SubscriptionPlansCard = ({
               </>
             ) : (
               <div className='text-xs text-gray-500'>
-                {t('购买套餐后即可享受模型权益')}
+                {t('暂无订阅记录，购买套餐后会显示在这里')}
               </div>
             )}
           </Card>
 
-          {/* 可购买套餐 - 标准定价卡片 */}
+          {/* Subscription plans */}
           {plans.length > 0 ? (
             <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5 w-full px-1'>
-              {plans.map((p, index) => {
+              {plans.map((p) => {
                 const plan = p?.plan;
                 const totalAmount = Number(plan?.total_amount || 0);
-                const { symbol, rate } = getCurrencyConfig();
+                const { symbol, rate } = getPaymentCurrencyConfig();
                 const price = Number(plan?.price_amount || 0);
                 const convertedPrice = price * rate;
                 const displayPrice = convertedPrice.toFixed(
                   Number.isInteger(convertedPrice) ? 0 : 2,
                 );
-                const isPopular = index === 0 && plans.length > 1;
                 const limit = Number(plan?.max_purchase_per_user || 0);
                 const limitLabel = limit > 0 ? `${t('限购')} ${limit}` : null;
+                const periodicQuotaLabels = getPeriodicQuotaLabels(plan);
                 const totalLabel =
                   totalAmount > 0
                     ? `${t('总额度')}: ${renderQuota(totalAmount)}`
@@ -481,51 +583,86 @@ const SubscriptionPlansCard = ({
                 const upgradeLabel = plan?.upgrade_group
                   ? `${t('升级分组')}: ${plan.upgrade_group}`
                   : null;
-                const resetLabel =
-                  formatSubscriptionResetPeriod(plan, t) === t('不重置')
-                    ? null
-                    : `${t('额度重置')}: ${formatSubscriptionResetPeriod(plan, t)}`;
                 const planBenefits = [
                   {
                     label: `${t('有效期')}: ${formatSubscriptionDuration(plan, t)}`,
                   },
-                  resetLabel ? { label: resetLabel } : null,
-                  totalAmount > 0
+                  periodicQuotaLabels
                     ? {
-                        label: totalLabel,
-                        tooltip: `${t('原生额度')}：${totalAmount}`,
+                        label: `${periodicQuotaLabels.limitLabel}: ${periodicQuotaLabels.limitValue}`,
+                        tooltip: `${t('重置周期')}: ${formatSubscriptionResetPeriod(plan, t)}`,
                       }
-                    : { label: totalLabel },
+                    : totalAmount > 0
+                      ? {
+                          label: totalLabel,
+                          tooltip: `${t('原始额度')}: ${renderQuota(totalAmount)}`,
+                        }
+                      : { label: totalLabel },
+                  periodicQuotaLabels
+                    ? {
+                        label: `${periodicQuotaLabels.maxLabel}: ${periodicQuotaLabels.maxValue}`,
+                        tooltip: periodicQuotaLabels.maxTooltip,
+                      }
+                    : null,
                   limitLabel ? { label: limitLabel } : null,
                   upgradeLabel ? { label: upgradeLabel } : null,
                 ].filter(Boolean);
 
+                const planVariantStyle =
+                  plan?.duration_unit === 'month'
+                    ? {
+                        border: '2px solid #d4af37',
+                        boxShadow:
+                          '0 0 0 1px rgba(212,175,55,0.34), 0 14px 28px rgba(217,119,6,0.18)',
+                        background:
+                          'linear-gradient(135deg, var(--semi-color-bg-0) 0%, var(--semi-color-bg-1) 48%, rgba(212,175,55,0.18) 100%)',
+                      }
+                    : plan?.duration_unit === 'week'
+                      ? {
+                          border: '2px solid #bfc6d1',
+                          boxShadow:
+                            '0 0 0 1px rgba(148,163,184,0.34), 0 14px 28px rgba(100,116,139,0.18)',
+                          background:
+                            'linear-gradient(135deg, var(--semi-color-bg-0) 0%, var(--semi-color-bg-1) 50%, rgba(148,163,184,0.20) 100%)',
+                        }
+                      : {
+                          border: '1px solid var(--semi-color-border)',
+                          background: 'var(--semi-color-bg-2)',
+                        };
+
+                const planAccentStyle =
+                  plan?.duration_unit === 'month'
+                    ? {
+                        background:
+                          'linear-gradient(90deg, #b8860b 0%, #facc15 45%, #fde68a 100%)',
+                      }
+                    : plan?.duration_unit === 'week'
+                      ? {
+                          background:
+                            'linear-gradient(90deg, #94a3b8 0%, #e2e8f0 48%, #f8fafc 100%)',
+                        }
+                      : {
+                          background:
+                            'linear-gradient(90deg, rgba(148,163,184,0.35) 0%, rgba(226,232,240,0.35) 100%)',
+                        };
+
                 return (
                   <Card
                     key={plan?.id}
-                    className={`!rounded-xl transition-all hover:shadow-lg w-full h-full ${
-                      isPopular ? 'ring-2 ring-purple-500' : ''
-                    }`}
+                    className='!rounded-xl transition-all hover:shadow-lg w-full h-full'
+                    style={planVariantStyle}
                     bodyStyle={{ padding: 0 }}
                   >
+                    <div className='h-1.5 w-full rounded-t-xl' style={planAccentStyle} />
                     <div className='p-4 h-full flex flex-col'>
-                      {/* 推荐标签 */}
-                      {isPopular && (
-                        <div className='mb-2'>
-                          <Tag color='purple' shape='circle' size='small'>
-                            <Sparkles size={10} className='mr-1' />
-                            {t('推荐')}
-                          </Tag>
-                        </div>
-                      )}
-                      {/* 套餐名称 */}
+                      {/* Plan title */}
                       <div className='mb-3'>
                         <Typography.Title
                           heading={5}
                           ellipsis={{ rows: 1, showTooltip: true }}
                           style={{ margin: 0 }}
                         >
-                          {plan?.title || t('订阅套餐')}
+                          {plan?.title || t('未命名套餐')}
                         </Typography.Title>
                         {plan?.subtitle && (
                           <Text
@@ -539,7 +676,7 @@ const SubscriptionPlansCard = ({
                         )}
                       </div>
 
-                      {/* 价格区域 */}
+                      {/* Price section */}
                       <div className='py-2'>
                         <div className='flex items-baseline justify-start'>
                           <span className='text-xl font-bold text-purple-600'>
@@ -551,7 +688,7 @@ const SubscriptionPlansCard = ({
                         </div>
                       </div>
 
-                      {/* 套餐权益描述 */}
+                      {/* Plan benefits */}
                       <div className='flex flex-col items-start gap-1 pb-2'>
                         {planBenefits.map((item) => {
                           const content = (
@@ -583,12 +720,12 @@ const SubscriptionPlansCard = ({
                       <div className='mt-auto'>
                         <Divider margin={12} />
 
-                        {/* 购买按钮 */}
+                        {/* Purchase action */}
                         {(() => {
                           const count = getPlanPurchaseCount(p?.plan?.id);
                           const reached = limit > 0 && count >= limit;
                           const tip = reached
-                            ? t('已达到购买上限') + ` (${count}/${limit})`
+                            ? t('已达购买上限') + ` (${count}/${limit})`
                             : '';
                           const buttonEl = (
                             <Button
@@ -598,15 +735,6 @@ const SubscriptionPlansCard = ({
                               disabled={reached}
                               onClick={() => {
                                 if (reached) return;
-                                const mallLink = (p?.plan?.mall_link || '').trim();
-                                if (mallLink) {
-                                  if (!isValidHttpUrl(mallLink)) {
-                                    showError(t('商城跳转链接无效'));
-                                    return;
-                                  }
-                                  window.open(mallLink, '_blank');
-                                  return;
-                                }
                                 openBuy(p);
                               }}
                             >
@@ -645,12 +773,14 @@ const SubscriptionPlansCard = ({
         <div className='space-y-3'>{cardContent}</div>
       )}
 
-      {/* 购买确认弹窗 */}
+      {/* Purchase modal */}
       <SubscriptionPurchaseModal
         t={t}
         visible={open}
         onCancel={closeBuy}
+        onAfterClose={handleBuyAfterClose}
         selectedPlan={selectedPlan}
+        providerMeta={selectedProviderMeta}
         paying={paying}
         selectedEpayMethod={selectedEpayMethod}
         setSelectedEpayMethod={setSelectedEpayMethod}
@@ -669,9 +799,14 @@ const SubscriptionPlansCard = ({
         onPayStripe={payStripe}
         onPayCreem={payCreem}
         onPayEpay={payEpay}
+        onPayMall={payMall}
       />
     </>
   );
 };
 
 export default SubscriptionPlansCard;
+
+
+
+

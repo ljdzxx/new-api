@@ -1,6 +1,6 @@
 # Project Review Notes
 
-Last updated: 2026-04-11
+Last updated: 2026-04-24
 
 This note summarizes the static review findings and codebase entry points that were identified during the review session. It is intended as a quick handoff file for future sessions.
 
@@ -779,3 +779,563 @@ Validation commands executed during this session:
 
 - `go test ./... -run TestNonExistent -count=1` (compile-level backend sanity)
 - `bun run build` (frontend build sanity; re-run after each frontend fix)
+
+## 11. Session Notes (2026-04-18 to 2026-04-22)
+
+This section summarizes the feature work and deployment-related adjustments completed after the global model ratio rollout.
+
+### 11.1 User-level global model ratio
+
+Goal:
+
+- Add a per-user `global_model_ratio` that behaves like system `GlobalModelRatio`.
+- Make it participate in all billing and pre-consume paths.
+- Keep it hidden from user-facing APIs and usage-log `other` payloads.
+
+Backend changes:
+
+- Added persistent user field:
+  - `model/user.go`
+- Added Redis/user cache support for the new ratio:
+  - `model/user_cache.go`
+  - `common/redis.go`
+- Merged system global ratio and user ratio inside the pricing helper:
+  - `relay/helper/price.go`
+- Covered async task recalculation and channel billing preview:
+  - `service/task_billing.go`
+  - `controller/channel-test.go`
+
+Behavior notes:
+
+- Effective billing multiplier is now:
+  - `system global model ratio * users.global_model_ratio`
+- `0` is allowed and effectively makes the user free under current pricing formulas.
+- The field is intentionally not written into usage-log `other` JSON.
+- User-side `GetSelf` style payloads do not expose this field.
+
+Admin UI / API changes:
+
+- Added edit support in the admin user modal:
+  - `web/src/components/table/users/modals/EditUserModal.jsx`
+- `controller/user.go` appends `global_model_ratio` only for admin single-user edit responses.
+
+### 11.2 Admin user list support for user global model ratio
+
+Goal:
+
+- Make the new per-user billing ratio operationally visible from `/console/user`.
+
+Implemented changes:
+
+- Added backend filter param:
+  - `global_model_ratio_filter`
+- Filter logic implemented in:
+  - `model/user.go`
+  - `controller/user.go`
+- Added frontend filter dropdown in:
+  - `web/src/components/table/users/UsersFilters.jsx`
+  - `web/src/hooks/users/useUsersData.jsx`
+
+Current filter modes:
+
+- `default`
+  - `global_model_ratio = 1`
+- `custom`
+  - `global_model_ratio != 1`
+- `free`
+  - `global_model_ratio = 0`
+
+List-display follow-up:
+
+- Admin user list responses now append `global_model_ratio` via a safe map-based response conversion in:
+  - `controller/user.go`
+- Added visible `用户倍率` column in:
+  - `web/src/components/table/users/UsersColumnDefs.jsx`
+
+Display behavior:
+
+- Default users show neutral tag styling.
+- Custom users use highlighted tag styling.
+- Free users show a dedicated `免费` tag.
+- Tooltip explicitly notes that the ratio only affects the current user and multiplies with system global ratio.
+
+### 11.3 Subscription usage rank page
+
+Goal:
+
+- Add an admin leaderboard for subscription users based on rolling-window usage.
+- Support `1d / 3d / 7d` windows.
+- Show:
+  - usage amount
+  - today used / today total snapshot ratio
+  - request count
+  - active-period ARPM
+
+Backend changes:
+
+- Added rank query model:
+  - `model/subscription_usage_rank.go`
+- Added admin API:
+  - `controller/user_subscription_usage_rank.go`
+- Added route registration:
+  - `router/api-router.go`
+
+Metric design implemented:
+
+- Window type:
+  - rolling `1d / 3d / 7d`
+- Population:
+  - users with active subscriptions
+- Usage source:
+  - aggregated consume logs
+- Today subscription snapshot:
+  - current active subscription pool snapshot
+- ARPM:
+  - `request_count / active_minutes`
+  - active minutes are derived from first/last request time with minimum guard
+
+Frontend changes:
+
+- Added dedicated page and data hook:
+  - `web/src/pages/SubscriptionUsageRank/`
+  - `web/src/hooks/subscription-usage-rank/`
+- Added leaderboard table components:
+  - `web/src/components/table/subscription-usage-rank/`
+- Added sidebar/menu exposure:
+  - `web/src/App.jsx`
+  - `web/src/components/layout/SiderBar.jsx`
+  - `web/src/hooks/common/useSidebar.js`
+  - `web/src/pages/Setting/Operation/SettingsSidebarModulesAdmin.jsx`
+  - `web/src/components/settings/personal/cards/NotificationSettings.jsx`
+  - `web/src/helpers/render.jsx`
+
+### 11.4 Subscription admin tooling consolidation
+
+This round also continued to fill in the admin-facing subscription/user lookup toolset.
+
+Covered capabilities now include:
+
+- daily subscription usage stats modal
+- redemption record reverse lookup and detail modal
+- subscription source tracing modal
+- subscription usage rank page
+
+Representative files:
+
+- `controller/user_subscription_daily_stat.go`
+- `controller/user_redemption.go`
+- `controller/user_subscription_source.go`
+- `controller/user_subscription_usage_rank.go`
+- `model/subscription_daily_stat.go`
+- `model/user_redemption.go`
+- `model/user_subscription_source.go`
+- `model/subscription_usage_rank.go`
+- `web/src/components/table/users/modals/UserSubscriptionStatsModal.jsx`
+- `web/src/components/table/users/modals/UserRedemptionRecordsModal.jsx`
+- `web/src/components/table/users/modals/UserSubscriptionSourcesModal.jsx`
+
+Operational note:
+
+- `/console/user` is now the main entry point for inspecting user subscription state from multiple angles, while the dedicated subscription rank page provides cross-user ranking and ops visibility.
+
+### 11.5 Codex setup script updates
+
+Goal:
+
+- Improve the Windows onboarding path for Codex users and align defaults with the deployed API endpoint.
+
+Changed files:
+
+- `guide/setup-codex.ps1`
+- `guide/setup-codex-win.ps1`
+- `guide/mac.jpg`
+
+Notable changes:
+
+- Default base URL was updated toward `https://api.jucodex.com` / `https://api.jucodex.com/v1`.
+- Added a Windows-focused script variant that avoids common PowerShell `ExecutionPolicy` issues.
+- The new script prefers `npm.cmd` / `codex.cmd` or `.exe` resolution to avoid `*.ps1` execution-policy failures.
+- The script now explicitly writes Codex configuration files under `~/.codex/`.
+
+### 11.6 Cloudflare Worker and static-site routing adjustments
+
+Goal:
+
+- Split static asset delivery and backend proxying more clearly for the `jucodex` deployment.
+
+Changed files:
+
+- `web/jucodex-worker/src/index.js`
+- `web/jucodex-worker/wrangler.toml`
+
+Behavior changes:
+
+- Requests routed to the Worker now behave as:
+  - `/api`, `/v1`, `/v1beta`, `/pg`, `/mj`, `/suno`, and realtime paths -> backend proxy
+  - all other paths -> static origin proxy
+- Static content is no longer fetched from R2 bucket objects directly in code.
+- Static requests now proxy to `STATIC_ORIGIN`, preserving path and query string.
+- SPA fallback returns `/index.html` for extensionless non-API routes.
+- Dynamic backend responses are forced to `no-store, no-cache, must-revalidate`.
+
+Configuration changes:
+
+- Added `STATIC_ORIGIN = "https://static.jucodex.com"`
+- Backend host changed to:
+  - `alb.jucodex.com`
+
+Important deployment note:
+
+- The Worker code itself does not decide which domains/subdomains are intercepted.
+- Actual domain coverage still depends on Cloudflare route / custom-domain bindings configured in Cloudflare.
+
+### 11.7 Miscellaneous cleanup
+
+Changed files:
+
+- `.gitignore`
+- `web/public/statics/doc.html`
+
+Summary:
+
+- Added `R2_Cli.md` to ignore rules.
+- Removed the floating QQ consultation widget from the static documentation HTML page.
+
+## 12. Session Notes (2026-04-22 to 2026-04-23)
+
+This section summarizes the payment-routing refactor, wallet/subscription console changes, and frontend text/encoding cleanup completed in the most recent round.
+
+### 12.1 Unified payment routing foundation
+
+Goal:
+
+- Stop relying on scattered frontend/backend implicit field checks to decide whether recharge/subscription should route to Epay, Stripe, Creem, or mall.
+- Introduce explicit scene-level routing with a structure that can be extended later for official WeChat Pay / Alipay style providers.
+
+Backend structure added:
+
+- `types/payment.go`
+- `setting/operation_setting/payment_route.go`
+- `service/payment_registry.go`
+- `service/payment_router.go`
+- `service/payment_checkout_helpers.go`
+- `service/payment_provider_epay.go`
+- `service/payment_provider_stripe.go`
+- `service/payment_provider_creem.go`
+- `service/payment_provider_mall.go`
+
+Controller and router additions:
+
+- `controller/payment_checkout.go`
+- `controller/payment_checkout_test.go`
+- `controller/payment_compat.go`
+- `controller/payment_legacy_handlers.go`
+- `router/api-router.go`
+
+Behavior changes:
+
+- Added explicit route config:
+  - `payment_route.topup_provider`
+  - `payment_route.subscription_provider`
+- Supported route values currently include:
+  - `legacy_auto`
+  - `disabled`
+  - `epay`
+  - `stripe`
+  - `creem`
+  - `mall`
+- Added unified APIs:
+  - `GET /api/payment/topup/meta`
+  - `POST /api/payment/topup/checkout`
+  - `GET /api/payment/subscription/meta`
+  - `POST /api/payment/subscription/checkout`
+- Existing old payment APIs were kept as compatibility handlers, but their internal dispatch path was redirected to the new router/provider service instead of maintaining separate branching logic.
+
+Operational note:
+
+- `legacy_auto` remains important for compatibility. It preserves the previous field-driven behavior while the frontend/admin console gradually moves to explicit routing.
+
+### 12.2 Payment settings and user payment flow UI consolidation
+
+Goal:
+
+- Surface the new explicit payment-routing controls in admin settings.
+- Make `/console/topup` and subscription purchase flow consume unified payment metadata/checkout instead of branching locally.
+
+Representative frontend files:
+
+- `web/src/components/settings/PaymentSetting.jsx`
+- `web/src/pages/Setting/Payment/SettingsPaymentRouting.jsx`
+- `web/src/helpers/payment.js`
+- `web/src/components/topup/index.jsx`
+- `web/src/components/topup/RechargeCard.jsx`
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+- `web/src/components/topup/modals/SubscriptionPurchaseModal.jsx`
+- `web/src/components/topup/modals/PaymentConfirmModal.jsx`
+
+Admin-side changes:
+
+- Added an explicit payment-routing settings card to `/console/setting`.
+- The payment settings page now distinguishes between:
+  - route selection
+  - provider parameters
+- `mall` display naming was unified to `商城` and the related strings were wired through frontend i18n.
+
+User-side changes:
+
+- Top-up and subscription purchase flow now request unified `meta`/`checkout` APIs instead of deciding provider routing purely in the page.
+- Mall subscription routing was also pulled back into the unified subscription checkout path instead of direct frontend `window.open` shortcut logic.
+- Old top-up page branches for `/api/user/pay`, `/api/user/stripe/pay`, and `/api/user/creem/pay` were removed from the main UI path.
+
+### 12.3 Wallet page layout and subscription card UX changes
+
+Goal:
+
+- Reduce visual clutter on `/console/topup`.
+- Improve payment visibility and subscription-card readability.
+
+Recharge/top-up page adjustments:
+
+- Removed the top-up quantity / actual payment input block when only fixed preset amounts are intended to be sold.
+- Default top-up selection now follows the first configured amount option instead of falling back to `1`.
+- Payment methods were moved below the amount option grid for stronger visual emphasis.
+- If online recharge is disabled, the amount option list still remains visible and the payment section shows an admin-disabled notice instead of collapsing the whole block.
+- The redemption-code card was duplicated under the subscription tab as an additional entry point without changing redemption logic.
+
+Representative files:
+
+- `web/src/components/topup/RechargeCard.jsx`
+- `web/src/components/topup/index.jsx`
+
+Subscription card adjustments:
+
+- Removed the implicit “first card = recommended” UI rule.
+- Monthly plans were given a gold-accent visual treatment.
+- Weekly plans were given a silver-accent visual treatment.
+- Added support for `week` duration unit on the admin subscription form and formatting helpers.
+- For reset-based plans, benefit lines were reformatted from:
+  - reset period + total amount
+  - into per-cycle quota + duration max quota style, for example:
+    - `日限额`
+    - `月度拉满`
+    - `周度拉满`
+
+Representative files:
+
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+- `web/src/components/table/subscriptions/modals/AddEditSubscriptionModal.jsx`
+- `web/src/components/table/subscriptions/SubscriptionsColumnDefs.jsx`
+- `web/src/helpers/subscriptionFormat.js`
+- `model/subscription.go`
+
+Additional UX tweak:
+
+- “我的订阅” usage display was changed from plain text into a compact gray-track progress bar with red used section / green remaining section plus hover detail text.
+
+### 12.4 Frontend encoding and i18n cleanup
+
+Goal:
+
+- Reduce recurring mojibake in top-up/subscription pages.
+- Normalize frontend source encoding and clean broken Chinese i18n source keys.
+
+Infrastructure changes:
+
+- Added `.editorconfig` with UTF-8 / LF conventions.
+- Scanned `web/src` and removed BOM from affected source files.
+
+Top-up/subscription-related cleanup:
+
+- Fixed multiple garbled strings and broken JSX/text fragments in:
+  - `web/src/components/topup/index.jsx`
+  - `web/src/components/topup/RechargeCard.jsx`
+  - `web/src/components/topup/SubscriptionPlansCard.jsx`
+  - `web/src/components/topup/modals/PaymentConfirmModal.jsx`
+  - `web/src/components/topup/modals/SubscriptionPurchaseModal.jsx`
+  - `web/src/components/topup/modals/TopupHistoryModal.jsx`
+  - `web/src/components/topup/modals/TransferModal.jsx`
+  - `web/src/helpers/subscriptionFormat.js`
+- Redeem success/failure texts were moved onto frontend i18n instead of hardcoded messages.
+- A directory-wide follow-up pass was performed on `web/src/components/topup` to replace remaining garbled `t('...')` keys in the payment/subscription components with normal Chinese source keys.
+
+Important residual note:
+
+- Frontend i18n in this project uses Chinese source strings as translation keys. This makes the UI especially sensitive to any encoding corruption in source files: once a Chinese key itself becomes garbled, the page will render the garbled text directly. Future edits in text-heavy frontend files should avoid shell-based write paths that may re-encode content incorrectly.
+
+### 12.5 SQLite migration compatibility fix
+
+Goal:
+
+- Resolve local startup failure caused by malformed historical SQLite DDL when running GORM migration.
+
+Changed file:
+
+- `model/main.go`
+
+Behavior change:
+
+- SQLite initialization was hardened with a `users` table compatibility path similar in spirit to the existing `subscription_plans` compatibility handling.
+- Instead of directly trusting GORM to parse a malformed historical SQLite table definition, the code now checks schema shape and backfills missing columns through safer SQLite-compatible logic.
+
+Observed symptom before fix:
+
+- Startup could fail with:
+  - `failed to initialize database: invalid DDL, unbalanced brackets`
+
+### 12.6 Validation runs in this round
+
+Representative verification commands used during this session:
+
+- `go build ./...`
+- `go test ./controller -run Payment`
+- `bun run build`
+
+Known warnings still seen during frontend build:
+
+- Vite/Rollup chunk-size warnings
+- circular chunk warning around `semi-ui` and `i18n`
+
+These are build warnings, not blockers for the payment/top-up changes described above.
+
+## 13. Session Notes (2026-04-24)
+
+This section summarizes the latest UI-polish milestone for the wallet/subscription console after the unified payment routing foundation had already landed.
+
+### 13.1 Payment display currency decoupled from quota display currency
+
+Goal:
+
+- Keep quota/balance display logic unchanged.
+- Allow payment-related amounts to use a separate display currency and rate.
+
+Behavior changes:
+
+- Added a dedicated payment display currency path instead of forcing payment amounts to follow quota display currency.
+- Supported display modes now include:
+  - `FOLLOW_QUOTA`
+  - `USD`
+  - `CNY`
+  - `CUSTOM`
+- This change only affects payment-facing amounts such as:
+  - subscription purchase modal payable amount
+  - top-up preset actual payment amount
+  - payment confirmation modal actual/original/discount amount
+- It does not change:
+  - quota balance display
+  - subscription quota display
+  - third-party provider settlement currency
+
+Representative files:
+
+- `setting/operation_setting/payment_setting.go`
+- `controller/misc.go`
+- `web/src/helpers/data.js`
+- `web/src/helpers/render.jsx`
+- `web/src/pages/Setting/Payment/SettingsGeneralPayment.jsx`
+- `web/src/components/settings/PaymentSetting.jsx`
+- `web/src/components/topup/RechargeCard.jsx`
+- `web/src/components/topup/modals/SubscriptionPurchaseModal.jsx`
+- `web/src/components/topup/modals/PaymentConfirmModal.jsx`
+
+Important debugging note:
+
+- A save/reload issue was traced to frontend form state overwrite rather than database persistence failure.
+- Temporary console logging was added to isolate the issue, and the settings form was simplified so the saved value is not overwritten by internal form state after successful PUT requests.
+
+### 13.2 Top-up amount cards redesigned into preset-first purchase UI
+
+Goal:
+
+- Reduce noise in the recharge tab and make the purchase decision more straightforward.
+
+UI changes:
+
+- Preset amount cards no longer show a dense multi-line summary inside each card.
+- Cards now present a larger, cleaner payment amount only.
+- The detail summary for the selected preset was moved into a separate summary block below the grid.
+- The summary block now shows:
+  - payment amount
+  - received balance
+  - current exchange ratio
+  - discount
+- If no discount is applied, the UI now shows `none` instead of an artificial `10.0` discount label.
+- The section title was changed from "select recharge quota" to "select recharge amount".
+
+Design refinements:
+
+- Important numbers in the summary block were visually emphasized.
+- The historical discount tag styling was reused instead of showing discount as plain text.
+- The selected-preset detail block was adapted for dark mode.
+
+Representative files:
+
+- `web/src/components/topup/RechargeCard.jsx`
+- `web/src/helpers/render.jsx`
+
+### 13.3 Subscription purchase modal payment method UX refinement
+
+Goal:
+
+- Reduce friction in the subscription purchase modal.
+- Make its payment interaction consistent with the recharge tab.
+
+UI behavior changes:
+
+- The payment method dropdown in the subscription purchase modal was replaced with flat payment method cards/buttons.
+- Payment methods now render in a clearer order aligned with the recharge-side mental model:
+  - Epay methods first
+  - mall after Epay
+  - Stripe / Creem afterward when available
+- Mall visibility under `legacy_auto` was corrected so plans with a valid mall link surface a mall option in the modal.
+- The payment method cards gained explicit black borders and were adapted for dark mode.
+- A close-animation flicker caused by clearing modal content too early was fixed by deferring cleanup until after modal close.
+
+Representative files:
+
+- `web/src/components/topup/modals/SubscriptionPurchaseModal.jsx`
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+
+### 13.4 Subscription plan card polish and dark-mode follow-up
+
+Goal:
+
+- Continue polishing subscription cards without changing purchase logic.
+
+Changes retained after iteration:
+
+- Monthly plans keep the gold-accent treatment.
+- Weekly plans keep the silver-accent treatment.
+- Both month/week variants were adapted for dark mode so they no longer depend on light-only backgrounds.
+- Subscription price on the plan card now follows the payment display currency helper, so plan price display matches the configured payment display currency.
+
+Iteration note:
+
+- One experimental attempt to restyle the benefit rows into a more aggressive two-column premium layout was reverted after visual review because it reduced overall quality instead of improving it.
+- Current plan benefit rows intentionally remain closer to the previous, simpler presentation.
+
+Representative files:
+
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+
+### 13.5 Encoding discipline reinforced for frontend-heavy edits
+
+Goal:
+
+- Prevent new mojibake regressions while repeatedly editing text-heavy wallet/subscription UI files on Windows.
+
+Working rule used in this round:
+
+- Before frontend edits: inspect for BOM/history/Chinese-key risk.
+- After frontend edits: scan the touched files for suspicious mojibake fragments.
+- Re-run frontend production build after each substantial UI pass.
+
+Files frequently rechecked in this round:
+
+- `web/src/components/topup/RechargeCard.jsx`
+- `web/src/components/topup/SubscriptionPlansCard.jsx`
+- `web/src/components/topup/modals/SubscriptionPurchaseModal.jsx`
+
+Validation runs:
+
+- `bun run build`
+- `go build ./...`

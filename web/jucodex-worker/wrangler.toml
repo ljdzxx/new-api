@@ -7,6 +7,7 @@ binding = "ASSETS"
 bucket_name = "jucodex"
 
 [vars]
-BACKEND_HOST = "api.jucodex.com"
+STATIC_ORIGIN = "https://static.jucodex.com"
+BACKEND_HOST = "alb.jucodex.com"
 BACKEND_PROTO = "https"
 BACKEND_PORT = ""

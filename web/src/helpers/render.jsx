@@ -1007,7 +1007,7 @@ export function renderQuotaNumberWithDigit(num, digits = 2) {
     return '$' + num;
   } else if (quotaDisplayType === 'CUSTOM') {
     const statusStr = localStorage.getItem('status');
-    let symbol = '¤';
+    symbol = '\u00A5';
     try {
       if (statusStr) {
         const s = JSON.parse(statusStr);
@@ -1083,7 +1083,7 @@ export function renderQuotaWithAmount(amount) {
     return '¥' + formattedAmount;
   } else if (quotaDisplayType === 'CUSTOM') {
     const statusStr = localStorage.getItem('status');
-    let symbol = '¤';
+    symbol = '\u00A5';
     try {
       if (statusStr) {
         const s = JSON.parse(statusStr);
@@ -1107,7 +1107,7 @@ export function getCurrencyConfig() {
   let rate = 1;
 
   if (quotaDisplayType === 'CNY') {
-    symbol = '¥';
+    symbol = '\u00A5';
     try {
       if (statusStr) {
         const s = JSON.parse(statusStr);
@@ -1133,6 +1133,100 @@ export function getCurrencyConfig() {
  * @param {number} digits - 小数位数
  * @returns {string} - 格式化后的货币字符串
  */
+export function getPaymentCurrencyConfig() {
+  const paymentDisplayType =
+    localStorage.getItem('payment_display_currency_type') || 'FOLLOW_QUOTA';
+
+  if (paymentDisplayType === 'FOLLOW_QUOTA') {
+    const fallbackCurrencyConfig = getCurrencyConfig();
+    console.log('[payment-debug][render] getPaymentCurrencyConfig fallback to quota display', {
+      paymentDisplayType,
+      fallbackCurrencyConfig,
+      localStorageType: localStorage.getItem('payment_display_currency_type'),
+      localStorageSymbol: localStorage.getItem('payment_display_currency_symbol'),
+      localStorageRate: localStorage.getItem(
+        'payment_display_currency_exchange_rate',
+      ),
+    });
+    return fallbackCurrencyConfig;
+  }
+
+  const statusStr = localStorage.getItem('status');
+  let symbol = '$';
+  let rate = 1;
+
+  if (paymentDisplayType === 'CNY') {
+    symbol = '\u00A5';
+    try {
+      if (statusStr) {
+        const s = JSON.parse(statusStr);
+        rate = s?.usd_exchange_rate || 7;
+      }
+    } catch (e) {}
+  } else if (paymentDisplayType === 'CUSTOM') {
+    symbol =
+      localStorage.getItem('payment_display_currency_symbol') || '\u00A4';
+    rate = parseFloat(
+      localStorage.getItem('payment_display_currency_exchange_rate') || '1',
+    );
+    if (!Number.isFinite(rate) || rate <= 0) {
+      rate = 1;
+    }
+    try {
+      if (statusStr) {
+        const s = JSON.parse(statusStr);
+        symbol =
+          localStorage.getItem('payment_display_currency_symbol') ||
+          s?.payment_display_currency_symbol ||
+          symbol;
+        const statusRate = Number(s?.payment_display_currency_exchange_rate);
+        if (Number.isFinite(statusRate) && statusRate > 0) {
+          rate = statusRate;
+        }
+      }
+    } catch (e) {}
+  }
+
+  console.log('[payment-debug][render] getPaymentCurrencyConfig resolved', {
+    paymentDisplayType,
+    symbol,
+    rate,
+    localStorageType: localStorage.getItem('payment_display_currency_type'),
+    localStorageSymbol: localStorage.getItem('payment_display_currency_symbol'),
+    localStorageRate: localStorage.getItem(
+      'payment_display_currency_exchange_rate',
+    ),
+  });
+
+  return { symbol, rate, type: paymentDisplayType };
+}
+
+export function convertUSDToPaymentCurrency(usdAmount, digits = 2) {
+  const { symbol, rate } = getPaymentCurrencyConfig();
+  const convertedAmount = Number(usdAmount || 0) * rate;
+  return symbol + convertedAmount.toFixed(digits);
+}
+
+export function convertTopupBaseToPaymentCurrency(
+  amount,
+  topupRate,
+  digits = 2,
+) {
+  const numericAmount = Number(amount || 0);
+  const rateBase = Number(topupRate || 0);
+  const { symbol, rate, type } = getPaymentCurrencyConfig();
+
+  let convertedAmount = numericAmount;
+  if (type === 'USD') {
+    convertedAmount = rateBase > 0 ? numericAmount / rateBase : numericAmount;
+  } else if (type === 'CUSTOM') {
+    const amountInUSD = rateBase > 0 ? numericAmount / rateBase : numericAmount;
+    convertedAmount = amountInUSD * rate;
+  }
+
+  return symbol + convertedAmount.toFixed(digits);
+}
+
 export function convertUSDToCurrency(usdAmount, digits = 2) {
   const { symbol, rate } = getCurrencyConfig();
   const convertedAmount = usdAmount * rate;
@@ -1159,10 +1253,10 @@ export function renderQuota(quota, digits = 2) {
       }
     } catch (e) {}
     value = resultUSD * usdRate;
-    symbol = '¥';
+    symbol = '\u00A5';
   } else if (quotaDisplayType === 'CUSTOM') {
     const statusStr = localStorage.getItem('status');
-    let symbolCustom = '¤';
+    let symbolCustom = '\u00A4';
     let rate = 1;
     try {
       if (statusStr) {

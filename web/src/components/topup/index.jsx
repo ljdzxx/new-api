@@ -27,6 +27,7 @@ import {
   renderQuotaWithAmount,
   copy,
   getQuotaPerUnit,
+  executePaymentCheckout,
 } from '../../helpers';
 import { Modal, Toast } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
@@ -39,6 +40,101 @@ import InvitationCard from './InvitationCard';
 import TransferModal from './modals/TransferModal';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
+
+const TOPUP_PROVIDER_METHODS = {
+  stripe: {
+    type: 'stripe',
+    name: 'Stripe',
+    color: 'rgba(var(--semi-purple-5), 1)',
+  },
+  mall: {
+    type: 'mall',
+    name: '商城',
+    color: 'rgba(var(--semi-orange-5), 1)',
+  },
+};
+
+const PAYMENT_PROVIDER_EXCLUDED_TYPES = new Set(['stripe', 'creem', 'mall']);
+
+const normalizePayMethods = (rawPayMethods, stripeMinTopup = 0) => {
+  let payMethods = rawPayMethods || [];
+  if (typeof payMethods === 'string') {
+    payMethods = JSON.parse(payMethods);
+  }
+  if (!Array.isArray(payMethods)) {
+    return [];
+  }
+  return payMethods
+    .filter((method) => method?.name && method?.type)
+    .map((method) => {
+      const normalizedMethod = { ...method };
+      if (normalizedMethod.type === 'mall') {
+        normalizedMethod.name = '商城';
+      }
+      const normalizedMinTopup = Number(normalizedMethod.min_topup);
+      normalizedMethod.min_topup = Number.isFinite(normalizedMinTopup)
+        ? normalizedMinTopup
+        : 0;
+      if (
+        normalizedMethod.type === 'stripe' &&
+        (!normalizedMethod.min_topup || normalizedMethod.min_topup <= 0)
+      ) {
+        const stripeMin = Number(stripeMinTopup);
+        if (Number.isFinite(stripeMin)) {
+          normalizedMethod.min_topup = stripeMin;
+        }
+      }
+      if (!normalizedMethod.color) {
+        if (normalizedMethod.type === 'alipay') {
+          normalizedMethod.color = 'rgba(var(--semi-blue-5), 1)';
+        } else if (normalizedMethod.type === 'wxpay') {
+          normalizedMethod.color = 'rgba(var(--semi-green-5), 1)';
+        } else if (normalizedMethod.type === 'stripe') {
+          normalizedMethod.color = 'rgba(var(--semi-purple-5), 1)';
+        } else {
+          normalizedMethod.color = 'rgba(var(--semi-primary-5), 1)';
+        }
+      }
+      return normalizedMethod;
+    });
+};
+
+const buildPayMethodsByProvider = (providerMeta, normalizedPayMethods) => {
+  if (!providerMeta || providerMeta.legacy_auto) {
+    return normalizedPayMethods;
+  }
+  if (!providerMeta.enabled || !providerMeta.config_ready) {
+    return [];
+  }
+  switch (providerMeta.provider) {
+    case 'epay':
+      return normalizedPayMethods.filter(
+        (method) => !PAYMENT_PROVIDER_EXCLUDED_TYPES.has(method.type),
+      );
+    case 'stripe':
+      return [TOPUP_PROVIDER_METHODS.stripe];
+    case 'mall':
+      return [TOPUP_PROVIDER_METHODS.mall];
+    default:
+      return [];
+  }
+};
+
+const resolveDefaultTopUpCount = (amountOptions, fallbackValue) => {
+  if (Array.isArray(amountOptions) && amountOptions.length > 0) {
+    const firstAmount = Number(amountOptions[0]);
+    if (Number.isFinite(firstAmount) && firstAmount > 0) {
+      return firstAmount;
+    }
+  }
+
+  const fallback = Number(fallbackValue);
+  if (Number.isFinite(fallback) && fallback > 0) {
+    return fallback;
+  }
+
+  return 1;
+};
 
 const TopUp = () => {
   const { t } = useTranslation();
@@ -64,7 +160,6 @@ const TopUp = () => {
   );
   const [statusLoading, setStatusLoading] = useState(true);
 
-  // Creem 相关状态
   const [creemProducts, setCreemProducts] = useState([]);
   const [enableCreemTopUp, setEnableCreemTopUp] = useState(false);
   const [creemOpen, setCreemOpen] = useState(false);
@@ -81,15 +176,12 @@ const TopUp = () => {
 
   const affFetchedRef = useRef(false);
 
-  // 邀请相关状态
   const [affLink, setAffLink] = useState('');
   const [openTransfer, setOpenTransfer] = useState(false);
   const [transferAmount, setTransferAmount] = useState(0);
 
-  // 账单Modal状态
   const [openHistory, setOpenHistory] = useState(false);
 
-  // 订阅相关
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [billingPreference, setBillingPreference] =
@@ -97,11 +189,9 @@ const TopUp = () => {
   const [activeSubscriptions, setActiveSubscriptions] = useState([]);
   const [allSubscriptions, setAllSubscriptions] = useState([]);
 
-  // 预设充值额度选项
   const [presetAmounts, setPresetAmounts] = useState([]);
   const [selectedPreset, setSelectedPreset] = useState(null);
 
-  // 充值配置信息
   const [topupInfo, setTopupInfo] = useState({
     amount_options: [],
     discount: {},
@@ -127,9 +217,9 @@ const TopUp = () => {
         if (rewardType === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
           Modal.success({
             title: t('兑换成功！'),
-            content:
-              t('成功兑换订阅套餐！') +
-              `#${Number(data?.plan_id || 0) || '-'}`,
+            content: t('订阅已兑换成功，套餐 #{{planId}}', {
+              planId: Number(data?.plan_id || 0) || '-',
+            }),
             centered: true,
           });
           await getSubscriptionSelf();
@@ -137,7 +227,9 @@ const TopUp = () => {
           const quotaValue = Number(data?.quota || 0);
           Modal.success({
             title: t('兑换成功！'),
-            content: t('成功兑换额度！') + renderQuota(quotaValue),
+            content: t('额度已兑换成功 {{quota}}', {
+              quota: renderQuota(quotaValue),
+            }),
             centered: true,
           });
           if (userState.user) {
@@ -153,7 +245,7 @@ const TopUp = () => {
         showError(message);
       }
     } catch (err) {
-      showError(t('请求失败'));
+      showError(t('操作失败'));
     } finally {
       setIsSubmitting(false);
     }
@@ -161,26 +253,35 @@ const TopUp = () => {
 
   const openTopUpLink = () => {
     if (!topUpLink) {
-      showError(t('超级管理员未设置充值链接！'));
+      showError('Top-up link is not configured');
       return;
     }
     window.open(topUpLink, '_blank');
   };
 
+  const requestUnifiedTopupCheckout = async (payload) => {
+    const res = await API.post('/api/payment/topup/checkout', payload);
+    if (!res.data?.success) {
+      throw new Error(res.data?.message || 'Payment failed');
+    }
+    executePaymentCheckout(res.data.data);
+    showSuccess('Payment started');
+  };
+
   const preTopUp = async (payment) => {
     if (payment === 'stripe') {
       if (!enableStripeTopUp) {
-        showError(t('管理员未开启Stripe充值！'));
+        showError('Stripe top-up is not enabled');
         return;
       }
     } else if (payment === 'mall') {
       if (!hasMallPayMethod) {
-        showError(t('当前商城支付方式不可用！'));
+        showError(t('商城支付方式暂不可用'));
         return;
       }
     } else {
       if (!enableOnlineTopUp) {
-        showError(t('管理员未开启在线充值！'));
+        showError('Online top-up is not enabled');
         return;
       }
     }
@@ -195,12 +296,12 @@ const TopUp = () => {
       }
 
       if (topUpCount < minTopUp) {
-        showError(t('充值数量不能小于') + minTopUp);
+        showError('Top-up amount is below minimum ' + minTopUp);
         return;
       }
       setOpen(true);
     } catch (error) {
-      showError(t('获取金额失败'));
+      showError('Failed to get amount');
     } finally {
       setPaymentLoading(false);
     }
@@ -208,98 +309,35 @@ const TopUp = () => {
 
   const onlineTopUp = async () => {
     if (payWay === 'stripe') {
-      // Stripe 支付处理
       if (amount === 0) {
         await getStripeAmount();
       }
     } else if (payWay !== 'mall') {
-      // 普通支付处理
       if (amount === 0) {
         await getAmount();
       }
     }
-
     if (topUpCount < minTopUp) {
-      showError('充值数量不能小于' + minTopUp);
+      showError('Top-up amount is below minimum');
       return;
     }
     setConfirmLoading(true);
     try {
-      if (payWay === 'mall') {
-        const link = topupInfo?.mall_links?.[parseInt(topUpCount)];
-        if (!link) {
-          showError(t('未找到该充值金额对应的商品链接'));
-          return;
-        }
-        window.open(link, '_blank');
-        showSuccess(t('已打开商城页面'));
-      } else {
-        let res;
-        if (payWay === 'stripe') {
-          // Stripe 支付请求
-          res = await API.post('/api/user/stripe/pay', {
-            amount: parseInt(topUpCount),
-            payment_method: 'stripe',
-          });
-        } else {
-          // 普通支付请求
-          res = await API.post('/api/user/pay', {
-            amount: parseInt(topUpCount),
-            payment_method: payWay,
-          });
-        }
-
-        if (res !== undefined) {
-          const { message, data } = res.data;
-          if (message === 'success') {
-            if (payWay === 'stripe') {
-              // Stripe 支付回调处理
-              window.open(data.pay_link, '_blank');
-            } else {
-              // 普通支付表单提交
-              let params = data;
-              let url = res.data.url;
-              let form = document.createElement('form');
-              form.action = url;
-              form.method = 'POST';
-              let isSafari =
-                navigator.userAgent.indexOf('Safari') > -1 &&
-                navigator.userAgent.indexOf('Chrome') < 1;
-              if (!isSafari) {
-                form.target = '_blank';
-              }
-              for (let key in params) {
-                let input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = key;
-                input.value = params[key];
-                form.appendChild(input);
-              }
-              document.body.appendChild(form);
-              form.submit();
-              document.body.removeChild(form);
-            }
-          } else {
-            const errorMsg =
-              typeof data === 'string' ? data : message || t('支付失败');
-            showError(errorMsg);
-          }
-        } else {
-          showError(res);
-        }
-      }
+      await requestUnifiedTopupCheckout({
+        amount: parseInt(topUpCount),
+        payment_method: payWay,
+      });
     } catch (err) {
       console.log(err);
-      showError(t('支付请求失败'));
+      showError('Payment request failed');
     } finally {
       setOpen(false);
       setConfirmLoading(false);
     }
   };
-
   const creemPreTopUp = async (product) => {
     if (!enableCreemTopUp) {
-      showError(t('管理员未开启 Creem 充值！'));
+      showError('Creem top-up is not enabled');
       return;
     }
     setSelectedCreemProduct(product);
@@ -308,46 +346,27 @@ const TopUp = () => {
 
   const onlineCreemTopUp = async () => {
     if (!selectedCreemProduct) {
-      showError(t('请选择产品'));
+      showError('Please select a product');
       return;
     }
-    // Validate product has required fields
     if (!selectedCreemProduct.productId) {
-      showError(t('产品配置错误，请联系管理员'));
+      showError('Product configuration is invalid');
       return;
     }
     setConfirmLoading(true);
     try {
-      const res = await API.post('/api/user/creem/pay', {
+      await requestUnifiedTopupCheckout({
         product_id: selectedCreemProduct.productId,
         payment_method: 'creem',
       });
-      if (res !== undefined) {
-        const { message, data } = res.data;
-        if (message === 'success') {
-          processCreemCallback(data);
-        } else {
-          const errorMsg =
-            typeof data === 'string' ? data : message || t('支付失败');
-          showError(errorMsg);
-        }
-      } else {
-        showError(res);
-      }
     } catch (err) {
       console.log(err);
-      showError(t('支付请求失败'));
+      showError('Payment request failed');
     } finally {
       setCreemOpen(false);
       setConfirmLoading(false);
     }
   };
-
-  const processCreemCallback = (data) => {
-    // 与 Stripe 保持一致的实现方式
-    window.open(data.checkout_url, '_blank');
-  };
-
   const getUserQuota = async () => {
     let res = await API.get(`/api/user/self`);
     const { success, message, data } = res.data;
@@ -399,7 +418,7 @@ const TopUp = () => {
         billing_preference: pref,
       });
       if (res.data?.success) {
-        showSuccess(t('更新成功'));
+        showSuccess('Updated successfully');
         const normalizedPref =
           res.data?.data?.billing_preference || pref || previousPref;
         setBillingPreference(normalizedPref);
@@ -408,145 +427,178 @@ const TopUp = () => {
         setBillingPreference(previousPref);
       }
     } catch (e) {
-      showError(t('请求失败'));
+      showError(t('操作失败'));
       setBillingPreference(previousPref);
     }
   };
 
-  // 获取充值配置信息
+  // Load top-up meta and provider capabilities
   const getTopupInfo = async () => {
     try {
-      const res = await API.get('/api/user/topup/info');
+      const res = await API.get('/api/payment/topup/meta');
       const { data, success } = res.data;
-      if (success) {
-        setTopupInfo({
-          amount_options: data.amount_options || [],
-          discount: data.discount || {},
-          mall_links: data.mall_links || {},
-        });
+      if (!success) {
+        console.error('Failed to load top-up info', data);
+        return;
+      }
 
-        const normalizedPrice = Number(data?.price);
-        if (Number.isFinite(normalizedPrice) && normalizedPrice > 0) {
-          setPriceRatio(normalizedPrice);
+      const providerMeta = data.provider_meta || null;
+      setTopupInfo({
+        amount_options: data.amount_options || [],
+        discount: data.discount || {},
+        mall_links: data.mall_links || {},
+      });
+
+      const normalizedPrice = Number(data?.price);
+      if (Number.isFinite(normalizedPrice) && normalizedPrice > 0) {
+        setPriceRatio(normalizedPrice);
+      }
+
+      let payMethods = data.pay_methods || [];
+      try {
+        if (typeof payMethods === 'string') {
+          payMethods = JSON.parse(payMethods);
+        }
+        if (payMethods && payMethods.length > 0) {
+          payMethods = payMethods.filter((method) => method.name && method.type);
+          payMethods = payMethods.map((method) => {
+            const normalizedMinTopup = Number(method.min_topup);
+            method.min_topup = Number.isFinite(normalizedMinTopup)
+              ? normalizedMinTopup
+              : 0;
+
+            if (
+              method.type === 'stripe' &&
+              (!method.min_topup || method.min_topup <= 0)
+            ) {
+              const stripeMin = Number(data.stripe_min_topup);
+              if (Number.isFinite(stripeMin)) {
+                method.min_topup = stripeMin;
+              }
+            }
+
+            if (!method.color) {
+              if (method.type === 'alipay') {
+                method.color = 'rgba(var(--semi-blue-5), 1)';
+              } else if (method.type === 'wxpay') {
+                method.color = 'rgba(var(--semi-green-5), 1)';
+              } else if (method.type === 'stripe') {
+                method.color = 'rgba(var(--semi-purple-5), 1)';
+              } else {
+                method.color = 'rgba(var(--semi-primary-5), 1)';
+              }
+            }
+
+            return method;
+          });
+        } else {
+          payMethods = [];
         }
 
-        // 处理支付方式
-        let payMethods = data.pay_methods || [];
-        try {
-          if (typeof payMethods === 'string') {
-            payMethods = JSON.parse(payMethods);
-          }
-          if (payMethods && payMethods.length > 0) {
-            // 检查name和type是否为空
-            payMethods = payMethods.filter((method) => {
-              return method.name && method.type;
-            });
-            // 如果没有color，则设置默认颜色
-            payMethods = payMethods.map((method) => {
-              // 规范化最小充值数
-              const normalizedMinTopup = Number(method.min_topup);
-              method.min_topup = Number.isFinite(normalizedMinTopup)
-                ? normalizedMinTopup
-                : 0;
+        setPayMethods(payMethods);
+        const enableStripeTopUp = data.enable_stripe_topup || false;
+        const enableOnlineTopUp = data.enable_online_topup || false;
+        const enableCreemTopUp = data.enable_creem_topup || false;
+        const hasMallMethod = payMethods.some((method) => method.type === 'mall');
+        const minTopUpValue = enableOnlineTopUp || hasMallMethod
+          ? data.min_topup
+          : enableStripeTopUp
+            ? data.stripe_min_topup
+            : 1;
+        let resolvedMinTopUp = minTopUpValue;
 
-              // Stripe 的最小充值从后端字段回填
-              if (
-                method.type === 'stripe' &&
-                (!method.min_topup || method.min_topup <= 0)
-              ) {
-                const stripeMin = Number(data.stripe_min_topup);
-                if (Number.isFinite(stripeMin)) {
-                  method.min_topup = stripeMin;
-                }
-              }
+        setHasMallPayMethod(hasMallMethod);
+        setEnableOnlineTopUp(enableOnlineTopUp);
+        setEnableStripeTopUp(enableStripeTopUp);
+        setEnableCreemTopUp(enableCreemTopUp);
+        setMinTopUp(minTopUpValue);
 
-              if (!method.color) {
-                if (method.type === 'alipay') {
-                  method.color = 'rgba(var(--semi-blue-5), 1)';
-                } else if (method.type === 'wxpay') {
-                  method.color = 'rgba(var(--semi-green-5), 1)';
-                } else if (method.type === 'stripe') {
-                  method.color = 'rgba(var(--semi-purple-5), 1)';
-                } else {
-                  method.color = 'rgba(var(--semi-primary-5), 1)';
-                }
-              }
-              return method;
-            });
-          } else {
-            payMethods = [];
-          }
-
-          setPayMethods(payMethods);
-          const enableStripeTopUp = data.enable_stripe_topup || false;
-          const enableOnlineTopUp = data.enable_online_topup || false;
-          const enableCreemTopUp = data.enable_creem_topup || false;
-          const hasMallMethod = payMethods.some((method) => method.type === 'mall');
-          const minTopUpValue = enableOnlineTopUp || hasMallMethod
-            ? data.min_topup
-            : enableStripeTopUp
-              ? data.stripe_min_topup
+        if (providerMeta && !providerMeta.legacy_auto) {
+          const providerPayMethods = buildPayMethodsByProvider(
+            providerMeta,
+            normalizePayMethods(data.pay_methods || [], data.stripe_min_topup),
+          );
+          const currentProvider = providerMeta.provider;
+          const currentProviderReady =
+            providerMeta.enabled && providerMeta.config_ready;
+          resolvedMinTopUp = currentProvider === 'stripe'
+            ? data.stripe_min_topup
+            : currentProvider === 'epay' || currentProvider === 'mall'
+              ? data.min_topup
               : 1;
-          setHasMallPayMethod(hasMallMethod);
-          setEnableOnlineTopUp(enableOnlineTopUp);
-          setEnableStripeTopUp(enableStripeTopUp);
-          setEnableCreemTopUp(enableCreemTopUp);
-          setMinTopUp(minTopUpValue);
-          setTopUpCount(minTopUpValue);
 
-          // 设置 Creem 产品
-          try {
-            const products = JSON.parse(data.creem_products || '[]');
-            setCreemProducts(products);
-          } catch (e) {
-            setCreemProducts([]);
-          }
-
-          // 如果没有自定义充值数量选项，根据最小充值金额生成预设充值额度选项
-          if (topupInfo.amount_options.length === 0) {
-            setPresetAmounts(generatePresetAmounts(minTopUpValue));
-          }
-
-          // 初始化显示实付金额
-          getAmount(minTopUpValue);
-        } catch (e) {
-          console.log('解析支付方式失败:', e);
-          setPayMethods([]);
-          setHasMallPayMethod(false);
+          setPayMethods(providerPayMethods);
+          setEnableOnlineTopUp(
+            currentProvider === 'epay' && currentProviderReady,
+          );
+          setEnableStripeTopUp(
+            currentProvider === 'stripe' && currentProviderReady,
+          );
+          setEnableCreemTopUp(
+            currentProvider === 'creem' && currentProviderReady,
+          );
+          setHasMallPayMethod(
+            currentProvider === 'mall' && currentProviderReady,
+          );
+          setMinTopUp(resolvedMinTopUp);
         }
 
-        // 如果有自定义充值数量选项，使用它们替换默认的预设选项
+        try {
+          const products = JSON.parse(data.creem_products || '[]');
+          setCreemProducts(products);
+        } catch (e) {
+          setCreemProducts([]);
+        }
+
+        let defaultTopUpCount = resolvedMinTopUp;
         if (data.amount_options && data.amount_options.length > 0) {
           const customPresets = data.amount_options.map((amount) => ({
             value: amount,
             discount: data.discount[amount] || 1.0,
           }));
           setPresetAmounts(customPresets);
+          defaultTopUpCount = resolveDefaultTopUpCount(
+            data.amount_options,
+            resolvedMinTopUp,
+          );
+        } else {
+          const generatedPresets = generatePresetAmounts(resolvedMinTopUp);
+          setPresetAmounts(generatedPresets);
+          defaultTopUpCount = resolveDefaultTopUpCount(
+            generatedPresets.map((preset) => preset.value),
+            resolvedMinTopUp,
+          );
         }
-      } else {
-        console.error('获取充值配置失败', data);
+
+        setTopUpCount(defaultTopUpCount);
+        setSelectedPreset(defaultTopUpCount);
+        getAmount(defaultTopUpCount);
+      } catch (e) {
+        console.log('Failed to normalize top-up methods', e);
+        setPayMethods([]);
+        setHasMallPayMethod(false);
       }
     } catch (error) {
-      console.error('获取充值配置异常', error);
+      console.error('Failed to load top-up info', error);
     }
   };
 
-  // 获取邀请链接
+  // Load invitation link
   const getAffLink = async () => {
     const res = await API.get('/api/user/aff');
     const { success, message, data } = res.data;
     if (success) {
-      let link = `${window.location.origin}/register?aff=${data}`;
+      const link = `${window.location.origin}/register?aff=${data}`;
       setAffLink(link);
     } else {
       showError(message);
     }
   };
 
-  // 划转邀请额度
+  // Transfer quota to a referred user
   const transfer = async () => {
     if (transferAmount < getQuotaPerUnit()) {
-      showError(t('划转金额最低为') + ' ' + renderQuota(getQuotaPerUnit()));
+      showError('Transfer amount must be at least ' + renderQuota(getQuotaPerUnit()));
       return;
     }
     const res = await API.post(`/api/user/aff_transfer`, {
@@ -562,14 +614,13 @@ const TopUp = () => {
     }
   };
 
-  // 复制邀请链接
+  // Copy invitation link
   const handleAffLinkClick = async () => {
     await copy(affLink);
-    showSuccess(t('邀请链接已复制到剪切板'));
+    showSuccess('Invitation link copied');
   };
 
   useEffect(() => {
-    // 始终获取最新用户数据，确保余额等统计信息准确
     getUserQuota().then();
     setTransferAmount(getQuotaPerUnit());
   }, []);
@@ -580,7 +631,6 @@ const TopUp = () => {
     getAffLink().then();
   }, []);
 
-  // 在 statusState 可用时获取充值信息
   useEffect(() => {
     getTopupInfo().then();
     getSubscriptionPlans().then();
@@ -595,7 +645,7 @@ const TopUp = () => {
   }, [statusState?.status]);
 
   const renderAmount = () => {
-    return amount + ' ' + t('元');
+    return String(amount);
   };
 
   const getAmount = async (value) => {
@@ -613,7 +663,7 @@ const TopUp = () => {
           setAmount(parseFloat(data));
         } else {
           setAmount(0);
-          Toast.error({ content: '错误：' + data, id: 'getAmount' });
+          Toast.error({ content: 'Error: ' + data, id: 'getAmount' });
         }
       } else {
         showError(res);
@@ -639,7 +689,7 @@ const TopUp = () => {
           setAmount(parseFloat(data));
         } else {
           setAmount(0);
-          Toast.error({ content: '错误：' + data, id: 'getAmount' });
+          Toast.error({ content: 'Error: ' + data, id: 'getAmount' });
         }
       } else {
         showError(res);
@@ -672,23 +722,18 @@ const TopUp = () => {
     setSelectedCreemProduct(null);
   };
 
-  // 选择预设充值额度
   const selectPresetAmount = (preset) => {
     setTopUpCount(preset.value);
     setSelectedPreset(preset.value);
-
-    // 计算实际支付金额，考虑折扣
     const discount = preset.discount || topupInfo.discount[preset.value] || 1.0;
     const discountedAmount = preset.value * priceRatio * discount;
     setAmount(discountedAmount);
   };
 
-  // 格式化大数字显示
   const formatLargeNumber = (num) => {
     return num.toString();
   };
 
-  // 根据最小充值金额生成预设充值额度选项
   const generatePresetAmounts = (minAmount) => {
     const multipliers = [1, 5, 10, 30, 50, 100, 300, 500];
     return multipliers.map((multiplier) => ({
@@ -696,9 +741,10 @@ const TopUp = () => {
     }));
   };
 
+
   return (
     <div className='w-full max-w-7xl mx-auto relative min-h-screen lg:min-h-0 mt-[60px] px-2'>
-      {/* 划转模态框 */}
+      {/* Transfer modal */}
       <TransferModal
         t={t}
         openTransfer={openTransfer}
@@ -711,7 +757,7 @@ const TopUp = () => {
         setTransferAmount={setTransferAmount}
       />
 
-      {/* 充值确认模态框 */}
+      {/* Payment confirmation modal */}
       <PaymentConfirmModal
         t={t}
         open={open}
@@ -726,18 +772,19 @@ const TopUp = () => {
         payMethods={payMethods}
         amountNumber={amount}
         discountRate={topupInfo?.discount?.[topUpCount] || 1.0}
+        topupRate={priceRatio}
       />
 
-      {/* 充值账单模态框 */}
+      {/* Top-up history modal */}
       <TopupHistoryModal
         visible={openHistory}
         onCancel={handleHistoryCancel}
         t={t}
       />
 
-      {/* Creem 充值确认模态框 */}
+      {/* Creem confirmation modal */}
       <Modal
-        title={t('确定要充值$')}
+        title={t('确认 Creem 充值')}
         visible={creemOpen}
         onOk={onlineCreemTopUp}
         onCancel={handleCreemCancel}
@@ -749,21 +796,21 @@ const TopUp = () => {
         {selectedCreemProduct && (
           <>
             <p>
-              {t('产品名称')}：{selectedCreemProduct.name}
+              {'Product: '}{selectedCreemProduct.name}
             </p>
             <p>
-              {t('价格')}：{selectedCreemProduct.currency === 'EUR' ? '€' : '$'}
+              {'Price: '}{selectedCreemProduct.currency === 'EUR' ? 'EUR ' : '$'}
               {selectedCreemProduct.price}
             </p>
             <p>
-              {t('充值额度')}：{selectedCreemProduct.quota}
+              {'Quota: '}{selectedCreemProduct.quota}
             </p>
-            <p>{t('是否确认充值？')}</p>
+            <p>{'Confirm top-up?'}</p>
           </>
         )}
       </Modal>
 
-      {/* 主布局区域 */}
+      {/* Main content */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
         <RechargeCard
           t={t}
@@ -823,3 +870,4 @@ const TopUp = () => {
 };
 
 export default TopUp;
+

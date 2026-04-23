@@ -43,6 +43,7 @@ function formatDuration(plan, t) {
   const unitMap = {
     year: t('年'),
     month: t('月'),
+    week: t('周'),
     day: t('日'),
     hour: t('小时'),
   };
@@ -212,7 +213,7 @@ const renderPaymentConfig = (text, record, t, enableEpay) => {
     <Space spacing={4}>
       {hasMallLink && (
         <Tag color='grey' shape='circle'>
-          Mall
+          {t('商城')}
         </Tag>
       )}
       {hasStripe && (

@@ -51,6 +51,7 @@ const { Text, Title } = Typography;
 const durationUnitOptions = [
   { value: 'year', label: '年' },
   { value: 'month', label: '月' },
+  { value: 'week', label: '周' },
   { value: 'day', label: '日' },
   { value: 'hour', label: '小时' },
   { value: 'custom', label: '自定义(秒)' },

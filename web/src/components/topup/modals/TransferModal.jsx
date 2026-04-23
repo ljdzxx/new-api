@@ -59,7 +59,7 @@ const TransferModal = ({
         </div>
         <div>
           <Typography.Text strong className='block mb-2'>
-            {t('划转额度')} · {t('最低') + renderQuota(getQuotaPerUnit())}
+            {t('划转额度')} · {t('最低')} {renderQuota(getQuotaPerUnit())}
           </Typography.Text>
           <InputNumber
             min={getQuotaPerUnit()}

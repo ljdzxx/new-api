@@ -18,6 +18,7 @@ import (
 const (
 	SubscriptionDurationYear   = "year"
 	SubscriptionDurationMonth  = "month"
+	SubscriptionDurationWeek   = "week"
 	SubscriptionDurationDay    = "day"
 	SubscriptionDurationHour   = "hour"
 	SubscriptionDurationCustom = "custom"
@@ -342,6 +343,8 @@ func calcPlanEndTime(start time.Time, plan *SubscriptionPlan) (int64, error) {
 		return start.AddDate(plan.DurationValue, 0, 0).Unix(), nil
 	case SubscriptionDurationMonth:
 		return start.AddDate(0, plan.DurationValue, 0).Unix(), nil
+	case SubscriptionDurationWeek:
+		return start.AddDate(0, 0, plan.DurationValue*7).Unix(), nil
 	case SubscriptionDurationDay:
 		return start.Add(time.Duration(plan.DurationValue) * 24 * time.Hour).Unix(), nil
 	case SubscriptionDurationHour:

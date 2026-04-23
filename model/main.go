@@ -254,11 +254,15 @@ func migrateDB() error {
 	if err := migrateTokenModelLimitsToText(); err != nil {
 		return err
 	}
+	if common.UsingSQLite {
+		if err := ensureUsersTableSQLite(); err != nil {
+			return err
+		}
+	}
 
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
-		&User{},
 		&ChannelDailyMark{},
 		&PasskeyCredential{},
 		&Option{},
@@ -311,7 +315,6 @@ func migrateDBFast() error {
 	}{
 		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
-		{&User{}, "User"},
 		{&ChannelDailyMark{}, "ChannelDailyMark"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
 		{&Option{}, "Option"},
@@ -360,6 +363,9 @@ func migrateDBFast() error {
 		}
 	}
 	if common.UsingSQLite {
+		if err := ensureUsersTableSQLite(); err != nil {
+			return err
+		}
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
 		}
@@ -386,6 +392,66 @@ func migrateLOGDB() error {
 type sqliteColumnDef struct {
 	Name string
 	DDL  string
+}
+
+func ensureUsersTableSQLite() error {
+	if !common.UsingSQLite {
+		return nil
+	}
+	tableName := "users"
+	if !DB.Migrator().HasTable(tableName) {
+		return DB.Migrator().CreateTable(&User{})
+	}
+	var cols []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := DB.Raw("PRAGMA table_info(`" + tableName + "`)").Scan(&cols).Error; err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(cols))
+	for _, c := range cols {
+		existing[c.Name] = struct{}{}
+	}
+	required := []sqliteColumnDef{
+		{Name: "username", DDL: "`username` text"},
+		{Name: "password", DDL: "`password` text NOT NULL"},
+		{Name: "display_name", DDL: "`display_name` text"},
+		{Name: "role", DDL: "`role` integer DEFAULT 1"},
+		{Name: "status", DDL: "`status` integer DEFAULT 1"},
+		{Name: "email", DDL: "`email` text"},
+		{Name: "github_id", DDL: "`github_id` text"},
+		{Name: "discord_id", DDL: "`discord_id` text"},
+		{Name: "oidc_id", DDL: "`oidc_id` text"},
+		{Name: "wechat_id", DDL: "`wechat_id` text"},
+		{Name: "telegram_id", DDL: "`telegram_id` text"},
+		{Name: "access_token", DDL: "`access_token` char(32)"},
+		{Name: "quota", DDL: "`quota` integer DEFAULT 0"},
+		{Name: "used_quota", DDL: "`used_quota` integer DEFAULT 0"},
+		{Name: "request_count", DDL: "`request_count` integer DEFAULT 0"},
+		{Name: "group", DDL: "`group` varchar(64) DEFAULT 'default'"},
+		{Name: "aff_code", DDL: "`aff_code` varchar(32)"},
+		{Name: "aff_count", DDL: "`aff_count` integer DEFAULT 0"},
+		{Name: "aff_quota", DDL: "`aff_quota` integer DEFAULT 0"},
+		{Name: "aff_history", DDL: "`aff_history` integer DEFAULT 0"},
+		{Name: "inviter_id", DDL: "`inviter_id` integer"},
+		{Name: "deleted_at", DDL: "`deleted_at` datetime"},
+		{Name: "linux_do_id", DDL: "`linux_do_id` text"},
+		{Name: "setting", DDL: "`setting` text"},
+		{Name: "remark", DDL: "`remark` varchar(255)"},
+		{Name: "stripe_customer", DDL: "`stripe_customer` varchar(64)"},
+		{Name: "user_level_id", DDL: "`user_level_id` integer DEFAULT 1"},
+		{Name: "created_at", DDL: "`created_at` bigint"},
+		{Name: "global_model_ratio", DDL: "`global_model_ratio` decimal(12,6) DEFAULT 1.000000"},
+	}
+	for _, col := range required {
+		if _, ok := existing[col.Name]; ok {
+			continue
+		}
+		if err := DB.Exec("ALTER TABLE `" + tableName + "` ADD COLUMN " + col.DDL).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureSubscriptionPlanTableSQLite() error {

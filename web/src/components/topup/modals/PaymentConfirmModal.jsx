@@ -21,6 +21,7 @@ import React from 'react';
 import { Modal, Typography, Card, Skeleton } from '@douyinfe/semi-ui';
 import { SiAlipay, SiWechat, SiStripe } from 'react-icons/si';
 import { CreditCard } from 'lucide-react';
+import { convertTopupBaseToPaymentCurrency } from '../../../helpers/render';
 
 const { Text } = Typography;
 
@@ -33,17 +34,95 @@ const PaymentConfirmModal = ({
   topUpCount,
   renderQuotaWithAmount,
   amountLoading,
-  renderAmount,
   payWay,
   payMethods,
-  // 新增：用于显示折扣明细
   amountNumber,
   discountRate,
+  topupRate,
 }) => {
   const hasDiscount =
     discountRate && discountRate > 0 && discountRate < 1 && amountNumber > 0;
   const originalAmount = hasDiscount ? amountNumber / discountRate : 0;
   const discountAmount = hasDiscount ? originalAmount - amountNumber : 0;
+  const actualPaymentText = convertTopupBaseToPaymentCurrency(
+    amountNumber,
+    topupRate,
+  );
+  const originalPaymentText = convertTopupBaseToPaymentCurrency(
+    originalAmount,
+    topupRate,
+  );
+  const discountPaymentText = convertTopupBaseToPaymentCurrency(
+    discountAmount,
+    topupRate,
+  );
+
+  const renderPaymentMethod = () => {
+    const payMethod = payMethods.find((method) => method.type === payWay);
+    if (payMethod) {
+      return (
+        <>
+          {payMethod.type === 'alipay' ? (
+            <SiAlipay className='mr-2' size={16} color='#1677FF' />
+          ) : payMethod.type === 'wxpay' ? (
+            <SiWechat className='mr-2' size={16} color='#07C160' />
+          ) : payMethod.type === 'stripe' ? (
+            <SiStripe className='mr-2' size={16} color='#635BFF' />
+          ) : (
+            <CreditCard
+              className='mr-2'
+              size={16}
+              color={payMethod.color || 'var(--semi-color-text-2)'}
+            />
+          )}
+          <Text className='text-slate-900 dark:text-slate-100'>
+            {payMethod.type === 'mall' ? t('商城') : payMethod.name}
+          </Text>
+        </>
+      );
+    }
+
+    if (payWay === 'alipay') {
+      return (
+        <>
+          <SiAlipay className='mr-2' size={16} color='#1677FF' />
+          <Text className='text-slate-900 dark:text-slate-100'>
+            {t('支付宝')}
+          </Text>
+        </>
+      );
+    }
+
+    if (payWay === 'stripe') {
+      return (
+        <>
+          <SiStripe className='mr-2' size={16} color='#635BFF' />
+          <Text className='text-slate-900 dark:text-slate-100'>Stripe</Text>
+        </>
+      );
+    }
+
+    if (payWay === 'mall') {
+      return (
+        <>
+          <CreditCard className='mr-2' size={16} />
+          <Text className='text-slate-900 dark:text-slate-100'>
+            {t('商城')}
+          </Text>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <SiWechat className='mr-2' size={16} color='#07C160' />
+        <Text className='text-slate-900 dark:text-slate-100'>
+          {t('微信')}
+        </Text>
+      </>
+    );
+  };
+
   return (
     <Modal
       title={
@@ -65,22 +144,23 @@ const PaymentConfirmModal = ({
           <div className='space-y-3'>
             <div className='flex justify-between items-center'>
               <Text strong className='text-slate-700 dark:text-slate-200'>
-                {t('充值数量')}：
+                {t('充值数量')}:
               </Text>
               <Text className='text-slate-900 dark:text-slate-100'>
                 {renderQuotaWithAmount(topUpCount)}
               </Text>
             </div>
+
             <div className='flex justify-between items-center'>
               <Text strong className='text-slate-700 dark:text-slate-200'>
-                {t('实付金额')}：
+                {t('实付金额')}:
               </Text>
               {amountLoading ? (
                 <Skeleton.Title style={{ width: '60px', height: '16px' }} />
               ) : (
                 <div className='flex items-baseline space-x-2'>
                   <Text strong className='font-bold' style={{ color: 'red' }}>
-                    {renderAmount()}
+                    {actualPaymentText}
                   </Text>
                   {hasDiscount && (
                     <Text size='small' className='text-rose-500'>
@@ -90,144 +170,33 @@ const PaymentConfirmModal = ({
                 </div>
               )}
             </div>
+
             {hasDiscount && !amountLoading && (
               <>
                 <div className='flex justify-between items-center'>
                   <Text className='text-slate-500 dark:text-slate-400'>
-                    {t('原价')}：
+                    {t('原价')}:
                   </Text>
                   <Text delete className='text-slate-500 dark:text-slate-400'>
-                    {`${originalAmount.toFixed(2)} ${t('元')}`}
+                    {originalPaymentText}
                   </Text>
                 </div>
                 <div className='flex justify-between items-center'>
                   <Text className='text-slate-500 dark:text-slate-400'>
-                    {t('优惠')}：
+                    {t('优惠')}:
                   </Text>
                   <Text className='text-emerald-600 dark:text-emerald-400'>
-                    {`- ${discountAmount.toFixed(2)} ${t('元')}`}
+                    {`- ${discountPaymentText}`}
                   </Text>
                 </div>
               </>
             )}
+
             <div className='flex justify-between items-center'>
               <Text strong className='text-slate-700 dark:text-slate-200'>
-                {t('支付方式')}：
+                {t('支付方式')}:
               </Text>
-              <div className='flex items-center'>
-                {(() => {
-                  const payMethod = payMethods.find(
-                    (method) => method.type === payWay,
-                  );
-                  if (payMethod) {
-                    return (
-                      <>
-                        {payMethod.type === 'alipay' ? (
-                          <SiAlipay
-                            className='mr-2'
-                            size={16}
-                            color='#1677FF'
-                          />
-                        ) : payMethod.type === 'wxpay' ? (
-                          <SiWechat
-                            className='mr-2'
-                            size={16}
-                            color='#07C160'
-                          />
-                        ) : payMethod.type === 'stripe' ? (
-                          <SiStripe
-                            className='mr-2'
-                            size={16}
-                            color='#635BFF'
-                          />
-                        ) : payMethod.type === 'mall' ? (
-                          <img
-                            src='/taobao_75px.png'
-                            alt='Taobao'
-                            className='mr-2'
-                            style={{
-                              width: 16,
-                              height: 16,
-                              objectFit: 'contain',
-                            }}
-                          />
-                        ) : (
-                          <CreditCard
-                            className='mr-2'
-                            size={16}
-                            color={
-                              payMethod.color || 'var(--semi-color-text-2)'
-                            }
-                          />
-                        )}
-                        <Text className='text-slate-900 dark:text-slate-100'>
-                          {payMethod.name}
-                        </Text>
-                      </>
-                    );
-                  } else {
-                    // 默认充值方式
-                    if (payWay === 'alipay') {
-                      return (
-                        <>
-                          <SiAlipay
-                            className='mr-2'
-                            size={16}
-                            color='#1677FF'
-                          />
-                          <Text className='text-slate-900 dark:text-slate-100'>
-                            {t('支付宝')}
-                          </Text>
-                        </>
-                      );
-                    } else if (payWay === 'stripe') {
-                      return (
-                        <>
-                          <SiStripe
-                            className='mr-2'
-                            size={16}
-                            color='#635BFF'
-                          />
-                          <Text className='text-slate-900 dark:text-slate-100'>
-                            Stripe
-                          </Text>
-                        </>
-                      );
-                    } else if (payWay === 'mall') {
-                      return (
-                        <>
-                          <img
-                            src='/taobao_75px.png'
-                            alt='Taobao'
-                            className='mr-2'
-                            style={{
-                              width: 16,
-                              height: 16,
-                              objectFit: 'contain',
-                            }}
-                          />
-                          <Text className='text-slate-900 dark:text-slate-100'>
-                            Mall
-                          </Text>
-                        </>
-                      );
-                    } else {
-                      return (
-                        <>
-                          <SiWechat
-                            className='mr-2'
-                            size={16}
-                            color='#07C160'
-                          />
-                          <Text className='text-slate-900 dark:text-slate-100'>
-                            {t('微信')}
-                          </Text>
-                        </>
-                      );
-                    }
-                  }
-                })()}
-              </div>
+              <div className='flex items-center'>{renderPaymentMethod()}</div>
             </div>
           </div>
         </Card>

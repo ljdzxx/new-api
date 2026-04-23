@@ -34,3 +34,5 @@ data/
 机密.txt
 /guide/*.txt
 /ssl
+R2_Cli.md
+tmp_run_*.txt
