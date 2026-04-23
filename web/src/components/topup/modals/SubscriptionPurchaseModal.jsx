@@ -32,12 +32,76 @@ import { CalendarClock, CreditCard, Crown, Package } from 'lucide-react';
 import { SiAlipay, SiStripe, SiWechat } from 'react-icons/si';
 import { renderQuota } from '../../../helpers';
 import { convertUSDToPaymentCurrency } from '../../../helpers/render';
-import {
-  formatSubscriptionDuration,
-  formatSubscriptionResetPeriod,
-} from '../../../helpers/subscriptionFormat';
+import { formatSubscriptionDuration } from '../../../helpers/subscriptionFormat';
 
 const { Text } = Typography;
+
+function getDurationApproxSeconds(plan) {
+  const unit = plan?.duration_unit || 'month';
+  const value = Number(plan?.duration_value || 1);
+  if (unit === 'custom') {
+    return Number(plan?.custom_seconds || 0);
+  }
+  const unitSecondsMap = {
+    year: 365 * 24 * 60 * 60,
+    month: 30 * 24 * 60 * 60,
+    week: 7 * 24 * 60 * 60,
+    day: 24 * 60 * 60,
+    hour: 60 * 60,
+  };
+  return (unitSecondsMap[unit] || 0) * value;
+}
+
+function getResetApproxSeconds(plan) {
+  const period = plan?.quota_reset_period || 'never';
+  if (period === 'daily') return 24 * 60 * 60;
+  if (period === 'weekly') return 7 * 24 * 60 * 60;
+  if (period === 'monthly') return 30 * 24 * 60 * 60;
+  if (period === 'custom') {
+    return Number(plan?.quota_reset_custom_seconds || 0);
+  }
+  return 0;
+}
+
+function getPeriodicQuotaLabels(plan, t) {
+  const resetPeriod = plan?.quota_reset_period || 'never';
+  const durationUnit = plan?.duration_unit || 'month';
+  const totalAmount = Number(plan?.total_amount || 0);
+
+  if (resetPeriod === 'never' || totalAmount <= 0) {
+    return null;
+  }
+
+  const resetLabelMap = {
+    daily: t('每日额度'),
+    weekly: t('每周额度'),
+    monthly: t('每月额度'),
+    custom: t('周期额度'),
+  };
+
+  const durationMaxLabelMap = {
+    year: t('年度拉满'),
+    month: t('月度拉满'),
+    week: t('周度拉满'),
+    day: t('日度拉满'),
+    hour: t('时段拉满'),
+    custom: t('周期拉满'),
+  };
+
+  const durationSeconds = getDurationApproxSeconds(plan);
+  const resetSeconds = getResetApproxSeconds(plan);
+  const cycleCount =
+    durationSeconds > 0 && resetSeconds > 0
+      ? Math.max(1, Math.floor(durationSeconds / resetSeconds))
+      : 1;
+
+  return {
+    limitLabel: resetLabelMap[resetPeriod] || t('周期额度'),
+    limitValue: renderQuota(totalAmount),
+    maxLabel: durationMaxLabelMap[durationUnit] || t('周期拉满'),
+    maxValue: renderQuota(totalAmount * cycleCount),
+  };
+}
 
 function getPaymentButtonIcon(paymentType, paymentName) {
   if (paymentType === 'alipay') {
@@ -97,6 +161,7 @@ const SubscriptionPurchaseModal = ({
   const totalAmount = Number(plan?.total_amount || 0);
   const price = plan ? Number(plan.price_amount || 0) : 0;
   const displayPrice = convertUSDToPaymentCurrency(price);
+  const periodicQuotaLabels = getPeriodicQuotaLabels(plan, t);
 
   const explicitRouting = !!providerMeta && !providerMeta?.legacy_auto;
   const providerName = providerMeta?.provider || '';
@@ -104,11 +169,11 @@ const SubscriptionPurchaseModal = ({
   const modalEpayMethods =
     providerMeta?.available_channels?.length > 0
       ? providerMeta.available_channels.filter(
-          (m) =>
-            m?.type &&
-            m.type !== 'stripe' &&
-            m.type !== 'creem' &&
-            m.type !== 'mall',
+          (method) =>
+            method?.type &&
+            method.type !== 'stripe' &&
+            method.type !== 'creem' &&
+            method.type !== 'mall',
         )
       : epayMethods;
 
@@ -130,7 +195,6 @@ const SubscriptionPurchaseModal = ({
   const purchaseCount = Number(purchaseLimitInfo?.count || 0);
   const purchaseLimitReached =
     purchaseLimit > 0 && purchaseCount >= purchaseLimit;
-  const resetPeriod = formatSubscriptionResetPeriod(plan, t);
 
   const paymentOptions = [];
   if (hasEpay) {
@@ -219,36 +283,53 @@ const SubscriptionPurchaseModal = ({
                 </div>
               </div>
 
-              {resetPeriod !== t('不重置') && (
+              {periodicQuotaLabels ? (
+                <>
+                  <div className='flex justify-between items-center'>
+                    <Text strong className='text-slate-700 dark:text-slate-200'>
+                      {periodicQuotaLabels.limitLabel}:
+                    </Text>
+                    <div className='flex items-center'>
+                      <Package size={14} className='mr-1 text-slate-500' />
+                      <Text className='text-slate-900 dark:text-slate-100'>
+                        {periodicQuotaLabels.limitValue}
+                      </Text>
+                    </div>
+                  </div>
+
+                  <div className='flex justify-between items-center'>
+                    <Text strong className='text-slate-700 dark:text-slate-200'>
+                      {periodicQuotaLabels.maxLabel}:
+                    </Text>
+                    <div className='flex items-center'>
+                      <Package size={14} className='mr-1 text-slate-500' />
+                      <Text className='text-slate-900 dark:text-slate-100'>
+                        {periodicQuotaLabels.maxValue}
+                      </Text>
+                    </div>
+                  </div>
+                </>
+              ) : (
                 <div className='flex justify-between items-center'>
                   <Text strong className='text-slate-700 dark:text-slate-200'>
-                    {t('重置周期')}:
+                    {t('总额度')}:
                   </Text>
-                  <Text className='text-slate-900 dark:text-slate-100'>
-                    {resetPeriod}
-                  </Text>
+                  <div className='flex items-center'>
+                    <Package size={14} className='mr-1 text-slate-500' />
+                    {totalAmount > 0 ? (
+                      <Tooltip content={`${t('原始额度')}: ${totalAmount}`}>
+                        <Text className='text-slate-900 dark:text-slate-100'>
+                          {renderQuota(totalAmount)}
+                        </Text>
+                      </Tooltip>
+                    ) : (
+                      <Text className='text-slate-900 dark:text-slate-100'>
+                        {t('不限')}
+                      </Text>
+                    )}
+                  </div>
                 </div>
               )}
-
-              <div className='flex justify-between items-center'>
-                <Text strong className='text-slate-700 dark:text-slate-200'>
-                  {t('总额度')}:
-                </Text>
-                <div className='flex items-center'>
-                  <Package size={14} className='mr-1 text-slate-500' />
-                  {totalAmount > 0 ? (
-                    <Tooltip content={`${t('原始额度')}: ${totalAmount}`}>
-                      <Text className='text-slate-900 dark:text-slate-100'>
-                        {renderQuota(totalAmount)}
-                      </Text>
-                    </Tooltip>
-                  ) : (
-                    <Text className='text-slate-900 dark:text-slate-100'>
-                      {t('不限')}
-                    </Text>
-                  )}
-                </div>
-              </div>
 
               {plan?.upgrade_group ? (
                 <div className='flex justify-between items-center'>
