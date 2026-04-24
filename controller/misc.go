@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -243,7 +242,7 @@ func GetHomePageContent(c *gin.Context) {
 }
 
 func SendEmailVerification(c *gin.Context) {
-	email := c.Query("email")
+	email := strings.TrimSpace(c.Query("email"))
 	if err := common.Validate.Var(email, "required,email"); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -260,11 +259,11 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 	localPart := parts[0]
-	domainPart := parts[1]
+	domainPart := strings.ToLower(parts[1])
 	if common.EmailDomainRestrictionEnabled {
 		allowed := false
 		for _, domain := range common.EmailDomainWhitelist {
-			if domainPart == domain {
+			if domainPart == strings.ToLower(strings.TrimSpace(domain)) {
 				allowed = true
 				break
 			}
@@ -314,7 +313,7 @@ func SendEmailVerification(c *gin.Context) {
 }
 
 func SendPasswordResetEmail(c *gin.Context) {
-	email := c.Query("email")
+	email := strings.TrimSpace(c.Query("email"))
 	if err := common.Validate.Var(email, "required,email"); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -356,7 +355,13 @@ type PasswordResetRequest struct {
 
 func ResetPassword(c *gin.Context) {
 	var req PasswordResetRequest
-	err := json.NewDecoder(c.Request.Body).Decode(&req)
+	err := common.DecodeJson(c.Request.Body, &req)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	req.Email = strings.TrimSpace(req.Email)
+	req.Token = strings.TrimSpace(req.Token)
 	if req.Email == "" || req.Token == "" {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,

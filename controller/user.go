@@ -142,6 +142,8 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+	user.Email = strings.TrimSpace(user.Email)
+	user.VerificationCode = strings.TrimSpace(user.VerificationCode)
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
@@ -181,6 +183,9 @@ func Register(c *gin.Context) {
 	if err := cleanUser.Insert(inviterId); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if common.EmailVerificationEnabled {
+		common.DeleteKey(user.Email, common.EmailVerificationPurpose)
 	}
 
 	// 获取插入后的用户ID
@@ -1013,8 +1018,8 @@ func ManageUser(c *gin.Context) {
 }
 
 func EmailBind(c *gin.Context) {
-	email := c.Query("email")
-	code := c.Query("code")
+	email := strings.TrimSpace(c.Query("email"))
+	code := strings.TrimSpace(c.Query("code"))
 	if !common.VerifyCodeWithKey(email, code, common.EmailVerificationPurpose) {
 		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 		return
@@ -1036,6 +1041,7 @@ func EmailBind(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	common.DeleteKey(email, common.EmailVerificationPurpose)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
