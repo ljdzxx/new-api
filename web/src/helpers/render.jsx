@@ -354,6 +354,8 @@ export function getChannelIcon(channelType) {
       return <Cloudflare.Color size={iconSize} />;
     case 43: // DeepSeek
       return <DeepSeek.Color size={iconSize} />;
+    case 58: // Xiaomi MiMo
+      return getLobeHubIcon('XiaomiMiMo', iconSize);
     case 15: // 百度文心千帆
     case 46: // 百度文心千帆V2
       return <Wenxin.Color size={iconSize} />;
