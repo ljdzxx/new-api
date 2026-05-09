@@ -1,0 +1,10 @@
+# 关闭vs code
+
+# 启动python代理
+python .\proxy.py --host 127.0.0.1 --port 8888 --mitm --openssl C:\Users\ljdzxx\miniconda3\Library\bin\openssl.exe --proxy http://127.0.0.1:10809
+
+# 启动vs code
+$env:HTTP_PROXY="http://127.0.0.1:8888"
+$env:HTTPS_PROXY="http://127.0.0.1:8888"
+$env:NODE_EXTRA_CA_CERTS="E:\go_project\new-api\.proxy-certs\ca.cert.pem"
+code

@@ -293,6 +293,164 @@ function toTokenNumber(value) {
   return parsed;
 }
 
+function toFiniteNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getEffectiveGroupRatioValue(groupRatio, userGroupRatio) {
+  const parsedUserGroupRatio = Number(userGroupRatio);
+  if (Number.isFinite(parsedUserGroupRatio) && parsedUserGroupRatio !== -1) {
+    return parsedUserGroupRatio;
+  }
+  return toFiniteNumber(groupRatio, 1);
+}
+
+function getQuotaPerUnitValue() {
+  const raw = Number(localStorage.getItem('quota_per_unit') || '1');
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+function convertUsdAmountToQuota(usdAmount) {
+  return usdAmount * getQuotaPerUnitValue();
+}
+
+function getEquivalentBillingQuota(record) {
+  const other = getLogOther(record?.other);
+  if (!other || record?.type !== 2) {
+    return null;
+  }
+
+  if (
+    other?.violation_fee === true ||
+    Boolean(other?.violation_fee_code) ||
+    Boolean(other?.violation_fee_marker)
+  ) {
+    return other?.fee_quota ?? record?.quota ?? 0;
+  }
+
+  const groupRatio = getEffectiveGroupRatioValue(
+    other?.group_ratio,
+    other?.user_group_ratio,
+  );
+  const modelPrice = toFiniteNumber(other?.model_price, -1);
+
+  if (modelPrice !== -1) {
+    return convertUsdAmountToQuota(modelPrice * groupRatio);
+  }
+
+  if (other?.ws || other?.audio) {
+    const inputTokens = toFiniteNumber(other?.text_input);
+    const completionTokens = toFiniteNumber(other?.text_output);
+    const modelRatio = toFiniteNumber(other?.model_ratio);
+    const completionRatio = toFiniteNumber(other?.completion_ratio);
+    const audioInputTokens = toFiniteNumber(other?.audio_input);
+    const audioCompletionTokens = toFiniteNumber(other?.audio_output);
+    const audioRatio = toFiniteNumber(other?.audio_ratio);
+    const audioCompletionRatio = toFiniteNumber(other?.audio_completion_ratio);
+    const cacheTokens = toFiniteNumber(other?.cache_tokens);
+    const cacheRatio = toFiniteNumber(other?.cache_ratio, 1);
+    const inputRatioPrice = modelRatio * 2.0;
+    const completionRatioPrice = modelRatio * 2.0 * completionRatio;
+    const textPrice =
+      ((inputTokens - cacheTokens + cacheTokens * cacheRatio) / 1000000) *
+        inputRatioPrice *
+        groupRatio +
+      (completionTokens / 1000000) * completionRatioPrice * groupRatio;
+    const audioPrice =
+      (audioInputTokens / 1000000) * inputRatioPrice * audioRatio * groupRatio +
+      (audioCompletionTokens / 1000000) *
+        inputRatioPrice *
+        audioRatio *
+        audioCompletionRatio *
+        groupRatio;
+    return convertUsdAmountToQuota(textPrice + audioPrice);
+  }
+
+  if (other?.claude) {
+    const inputTokens = toFiniteNumber(record?.prompt_tokens);
+    const completionTokens = toFiniteNumber(record?.completion_tokens);
+    const modelRatio = toFiniteNumber(other?.model_ratio);
+    const completionRatio = toFiniteNumber(other?.completion_ratio);
+    const cacheTokens = toFiniteNumber(other?.cache_tokens);
+    const cacheRatio = toFiniteNumber(other?.cache_ratio, 1);
+    const cacheCreationTokens = toFiniteNumber(other?.cache_creation_tokens);
+    const cacheCreationRatio = toFiniteNumber(other?.cache_creation_ratio, 1);
+    const cacheCreationTokens5m = toFiniteNumber(
+      other?.cache_creation_tokens_5m,
+    );
+    const cacheCreationRatio5m = toFiniteNumber(
+      other?.cache_creation_ratio_5m ?? other?.cache_creation_ratio,
+      1,
+    );
+    const cacheCreationTokens1h = toFiniteNumber(
+      other?.cache_creation_tokens_1h,
+    );
+    const cacheCreationRatio1h = toFiniteNumber(
+      other?.cache_creation_ratio_1h ?? other?.cache_creation_ratio,
+      1,
+    );
+    const inputRatioPrice = modelRatio * 2.0;
+    const completionRatioPrice = modelRatio * 2.0 * completionRatio;
+    const hasSplitCacheCreation =
+      cacheCreationTokens5m > 0 || cacheCreationTokens1h > 0;
+    const legacyCacheCreationTokens = hasSplitCacheCreation
+      ? 0
+      : cacheCreationTokens;
+    const effectiveInputTokens =
+      inputTokens +
+      cacheTokens * cacheRatio +
+      legacyCacheCreationTokens * cacheCreationRatio +
+      cacheCreationTokens5m * cacheCreationRatio5m +
+      cacheCreationTokens1h * cacheCreationRatio1h;
+    const totalPrice =
+      (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
+      (completionTokens / 1000000) * completionRatioPrice * groupRatio;
+    return convertUsdAmountToQuota(totalPrice);
+  }
+
+  const inputTokens = toFiniteNumber(record?.prompt_tokens);
+  const completionTokens = toFiniteNumber(record?.completion_tokens);
+  const modelRatio = toFiniteNumber(other?.model_ratio);
+  const completionRatio = toFiniteNumber(other?.completion_ratio);
+  const cacheTokens = toFiniteNumber(other?.cache_tokens);
+  const cacheRatio = toFiniteNumber(other?.cache_ratio, 1);
+  const image = Boolean(other?.image);
+  const imageRatio = toFiniteNumber(other?.image_ratio);
+  const imageOutputTokens = toFiniteNumber(other?.image_output);
+  const webSearchCallCount = toFiniteNumber(other?.web_search_call_count);
+  const webSearchPrice = toFiniteNumber(other?.web_search_price);
+  const fileSearchCallCount = toFiniteNumber(other?.file_search_call_count);
+  const fileSearchPrice = toFiniteNumber(other?.file_search_price);
+  const audioInputTokens = toFiniteNumber(other?.audio_input_token_count);
+  const audioInputPrice = toFiniteNumber(other?.audio_input_price);
+  const imageGenerationCallPrice = toFiniteNumber(
+    other?.image_generation_call_price,
+  );
+  const inputRatioPrice = modelRatio * 2.0;
+  const completionRatioPrice = modelRatio * 2.0 * completionRatio;
+
+  let effectiveInputTokens =
+    inputTokens - cacheTokens + cacheTokens * cacheRatio;
+  if (image && imageOutputTokens > 0) {
+    effectiveInputTokens =
+      inputTokens - imageOutputTokens + imageOutputTokens * imageRatio;
+  }
+  if (audioInputTokens > 0) {
+    effectiveInputTokens -= audioInputTokens;
+  }
+
+  const totalPrice =
+    (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
+    (audioInputTokens / 1000000) * audioInputPrice * groupRatio +
+    (completionTokens / 1000000) * completionRatioPrice * groupRatio +
+    (webSearchCallCount / 1000) * webSearchPrice * groupRatio +
+    (fileSearchCallCount / 1000) * fileSearchPrice * groupRatio +
+    imageGenerationCallPrice * groupRatio;
+
+  return convertUsdAmountToQuota(totalPrice);
+}
+
 function formatTokenCount(value) {
   return toTokenNumber(value).toLocaleString();
 }
@@ -803,16 +961,19 @@ export const getLogsColumns = ({
           return <></>;
         }
         const other = getLogOther(record.other);
+        const equivalentBillingQuota = getEquivalentBillingQuota(record);
+        const displayQuota =
+          equivalentBillingQuota === null ? text : equivalentBillingQuota;
+        const displayText = renderQuota(displayQuota, 6);
         const isSubscription = other?.billing_source === 'subscription';
         if (isSubscription) {
-          // Subscription billed: show only tag (no $0), but keep tooltip for equivalent cost.
           return (
-            <Tooltip content={`${t('由订阅抵扣')}：${renderQuota(text, 6)}`}>
+            <Tooltip content={`${t('由订阅抵扣')}：${displayText}`}>
               <span>{renderBillingTag(record, t)}</span>
             </Tooltip>
           );
         }
-        return <>{renderQuota(text, 6)}</>;
+        return <>{displayText}</>;
       },
     },
     {

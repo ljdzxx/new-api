@@ -88,14 +88,15 @@ const (
 )
 
 type NewAPIError struct {
-	Err            error
-	RelayError     any
-	skipRetry      bool
-	recordErrorLog *bool
-	errorType      ErrorType
-	errorCode      ErrorCode
-	StatusCode     int
-	Metadata       json.RawMessage
+	Err                error
+	RelayError         any
+	skipRetry          bool
+	recordErrorLog     *bool
+	errorType          ErrorType
+	errorCode          ErrorCode
+	StatusCode         int
+	UpstreamStatusCode int
+	Metadata           json.RawMessage
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -174,7 +175,18 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 }
 
 func (e *NewAPIError) SetMessage(message string) {
+	if e == nil {
+		return
+	}
 	e.Err = errors.New(message)
+	switch relayError := e.RelayError.(type) {
+	case OpenAIError:
+		relayError.Message = message
+		e.RelayError = relayError
+	case ClaudeError:
+		relayError.Message = message
+		e.RelayError = relayError
+	}
 }
 
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
@@ -251,11 +263,12 @@ func NewError(err error, errorCode ErrorCode, ops ...NewAPIErrorOptions) *NewAPI
 		return newErr
 	}
 	e := &NewAPIError{
-		Err:        err,
-		RelayError: nil,
-		errorType:  ErrorTypeNewAPIError,
-		StatusCode: http.StatusInternalServerError,
-		errorCode:  errorCode,
+		Err:                err,
+		RelayError:         nil,
+		errorType:          ErrorTypeNewAPIError,
+		StatusCode:         http.StatusInternalServerError,
+		UpstreamStatusCode: http.StatusInternalServerError,
+		errorCode:          errorCode,
 	}
 	for _, op := range ops {
 		op(e)
@@ -303,9 +316,10 @@ func NewErrorWithStatusCode(err error, errorCode ErrorCode, statusCode int, ops 
 			Message: err.Error(),
 			Type:    string(errorCode),
 		},
-		errorType:  ErrorTypeNewAPIError,
-		StatusCode: statusCode,
-		errorCode:  errorCode,
+		errorType:          ErrorTypeNewAPIError,
+		StatusCode:         statusCode,
+		UpstreamStatusCode: statusCode,
+		errorCode:          errorCode,
 	}
 	for _, op := range ops {
 		op(e)
@@ -327,11 +341,12 @@ func WithOpenAIError(openAIError OpenAIError, statusCode int, ops ...NewAPIError
 		openAIError.Type = "upstream_error"
 	}
 	e := &NewAPIError{
-		RelayError: openAIError,
-		errorType:  ErrorTypeOpenAIError,
-		StatusCode: statusCode,
-		Err:        errors.New(openAIError.Message),
-		errorCode:  ErrorCode(code),
+		RelayError:         openAIError,
+		errorType:          ErrorTypeOpenAIError,
+		StatusCode:         statusCode,
+		UpstreamStatusCode: statusCode,
+		Err:                errors.New(openAIError.Message),
+		errorCode:          ErrorCode(code),
 	}
 	// OpenRouter
 	if len(openAIError.Metadata) > 0 {
@@ -351,11 +366,12 @@ func WithClaudeError(claudeError ClaudeError, statusCode int, ops ...NewAPIError
 		claudeError.Type = "upstream_error"
 	}
 	e := &NewAPIError{
-		RelayError: claudeError,
-		errorType:  ErrorTypeClaudeError,
-		StatusCode: statusCode,
-		Err:        errors.New(claudeError.Message),
-		errorCode:  ErrorCode(claudeError.Type),
+		RelayError:         claudeError,
+		errorType:          ErrorTypeClaudeError,
+		StatusCode:         statusCode,
+		UpstreamStatusCode: statusCode,
+		Err:                errors.New(claudeError.Message),
+		errorCode:          ErrorCode(claudeError.Type),
 	}
 	for _, op := range ops {
 		op(e)

@@ -14,7 +14,8 @@ type PerformanceSetting struct {
 	// DiskCacheMaxSizeMB 磁盘缓存最大总大小（MB）
 	DiskCacheMaxSizeMB int `json:"disk_cache_max_size_mb"`
 	// DiskCachePath 磁盘缓存目录
-	DiskCachePath string `json:"disk_cache_path"`
+	DiskCachePath     string `json:"disk_cache_path"`
+	DebugTraceEnabled bool   `json:"debug_trace_enabled"`
 
 	// MonitorEnabled 是否启用性能监控
 	MonitorEnabled bool `json:"monitor_enabled"`
@@ -33,6 +34,7 @@ var performanceSetting = PerformanceSetting{
 	DiskCacheMaxSizeMB:   1024, // 最大 1GB 磁盘缓存
 	DiskCachePath:        "",   // 空表示使用系统临时目录
 
+	DebugTraceEnabled:      false,
 	MonitorEnabled:         true,
 	MonitorCPUThreshold:    90,
 	MonitorMemoryThreshold: 90,
@@ -61,6 +63,7 @@ func syncToCommon() {
 		MemoryThreshold: performanceSetting.MonitorMemoryThreshold,
 		DiskThreshold:   performanceSetting.MonitorDiskThreshold,
 	})
+	common.DebugTraceEnabled = performanceSetting.DebugTraceEnabled
 }
 
 // GetPerformanceSetting 获取性能设置

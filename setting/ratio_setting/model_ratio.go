@@ -520,7 +520,7 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 		}
 		// gpt-5 匹配
 		if strings.HasPrefix(name, "gpt-5") {
-			if strings.HasPrefix(name, "gpt-5.4") {
+			if strings.HasPrefix(name, "gpt-5.4") || strings.HasPrefix(name, "gpt-5.5"){
 				return 6, true
 			}
 			return 8, true
@@ -739,4 +739,38 @@ func GetModelRatioOrPrice(model string) (float64, bool, bool) { // price or rati
 		return modelRatio, false, true
 	}
 	return 37.5, false, false
+}
+
+// --- PricingDisplayModels: 模型广场展示白名单 ---
+
+var pricingDisplayModels []string
+
+func PricingDisplayModels2JSONString() string {
+	jsonBytes, err := common.Marshal(pricingDisplayModels)
+	if err != nil {
+		return "[]"
+	}
+	return string(jsonBytes)
+}
+
+func UpdatePricingDisplayModelsByJSONString(jsonStr string) error {
+	pricingDisplayModels = make([]string, 0)
+	return common.Unmarshal([]byte(jsonStr), &pricingDisplayModels)
+}
+
+func GetPricingDisplayModels() []string {
+	return pricingDisplayModels
+}
+
+// IsPricingDisplayModel 白名单为空时返回 true（不限制），非空时检查是否在白名单中
+func IsPricingDisplayModel(name string) bool {
+	if len(pricingDisplayModels) == 0 {
+		return true
+	}
+	for _, m := range pricingDisplayModels {
+		if m == name {
+			return true
+		}
+	}
+	return false
 }

@@ -55,8 +55,7 @@ function getEpayMethods(rawMethods) {
   }
   return rawMethods.filter(
     (method) =>
-      method?.type &&
-      !PAYMENT_PROVIDER_EXCLUDED_TYPES.has(method.type),
+      method?.type && !PAYMENT_PROVIDER_EXCLUDED_TYPES.has(method.type),
   );
 }
 
@@ -70,6 +69,13 @@ function formatSubscriptionEndTime(endTime) {
   const minute = date.getMinutes().toString().padStart(2, '0');
   const second = date.getSeconds().toString().padStart(2, '0');
   return `${year}/${month}/${day} ${hour}:${minute}:${second}`;
+}
+
+function isExpiredSubscription(subscription, nowSeconds) {
+  const endTime = Number(subscription?.end_time || 0);
+  return (
+    subscription?.status === 'expired' || (endTime > 0 && endTime < nowSeconds)
+  );
 }
 
 const SubscriptionPlansCard = ({
@@ -214,7 +220,13 @@ const SubscriptionPlansCard = ({
 
   // Billing preference falls back to wallet modes when no active subscription exists.
   const hasActiveSubscription = activeSubscriptions.length > 0;
-  const hasAnySubscription = allSubscriptions.length > 0;
+  const visibleSubscriptions = useMemo(() => {
+    const nowSeconds = Date.now() / 1000;
+    return (allSubscriptions || []).filter(
+      (sub) => !isExpiredSubscription(sub?.subscription, nowSeconds),
+    );
+  }, [allSubscriptions]);
+  const hasAnySubscription = visibleSubscriptions.length > 0;
   const disableSubscriptionPreference = !hasActiveSubscription;
   const isSubscriptionPreference =
     billingPreference === 'subscription_first' ||
@@ -447,9 +459,9 @@ const SubscriptionPlansCard = ({
                     {t('暂无激活订阅')}
                   </Tag>
                 )}
-                {allSubscriptions.length > activeSubscriptions.length && (
+                {visibleSubscriptions.length > activeSubscriptions.length && (
                   <Tag color='white' size='small' shape='circle'>
-                    {allSubscriptions.length - activeSubscriptions.length}{' '}
+                    {visibleSubscriptions.length - activeSubscriptions.length}{' '}
                     {t('个已结束')}
                   </Tag>
                 )}
@@ -505,8 +517,8 @@ const SubscriptionPlansCard = ({
               <>
                 <Divider margin={8} />
                 <div className='max-h-64 overflow-y-auto pr-1 semi-table-body'>
-                  {allSubscriptions.map((sub, subIndex) => {
-                    const isLast = subIndex === allSubscriptions.length - 1;
+                  {visibleSubscriptions.map((sub, subIndex) => {
+                    const isLast = subIndex === visibleSubscriptions.length - 1;
                     const subscription = sub.subscription;
                     const totalAmount = Number(subscription?.amount_total || 0);
                     const usedAmount = Number(subscription?.amount_used || 0);
@@ -545,7 +557,10 @@ const SubscriptionPlansCard = ({
                           )}
                         </div>
                         <div className='text-xs text-gray-500 mb-1'>
-                          {t('到期时间')} {formatSubscriptionEndTime(subscription?.end_time || 0)}
+                          {t('到期时间')}{' '}
+                          {formatSubscriptionEndTime(
+                            subscription?.end_time || 0,
+                          )}
                         </div>
                         {renderSubscriptionQuotaBar(usedAmount, totalAmount)}
                         {!isLast && <Divider margin={12} />}
@@ -653,7 +668,10 @@ const SubscriptionPlansCard = ({
                     style={planVariantStyle}
                     bodyStyle={{ padding: 0 }}
                   >
-                    <div className='h-1.5 w-full rounded-t-xl' style={planAccentStyle} />
+                    <div
+                      className='h-1.5 w-full rounded-t-xl'
+                      style={planAccentStyle}
+                    />
                     <div className='p-4 h-full flex flex-col'>
                       {/* Plan title */}
                       <div className='mb-3'>
@@ -806,7 +824,3 @@ const SubscriptionPlansCard = ({
 };
 
 export default SubscriptionPlansCard;
-
-
-
-

@@ -36,6 +36,7 @@ func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 		CacheCreationRatio:   1.25,
 		CacheCreation5mRatio: 1.25,
 		CacheCreation1hRatio: 2,
+		GlobalModelRatio:     1,
 		GroupRatioInfo: types.GroupRatioInfo{
 			GroupRatio: 1,
 		},
@@ -82,6 +83,7 @@ func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.
 			CacheCreationRatio:   1,
 			CacheCreation5mRatio: 2,
 			CacheCreation1hRatio: 3,
+			GlobalModelRatio:     1,
 			GroupRatioInfo: types.GroupRatioInfo{
 				GroupRatio: 1,
 			},
@@ -120,6 +122,7 @@ func TestCalculateTextQuotaSummaryUsesAnthropicUsageSemanticFromUpstreamUsage(t 
 			CacheCreationRatio:   1.25,
 			CacheCreation5mRatio: 1.25,
 			CacheCreation1hRatio: 2,
+			GlobalModelRatio:     1,
 			GroupRatioInfo: types.GroupRatioInfo{
 				GroupRatio: 1,
 			},
@@ -185,6 +188,7 @@ func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testi
 			CacheCreationRatio:   1.25,
 			CacheCreation5mRatio: 1.25,
 			CacheCreation1hRatio: 2,
+			GlobalModelRatio:     1,
 			GroupRatioInfo:       types.GroupRatioInfo{GroupRatio: 1},
 		},
 		StartTime: time.Now(),
@@ -203,4 +207,39 @@ func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testi
 
 	// 62 + 3544*0.1 + 586*1.25 + 95*5 = 1624.9 => 1624
 	require.Equal(t, 1624, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryUsesGlobalModelRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:     types.RelayFormatClaude,
+		OriginModelName: "gpt-5.4",
+		PriceData: types.PriceData{
+			ModelRatio:       1.25,
+			CompletionRatio:  6,
+			CacheRatio:       1,
+			GlobalModelRatio: 2,
+			GroupRatioInfo:   types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	usage := &dto.Usage{
+		PromptTokens:     578,
+		CompletionTokens: 56,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 28032,
+		},
+		UsageSemantic: "anthropic",
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 72365, summary.Quota)
+	require.Equal(t, 1156, summary.PromptTokens)
+	require.Equal(t, 112, summary.CompletionTokens)
+	require.Equal(t, 56064, summary.CacheTokens)
 }

@@ -65,6 +65,7 @@ export default function SettingsPerformance(props) {
     'performance_setting.disk_cache_threshold_mb': 10,
     'performance_setting.disk_cache_max_size_mb': 1024,
     'performance_setting.disk_cache_path': '',
+    'performance_setting.debug_trace_enabled': false,
     'performance_setting.monitor_enabled': false,
     'performance_setting.monitor_cpu_threshold': 90,
     'performance_setting.monitor_memory_threshold': 90,
@@ -277,6 +278,33 @@ export default function SettingsPerformance(props) {
                   />
                 </Col>
               )}
+            </Row>
+          </Form.Section>
+
+          <Form.Section text={t('调试日志设置')}>
+            <Banner
+              type='warning'
+              description={t(
+                '开启后会记录请求鉴权、Claude/Xiaomi 上游请求响应、渠道转发预检和消费日志等高噪声调试信息，可能包含较大的请求体，请仅在排查问题时临时开启。',
+              )}
+              style={{ marginBottom: 16 }}
+            />
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'performance_setting.debug_trace_enabled'}
+                  label={t('启用调试追踪日志')}
+                  extraText={t(
+                    '控制 token auth、raw request、Xiaomi Claude trace、渠道转发预检等详细日志',
+                  )}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={handleFieldChange(
+                    'performance_setting.debug_trace_enabled',
+                  )}
+                />
+              </Col>
             </Row>
           </Form.Section>
 

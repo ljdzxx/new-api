@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 
@@ -241,6 +242,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			if data == "" {
 				continue
 			}
+			if shouldLogXiaomiClaudeStreamData(c, info) {
+				logger.LogInfo(c, fmt.Sprintf("[xiaomi claude] raw upstream sse data bytes=%d:\n%s", len(data), data))
+			}
 			if !strings.HasPrefix(data, "[DONE]") {
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
@@ -280,4 +284,16 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		// 客户端断开连接
 		logger.LogInfo(c, "client disconnected")
 	}
+}
+
+func shouldLogXiaomiClaudeStreamData(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	if !common.DebugEnabled && !common.DebugTraceEnabled {
+		return false
+	}
+	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyXiaomiClaudeDebug) {
+		return true
+	}
+	return info != nil &&
+		info.ChannelType == constant.ChannelTypeXiaomi &&
+		info.GetFinalRequestRelayFormat() == types.RelayFormatClaude
 }

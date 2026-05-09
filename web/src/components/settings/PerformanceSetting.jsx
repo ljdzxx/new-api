@@ -28,6 +28,7 @@ const PerformanceSetting = () => {
     'performance_setting.disk_cache_threshold_mb': 10,
     'performance_setting.disk_cache_max_size_mb': 1024,
     'performance_setting.disk_cache_path': '',
+    'performance_setting.debug_trace_enabled': false,
   });
 
   let [loading, setLoading] = useState(false);

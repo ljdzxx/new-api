@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
 	"strings"
 
@@ -18,6 +20,89 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
+
+func tokenAuthDebugEnabled(c *gin.Context) bool {
+	return common.DebugEnabled || common.DebugTraceEnabled
+}
+
+func tokenAuthMaskForLog(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "<empty>"
+	}
+	if len(value) <= 8 {
+		return fmt.Sprintf("%s(len=%d)", value, len(value))
+	}
+	return fmt.Sprintf("%s...%s(len=%d)", value[:4], value[len(value)-4:], len(value))
+}
+
+func tokenAuthFingerprintForLog(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "<empty>"
+	}
+	hash := common.Sha1([]byte(value))
+	if len(hash) > 12 {
+		return hash[:12]
+	}
+	return hash
+}
+
+func logTokenAuthDebug(c *gin.Context, format string, args ...any) {
+	if !tokenAuthDebugEnabled(c) {
+		return
+	}
+	logger.LogInfo(c, "[token auth] "+fmt.Sprintf(format, args...))
+}
+
+func logTokenAuthRawMessagesRequest(c *gin.Context) {
+	if c == nil || c.Request == nil || !tokenAuthDebugEnabled(c) || !strings.Contains(c.Request.URL.Path, "/v1/messages") {
+		return
+	}
+	dump, dumpErr := httputil.DumpRequest(c.Request, false)
+	if dumpErr != nil {
+		logger.LogError(c, "[token auth raw] dump request metadata failed: "+dumpErr.Error())
+	} else {
+		logger.LogInfo(c, "[token auth raw] request metadata and headers:\n"+string(dump))
+	}
+	storage, bodyErr := common.GetBodyStorage(c)
+	if bodyErr != nil {
+		logger.LogError(c, "[token auth raw] read request body failed: "+bodyErr.Error())
+		return
+	}
+	body, bodyErr := storage.Bytes()
+	if bodyErr != nil {
+		logger.LogError(c, "[token auth raw] copy request body failed: "+bodyErr.Error())
+		return
+	}
+	if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {
+		logger.LogError(c, "[token auth raw] reset request body storage failed: "+seekErr.Error())
+	}
+	logger.LogInfo(c, fmt.Sprintf("[token auth raw] request body bytes=%d:\n%s", len(body), string(body)))
+}
+
+func normalizeBearerToken(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "Bearer ") || strings.HasPrefix(raw, "bearer ") {
+		return strings.TrimSpace(raw[7:])
+	}
+	return raw
+}
+
+func tokenAuthCandidateKeys(rawToken string) []string {
+	key := strings.TrimPrefix(strings.TrimSpace(rawToken), "sk-")
+	if key == "" {
+		return nil
+	}
+	candidates := []string{key}
+	if strings.Contains(key, "-") {
+		legacyKey := strings.Split(key, "-")[0]
+		if legacyKey != "" && legacyKey != key {
+			candidates = append(candidates, legacyKey)
+		}
+	}
+	return candidates
+}
 
 func validUserInfo(username string, role int) bool {
 	// check username is empty
@@ -247,6 +332,8 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 
 func TokenAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
+		logTokenAuthRawMessagesRequest(c)
+		tokenSource := "authorization"
 		// 先检测是否为ws
 		if c.Request.Header.Get("Sec-WebSocket-Protocol") != "" {
 			// Sec-WebSocket-Protocol: realtime, openai-insecure-api-key.sk-xxx, openai-beta.realtime-v1
@@ -257,6 +344,7 @@ func TokenAuth() func(c *gin.Context) {
 				part = strings.TrimSpace(part)
 				if strings.HasPrefix(part, "openai-insecure-api-key") {
 					key = strings.TrimPrefix(part, "openai-insecure-api-key.")
+					tokenSource = "sec-websocket-protocol"
 					break
 				}
 			}
@@ -265,8 +353,12 @@ func TokenAuth() func(c *gin.Context) {
 		// 检查path包含/v1/messages 或 /v1/models
 		if strings.Contains(c.Request.URL.Path, "/v1/messages") || strings.Contains(c.Request.URL.Path, "/v1/models") {
 			anthropicKey := c.Request.Header.Get("x-api-key")
-			if anthropicKey != "" {
+			authorizationKey := strings.TrimSpace(c.Request.Header.Get("Authorization"))
+			if anthropicKey != "" && authorizationKey == "" {
 				c.Request.Header.Set("Authorization", "Bearer "+anthropicKey)
+				tokenSource = "x-api-key"
+			} else if anthropicKey != "" {
+				logTokenAuthDebug(c, "x-api-key ignored for user token auth because Authorization is present: authorization=%q x_api_key=%q", authorizationKey, anthropicKey)
 			}
 		}
 		// gemini api 从query中获取key
@@ -276,32 +368,42 @@ func TokenAuth() func(c *gin.Context) {
 			skKey := c.Query("key")
 			if skKey != "" {
 				c.Request.Header.Set("Authorization", "Bearer "+skKey)
+				tokenSource = "query:key"
 			}
 			// 从x-goog-api-key header中获取key
 			xGoogKey := c.Request.Header.Get("x-goog-api-key")
 			if xGoogKey != "" {
 				c.Request.Header.Set("Authorization", "Bearer "+xGoogKey)
+				tokenSource = "x-goog-api-key"
 			}
 		}
-		key := c.Request.Header.Get("Authorization")
-		parts := make([]string, 0)
-		if strings.HasPrefix(key, "Bearer ") || strings.HasPrefix(key, "bearer ") {
-			key = strings.TrimSpace(key[7:])
+		rawToken := normalizeBearerToken(c.Request.Header.Get("Authorization"))
+		if rawToken == "" || rawToken == "midjourney-proxy" {
+			rawToken = normalizeBearerToken(c.Request.Header.Get("mj-api-secret"))
+			tokenSource = "mj-api-secret"
 		}
-		if key == "" || key == "midjourney-proxy" {
-			key = c.Request.Header.Get("mj-api-secret")
-			if strings.HasPrefix(key, "Bearer ") || strings.HasPrefix(key, "bearer ") {
-				key = strings.TrimSpace(key[7:])
+		candidates := tokenAuthCandidateKeys(rawToken)
+		logTokenAuthDebug(c, "token received: source=%s raw_token=%q raw_len=%d raw_sha1=%s candidates=%d path=%s", tokenSource, rawToken, len(rawToken), tokenAuthFingerprintForLog(rawToken), len(candidates), c.Request.URL.Path)
+
+		var (
+			token        *model.Token
+			err          error
+			selectedKey  string
+			attemptErrs  []string
+			attemptIndex int
+		)
+		if len(candidates) == 0 {
+			err = fmt.Errorf("未提供令牌")
+		}
+		for attemptIndex, candidateKey := range candidates {
+			logTokenAuthDebug(c, "validating token candidate: source=%s attempt=%d key=%q key_len=%d key_sha1=%s legacy_fallback=%t", tokenSource, attemptIndex+1, candidateKey, len(candidateKey), tokenAuthFingerprintForLog(candidateKey), attemptIndex > 0)
+			token, err = model.ValidateUserToken(candidateKey)
+			if err == nil {
+				selectedKey = candidateKey
+				break
 			}
-			key = strings.TrimPrefix(key, "sk-")
-			parts = strings.Split(key, "-")
-			key = parts[0]
-		} else {
-			key = strings.TrimPrefix(key, "sk-")
-			parts = strings.Split(key, "-")
-			key = parts[0]
+			attemptErrs = append(attemptErrs, fmt.Sprintf("attempt=%d key=%q key_len=%d key_sha1=%s err=%s", attemptIndex+1, candidateKey, len(candidateKey), tokenAuthFingerprintForLog(candidateKey), err.Error()))
 		}
-		token, err := model.ValidateUserToken(key)
 		if token != nil {
 			id := c.GetInt("id")
 			if id == 0 {
@@ -309,9 +411,11 @@ func TokenAuth() func(c *gin.Context) {
 			}
 		}
 		if err != nil {
+			logTokenAuthDebug(c, "token validation failed: source=%s raw_token=%q raw_len=%d raw_sha1=%s attempts=[%s]", tokenSource, rawToken, len(rawToken), tokenAuthFingerprintForLog(rawToken), strings.Join(attemptErrs, "; "))
 			abortWithOpenAiMessage(c, http.StatusUnauthorized, err.Error())
 			return
 		}
+		logTokenAuthDebug(c, "token validation succeeded: source=%s selected_attempt=%d selected_key=%q selected_key_len=%d selected_key_sha1=%s token_id=%d token_db_key=%q user_id=%d group=%s", tokenSource, attemptIndex+1, selectedKey, len(selectedKey), tokenAuthFingerprintForLog(selectedKey), token.Id, token.Key, token.UserId, token.Group)
 
 		allowIps := token.GetIpLimits()
 		if len(allowIps) > 0 {
@@ -361,6 +465,7 @@ func TokenAuth() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyUsingGroup, userGroup)
 
+		parts := strings.Split(selectedKey, "-")
 		err = SetupContextForToken(c, token, parts...)
 		if err != nil {
 			return

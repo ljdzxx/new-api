@@ -324,6 +324,27 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "PricingDisplayModels":
+		var models []string
+		if option.Value.(string) != "" {
+			err = common.Unmarshal([]byte(option.Value.(string)), &models)
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "模型价格展示设置必须是合法的 JSON 字符串数组",
+				})
+				return
+			}
+			for _, m := range models {
+				if m == "" {
+					c.JSON(http.StatusOK, gin.H{
+						"success": false,
+						"message": "模型名称不能为空",
+					})
+					return
+				}
+			}
+		}
 	}
 	err = model.UpdateOption(option.Key, option.Value.(string))
 	if err != nil {

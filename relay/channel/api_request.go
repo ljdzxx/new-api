@@ -12,6 +12,7 @@ import (
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	rootconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -24,6 +25,53 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
+
+func shouldTraceXiaomiClaudeFinalRequest(c *gin.Context, info *common.RelayInfo) bool {
+	if !common2.DebugEnabled && !common2.DebugTraceEnabled {
+		return false
+	}
+	if c != nil && common2.GetContextKeyBool(c, rootconstant.ContextKeyXiaomiClaudeDebug) {
+		return true
+	}
+	if c != nil && c.GetBool("channel_forward_precheck") && info != nil && info.ChannelType == rootconstant.ChannelTypeXiaomi {
+		return true
+	}
+	return info != nil &&
+		info.ChannelType == rootconstant.ChannelTypeXiaomi &&
+		(info.RelayFormat == types.RelayFormatClaude || info.GetFinalRequestRelayFormat() == types.RelayFormatClaude)
+}
+
+func summarizeHeaderValueForTrace(value string, secret bool) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "<empty>"
+	}
+	if !secret {
+		if len(value) > 300 {
+			return value[:300] + fmt.Sprintf("...(truncated %d bytes)", len(value)-300)
+		}
+		return value
+	}
+	hash := common2.Sha1([]byte(value))
+	if len(hash) > 12 {
+		hash = hash[:12]
+	}
+	return fmt.Sprintf("<present len=%d sha1=%s>", len(value), hash)
+}
+
+func summarizeFinalHeadersForTrace(header http.Header) string {
+	return fmt.Sprintf(
+		"content_type=%q accept=%q anthropic_version=%q anthropic_beta=%q api_key=%s x_api_key=%s authorization=%s user_agent=%q",
+		summarizeHeaderValueForTrace(header.Get("Content-Type"), false),
+		summarizeHeaderValueForTrace(header.Get("Accept"), false),
+		summarizeHeaderValueForTrace(header.Get("anthropic-version"), false),
+		summarizeHeaderValueForTrace(header.Get("anthropic-beta"), false),
+		summarizeHeaderValueForTrace(header.Get("api-key"), true),
+		summarizeHeaderValueForTrace(header.Get("x-api-key"), true),
+		summarizeHeaderValueForTrace(header.Get("Authorization"), true),
+		summarizeHeaderValueForTrace(header.Get("User-Agent"), false),
+	)
+}
 
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
 	if info.RelayMode == constant.RelayModeAudioTranscription || info.RelayMode == constant.RelayModeAudioTranslation {
@@ -311,6 +359,15 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	if shouldTraceXiaomiClaudeFinalRequest(c, info) {
+		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude trace] FINAL upstream http request: method=%s url=%q host=%q headers={%s} header_override=%d",
+			req.Method,
+			fullRequestURL,
+			req.Host,
+			summarizeFinalHeadersForTrace(req.Header),
+			len(headerOverride),
+		))
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -515,6 +572,9 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	if c != nil && !c.GetBool("channel_forward_precheck") {
+		c.Set("upstream_call_started", true)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())

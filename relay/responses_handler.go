@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -22,6 +23,34 @@ import (
 
 func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
+	logger.LogInfo(c, fmt.Sprintf(
+		"responses relay selected channel: request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q pass_through=%t channel_pass_through=%t",
+		c.Request.URL.Path,
+		info.RelayMode,
+		info.ChannelId,
+		info.ChannelType,
+		info.ApiType,
+		info.OriginModelName,
+		info.UpstreamModelName,
+		model_setting.GetGlobalSettings().PassThroughRequestEnabled,
+		info.ChannelSetting.PassThroughBodyEnabled,
+	))
+	if info.ChannelType == appconstant.ChannelTypeXiaomi || info.ApiType == appconstant.APITypeXiaomi {
+		logger.LogWarn(c, fmt.Sprintf(
+			"responses relay rejected unsupported xiaomi channel: channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q",
+			info.ChannelId,
+			info.ChannelType,
+			info.ApiType,
+			info.OriginModelName,
+			info.UpstreamModelName,
+		))
+		return types.NewErrorWithStatusCode(
+			service.UnsupportedOpenAIResponsesProtocolError(info.ChannelId),
+			types.ErrorCodeInvalidRequest,
+			http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(),
+		)
+	}
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		switch info.ApiType {
 		case appconstant.APITypeOpenAI, appconstant.APITypeCodex:

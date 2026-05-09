@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -49,13 +50,17 @@ func hasCustomModelRatio(modelName string, currentRatio float64) bool {
 }
 
 func calculateAudioQuota(info QuotaInfo) int {
+	scaledInputTextTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.InputDetails.TextTokens, info.GlobalRatio)
+	scaledOutputTextTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.OutputDetails.TextTokens, info.GlobalRatio)
+	scaledInputAudioTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.InputDetails.AudioTokens, info.GlobalRatio)
+	scaledOutputAudioTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.OutputDetails.AudioTokens, info.GlobalRatio)
+
 	if info.UsePrice {
 		modelPrice := decimal.NewFromFloat(info.ModelPrice)
 		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		groupRatio := decimal.NewFromFloat(info.GroupRatio)
-		globalModelRatio := decimal.NewFromFloat(info.GlobalRatio)
 
-		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio).Mul(globalModelRatio)
+		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio)
 		return int(quota.IntPart())
 	}
 
@@ -65,13 +70,12 @@ func calculateAudioQuota(info QuotaInfo) int {
 
 	groupRatio := decimal.NewFromFloat(info.GroupRatio)
 	modelRatio := decimal.NewFromFloat(info.ModelRatio)
-	globalModelRatio := decimal.NewFromFloat(info.GlobalRatio)
-	ratio := groupRatio.Mul(modelRatio).Mul(globalModelRatio)
+	ratio := groupRatio.Mul(modelRatio)
 
-	inputTextTokens := decimal.NewFromInt(int64(info.InputDetails.TextTokens))
-	outputTextTokens := decimal.NewFromInt(int64(info.OutputDetails.TextTokens))
-	inputAudioTokens := decimal.NewFromInt(int64(info.InputDetails.AudioTokens))
-	outputAudioTokens := decimal.NewFromInt(int64(info.OutputDetails.AudioTokens))
+	inputTextTokens := decimal.NewFromInt(int64(scaledInputTextTokens))
+	outputTextTokens := decimal.NewFromInt(int64(scaledOutputTextTokens))
+	inputAudioTokens := decimal.NewFromInt(int64(scaledInputAudioTokens))
+	outputAudioTokens := decimal.NewFromInt(int64(scaledOutputAudioTokens))
 
 	quota := decimal.Zero
 	quota = quota.Add(inputTextTokens)
@@ -141,6 +145,24 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
+	if relayInfo.PriceData.GlobalModelRatio > 1 {
+		channelID := 0
+		if relayInfo.ChannelMeta != nil {
+			channelID = relayInfo.ChannelMeta.ChannelId
+		}
+		logger.LogInfo(ctx, fmt.Sprintf(
+			"global model ratio realtime token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} scaled_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} raw_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f scaled_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f, quota=%d",
+			relayInfo.UserId, channelID, relayInfo.TokenId, modelName,
+			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, relayInfo.PriceData.GlobalModelRatio,
+			textInputTokens, audioInputTokens, textOutTokens, audioOutTokens,
+			relayhelper.ScaleTokensByGlobalModelRatio(textInputTokens, relayInfo.PriceData.GlobalModelRatio),
+			relayhelper.ScaleTokensByGlobalModelRatio(audioInputTokens, relayInfo.PriceData.GlobalModelRatio),
+			relayhelper.ScaleTokensByGlobalModelRatio(textOutTokens, relayInfo.PriceData.GlobalModelRatio),
+			relayhelper.ScaleTokensByGlobalModelRatio(audioOutTokens, relayInfo.PriceData.GlobalModelRatio),
+			textInputTokens, audioInputTokens, ratio_setting.GetAudioRatio(modelName), textOutTokens, ratio_setting.GetCompletionRatio(modelName), audioOutTokens, ratio_setting.GetAudioRatio(modelName), ratio_setting.GetAudioCompletionRatio(modelName), modelRatio, groupRatio,
+			relayhelper.ScaleTokensByGlobalModelRatio(textInputTokens, relayInfo.PriceData.GlobalModelRatio), relayhelper.ScaleTokensByGlobalModelRatio(audioInputTokens, relayInfo.PriceData.GlobalModelRatio), ratio_setting.GetAudioRatio(modelName), relayhelper.ScaleTokensByGlobalModelRatio(textOutTokens, relayInfo.PriceData.GlobalModelRatio), ratio_setting.GetCompletionRatio(modelName), relayhelper.ScaleTokensByGlobalModelRatio(audioOutTokens, relayInfo.PriceData.GlobalModelRatio), ratio_setting.GetAudioRatio(modelName), ratio_setting.GetAudioCompletionRatio(modelName), modelRatio, groupRatio, quota,
+		))
+	}
 
 	if userQuota < quota {
 		return fmt.Errorf("user quota is not enough, user quota: %s, need quota: %s", logger.FormatQuota(userQuota), logger.FormatQuota(quota))
@@ -196,7 +218,6 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
-
 	totalTokens := usage.TotalTokens
 	var logContent string
 	if !usePrice {
@@ -227,8 +248,8 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		completionRatio.InexactFloat64(), audioRatio.InexactFloat64(), audioCompletionRatio.InexactFloat64(), modelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
-		PromptTokens:     usage.InputTokens,
-		CompletionTokens: usage.OutputTokens,
+		PromptTokens:     relayhelper.ScaleTokensByGlobalModelRatio(usage.InputTokens, globalModelRatio),
+		CompletionTokens: relayhelper.ScaleTokensByGlobalModelRatio(usage.OutputTokens, globalModelRatio),
 		ModelName:        logModel,
 		TokenName:        tokenName,
 		Quota:            quota,
@@ -299,6 +320,24 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
+	if globalModelRatio > 1 {
+		channelID := 0
+		if relayInfo.ChannelMeta != nil {
+			channelID = relayInfo.ChannelMeta.ChannelId
+		}
+		logger.LogInfo(ctx, fmt.Sprintf(
+			"global model ratio audio token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} scaled_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} raw_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f scaled_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f, quota=%d",
+			relayInfo.UserId, channelID, relayInfo.TokenId, relayInfo.OriginModelName,
+			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, globalModelRatio,
+			textInputTokens, audioInputTokens, textOutTokens, audioOutTokens,
+			relayhelper.ScaleTokensByGlobalModelRatio(textInputTokens, globalModelRatio),
+			relayhelper.ScaleTokensByGlobalModelRatio(audioInputTokens, globalModelRatio),
+			relayhelper.ScaleTokensByGlobalModelRatio(textOutTokens, globalModelRatio),
+			relayhelper.ScaleTokensByGlobalModelRatio(audioOutTokens, globalModelRatio),
+			textInputTokens, audioInputTokens, audioRatio.InexactFloat64(), textOutTokens, completionRatio.InexactFloat64(), audioOutTokens, audioRatio.InexactFloat64(), audioCompletionRatio.InexactFloat64(), modelRatio, groupRatio,
+			relayhelper.ScaleTokensByGlobalModelRatio(textInputTokens, globalModelRatio), relayhelper.ScaleTokensByGlobalModelRatio(audioInputTokens, globalModelRatio), audioRatio.InexactFloat64(), relayhelper.ScaleTokensByGlobalModelRatio(textOutTokens, globalModelRatio), completionRatio.InexactFloat64(), relayhelper.ScaleTokensByGlobalModelRatio(audioOutTokens, globalModelRatio), audioRatio.InexactFloat64(), audioCompletionRatio.InexactFloat64(), modelRatio, groupRatio, quota,
+		))
+	}
 
 	totalTokens := usage.TotalTokens
 	var logContent string
@@ -334,8 +373,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		completionRatio.InexactFloat64(), audioRatio.InexactFloat64(), audioCompletionRatio.InexactFloat64(), modelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
+		PromptTokens:     relayhelper.ScaleTokensByGlobalModelRatio(usage.PromptTokens, globalModelRatio),
+		CompletionTokens: relayhelper.ScaleTokensByGlobalModelRatio(usage.CompletionTokens, globalModelRatio),
 		ModelName:        logModel,
 		TokenName:        tokenName,
 		Quota:            quota,

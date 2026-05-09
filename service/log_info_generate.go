@@ -7,10 +7,18 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
+
+func scaleLogTokens(tokens int, relayInfo *relaycommon.RelayInfo) int {
+	if relayInfo == nil {
+		return tokens
+	}
+	return relayhelper.ScaleTokensByGlobalModelRatio(tokens, relayInfo.PriceData.GlobalModelRatio)
+}
 
 func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
 	if other == nil {
@@ -36,6 +44,9 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other := make(map[string]interface{})
 	other["model_ratio"] = modelRatio
 	other["group_ratio"] = groupRatio
+	other["system_global_model_ratio"] = relayInfo.PriceData.SystemGlobalModelRatio
+	other["user_global_model_ratio"] = relayInfo.PriceData.UserGlobalModelRatio
+	other["global_model_ratio"] = relayInfo.PriceData.GlobalModelRatio
 	other["completion_ratio"] = completionRatio
 	other["cache_tokens"] = cacheTokens
 	other["cache_ratio"] = cacheRatio
@@ -182,10 +193,10 @@ func appendFinalRequestFormat(relayInfo *relaycommon.RelayInfo, other map[string
 func GenerateWssOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage, modelRatio, groupRatio, completionRatio, audioRatio, audioCompletionRatio, modelPrice, userGroupRatio float64) map[string]interface{} {
 	info := GenerateTextOtherInfo(ctx, relayInfo, modelRatio, groupRatio, completionRatio, 0, 0.0, modelPrice, userGroupRatio)
 	info["ws"] = true
-	info["audio_input"] = usage.InputTokenDetails.AudioTokens
-	info["audio_output"] = usage.OutputTokenDetails.AudioTokens
-	info["text_input"] = usage.InputTokenDetails.TextTokens
-	info["text_output"] = usage.OutputTokenDetails.TextTokens
+	info["audio_input"] = scaleLogTokens(usage.InputTokenDetails.AudioTokens, relayInfo)
+	info["audio_output"] = scaleLogTokens(usage.OutputTokenDetails.AudioTokens, relayInfo)
+	info["text_input"] = scaleLogTokens(usage.InputTokenDetails.TextTokens, relayInfo)
+	info["text_output"] = scaleLogTokens(usage.OutputTokenDetails.TextTokens, relayInfo)
 	info["audio_ratio"] = audioRatio
 	info["audio_completion_ratio"] = audioCompletionRatio
 	return info
@@ -194,10 +205,10 @@ func GenerateWssOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 func GenerateAudioOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, modelRatio, groupRatio, completionRatio, audioRatio, audioCompletionRatio, modelPrice, userGroupRatio float64) map[string]interface{} {
 	info := GenerateTextOtherInfo(ctx, relayInfo, modelRatio, groupRatio, completionRatio, 0, 0.0, modelPrice, userGroupRatio)
 	info["audio"] = true
-	info["audio_input"] = usage.PromptTokensDetails.AudioTokens
-	info["audio_output"] = usage.CompletionTokenDetails.AudioTokens
-	info["text_input"] = usage.PromptTokensDetails.TextTokens
-	info["text_output"] = usage.CompletionTokenDetails.TextTokens
+	info["audio_input"] = scaleLogTokens(usage.PromptTokensDetails.AudioTokens, relayInfo)
+	info["audio_output"] = scaleLogTokens(usage.CompletionTokenDetails.AudioTokens, relayInfo)
+	info["text_input"] = scaleLogTokens(usage.PromptTokensDetails.TextTokens, relayInfo)
+	info["text_output"] = scaleLogTokens(usage.CompletionTokenDetails.TextTokens, relayInfo)
 	info["audio_ratio"] = audioRatio
 	info["audio_completion_ratio"] = audioCompletionRatio
 	return info

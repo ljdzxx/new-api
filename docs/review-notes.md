@@ -1339,3 +1339,445 @@ Validation runs:
 
 - `bun run build`
 - `go build ./...`
+
+## 14. 2026-05-05 Channel Forwarding
+
+Goal:
+
+- Add a per-channel forwarding rule after the normal channel routing decision.
+- If the request system prompt or the current new message matches configured regex rules on the selected channel, forward the request to another target channel.
+- Keep actual billing logic unchanged.
+
+Behavior summary:
+
+- Forwarding happens after the original channel is selected, before upstream relay execution.
+- Only one hop is allowed.
+- Once forwarding is applied, retry stays locked to the forwarded target channel.
+- If the target channel is unavailable, the request returns the target channel's own error directly.
+- OpenAI `developer` messages are intentionally ignored.
+- Historical chat context is not inspected.
+
+Text matching scope:
+
+- OpenAI `/v1/chat/completions`
+  - inspect all `system` messages
+  - inspect only the last `user` message
+- OpenAI `/v1/completions`
+  - inspect `prompt`
+- OpenAI `/v1/moderations`
+  - inspect `input`
+- OpenAI `/v1/edits`
+  - inspect `instruction` and `input`
+- OpenAI `/v1/responses` and `/v1/responses/compact`
+  - inspect `instructions`
+  - inspect only the latest current-turn user input
+- Claude `/v1/messages`
+  - inspect `system`
+  - inspect only the last `user` message
+- Gemini text requests
+  - inspect `systemInstruction`
+  - inspect only the last user-side content block
+- Multimodal requests are included, but only their text parts participate in matching.
+
+Backend changes:
+
+- Added forwarding config fields and validation to channel settings:
+  - `dto/channel_settings.go`
+- Reused channel setting validation from model layer:
+  - `model/channel.go`
+- Added self-target validation when editing an existing channel:
+  - `controller/channel.go`
+- Added unified forwarding extraction and regex matching service:
+  - `service/channel_forward.go`
+- Added focused tests for latest-message-only behavior:
+  - `service/channel_forward_test.go`
+- Hooked forwarding into the relay channel selection path and retry locking:
+  - `controller/relay.go`
+
+Frontend changes:
+
+- Added channel forwarding config fields to the channel edit modal:
+  - enable switch
+  - target channel id
+  - regex textarea
+- Added frontend validation before save:
+  - target channel id required when enabled
+  - regex required when enabled
+  - target channel cannot be self on edit
+  - regex syntax is pre-validated in the browser
+
+Representative file:
+
+- `web/src/components/table/channels/modals/EditChannelModal.jsx`
+
+Validation runs:
+
+- `go test ./service -run TestShouldForwardChannelRequest -count=1`
+- `go test ./controller -count=1`
+- `bun run build`
+
+Note:
+
+- During validation, broader `go test ./service/...` still had unrelated pre-existing failures in existing affinity/billing tests. The new forwarding-focused tests passed.
+
+
+---
+
+# 2026-05-08 Xiaomi Claude、渠道转发与计费排查记录
+
+本文记录本轮聊天中围绕 Xiaomi 渠道、Claude Code 工具调用、渠道转发预检、错误拦截、代理抓包、预检日志可见性、全局模型倍率计费等问题完成的排查结论与代码改动。
+
+## 1. Xiaomi 渠道改为 OpenAI + Anthropic 双栈
+
+目标：
+
+- 保留 Xiaomi 现有 OpenAI Compatible 能力，不做硬替换。
+- 当请求是 Claude Messages 格式时，走 Xiaomi 官方 Anthropic 兼容 API。
+- 尽最大可能兼容 Xiaomi 官方文档，而不假设其完整等价 Anthropic 原生 API。
+
+主要改动：
+
+- `relay/channel/xiaomi/adaptor.go`
+  - Claude Messages 请求改走 `/anthropic/v1/messages`。
+  - Claude 请求 URL 支持追加 `?beta=true`。
+  - Claude 请求使用 Xiaomi 要求的 `api-key` 鉴权头。
+  - 补齐 Claude Code 常见非鉴权 headers，例如 `anthropic-version`、`anthropic-beta`、`anthropic-dangerous-direct-browser-access`、`x-app`、`x-stainless-*` 等。
+  - OpenAI Compatible、Responses、TTS 等原有能力继续走原路径。
+- `relay/channel/xiaomi/adaptor_test.go`
+  - 增加 Xiaomi Claude URL、beta query、header、tool type 归一化相关测试。
+- `relay/channel/xiaomi/claude_tools.go`
+  - 对 Xiaomi 文档支持的 custom function tool 做兼容处理。
+  - 普通自定义工具缺少 `type` 时补 `custom`。
+  - 已显式声明 `type` 的工具保持原样，避免误改 Claude hosted/server tools。
+
+结论：
+
+- Xiaomi 官方 Anthropic 兼容文档明确支持的是 `type: custom` 的函数工具。
+- Claude Code 主会话中的 `WebSearch`、`WebFetch` 等客户端工具可以作为 custom tools 被 Xiaomi 触发。
+- Anthropic hosted/server tool，例如 `{"type":"web_search_20250305","name":"web_search"}`，目前没有证据表明 Xiaomi 官方接口支持。
+
+## 2. Claude Code 工具调用失败排查结论
+
+排查目标：
+
+- 判断工具调用失败到底是网关没有正确映射请求，还是 Xiaomi 上游没有返回 `tool_use`。
+
+已确认事实：
+
+- 网关最终发给 Xiaomi 的 helper 请求中，`web_search_20250305` 没有被删除、改名或改写成 `custom`。
+- 最终出站 URL 是 Xiaomi Anthropic 路径。
+- `api-key` 存在，`Authorization` 和 `x-api-key` 不参与 Xiaomi Claude 鉴权。
+- 原始 SSE chunk 抓到后显示：
+  - 主会话 custom `WebSearch` 能返回 `tool_use`。
+  - helper 请求中的 `web_search_20250305` 没有返回 `tool_use`。
+  - Xiaomi 直接返回普通文本，语义类似“当前没有 web search tool”。
+
+关键结论：
+
+- 失败点不是本项目把 `web_search_20250305` 映射错了。
+- 失败点也不是响应里有 `tool_use` 但被网关吃掉。
+- 真正原因是 Xiaomi 当前 Anthropic 兼容接口没有执行 Claude hosted/server web search tool，至少在当前文档和实测请求范围内不支持。
+
+相关日志增强：
+
+- `relay/claude_handler.go`
+  - 在 Claude 主链路早期为 Xiaomi Claude 打开 trace 标记。
+  - 避免 trace 只放在 adaptor 内部导致真实响应链路抓不到 chunk。
+- `relay/channel/claude/relay-claude.go`
+  - 对 Xiaomi Claude 原始非流式响应体和流式 SSE chunk 增加诊断日志。
+- `relay/helper/stream_scanner.go`
+  - 增加 stream chunk 级别辅助日志，用于判断上游是否返回 `tool_use`、`message_delta`、`stop_reason` 等。
+- `relay/channel/api_request.go`
+  - 增加最终上游 HTTP 请求 URL、host、关键 headers 的 trace。
+
+## 3. Claude Code 直连 Xiaomi 与本项目代理调用差异对比
+
+通过代理抓包对比后处理的差异：
+
+- 本项目 Xiaomi Claude URL 改为带 `?beta=true`，对齐 Claude Code 直连场景。
+- 本项目补齐 Claude Code 常带的非鉴权 headers。
+- 鉴权仍以渠道密钥生成 Xiaomi 要求的 `api-key`，不透传用户侧 `Authorization` 或 `x-api-key` 到 Xiaomi。
+
+辅助工具：
+
+- 新增 `proxy.py`
+  - 本地 HTTP/HTTPS 抓包代理。
+  - 自动生成本地 CA 和站点证书。
+  - 记录请求头、请求体、响应头、响应体。
+  - 用于 VS Code / Claude Code 设置代理后还原直连 Xiaomi 的真实请求和响应。
+
+## 4. 渠道转发功能重构
+
+原逻辑：
+
+- 按用户新消息是否匹配渠道配置的正则表达式决定是否转发。
+- 所有转发只能去一个固定目标渠道。
+
+新逻辑：
+
+- 去掉正则匹配。
+- 新消息到达后，使用本渠道配置的预检模型和系统提示词先发起一轮 JSON 预检。
+- 根据 JSON 指标分值和策略判断是否转发。
+- 支持按原始模型映射到不同目标渠道。
+
+配置能力：
+
+- `forward_precheck_model`
+  - 预检使用的大模型。
+- `forward_precheck_prompt`
+  - 预检系统提示词。
+- `forward_max_message_chars`
+  - 新消息长度大于该值时直接不转发。
+- `forward_metric_rules`
+  - 每个 JSON 指标的比较条件。
+- `forward_metric_logic`
+  - 指标之间支持 `AND` / `OR`。
+- `forward_model_targets`
+  - 按原始模型决定目标渠道，例如 `gpt-5.4>=3`。
+
+重要语义：
+
+- 转发匹配模型使用映射前的原始模型，不使用上游映射后的模型。
+- 如果有模型映射，最终转发也是按原始模型匹配目标渠道。
+- 预检请求只用于路由决策，不污染主请求正文。
+- Claude Code 的 `<system-reminder>...</system-reminder>` 块不作为用户新消息参与预检，避免污染用户真实输入。
+- 主请求转发后仍发送完整原始请求，只有预检决策使用提取后的新消息。
+
+主要改动文件：
+
+- `dto/channel_settings.go`
+- `model/channel.go`
+- `controller/channel.go`
+- `controller/relay.go`
+- `service/channel_forward.go`
+- `service/channel_forward_test.go`
+- `web/src/components/table/channels/modals/EditChannelModal.jsx`
+
+已修问题：
+
+- `forward_min_message_chars` 语义改为 `forward_max_message_chars`。
+- 前端模型目标渠道配置支持 `gpt-5.4>=3`、`gpt-5.4 => 3`、`gpt-5.4 3`。
+- 预检选中渠道时，如果 `ChannelMeta` 不完整，会重新读取完整 channel，避免 key 为空导致 401。
+- 预检请求 URL 由相对路径修正为完整上游 URL。
+
+## 5. 渠道转发预检请求隔离与错误处理
+
+预检请求约束：
+
+- 不再触发渠道转发。
+- 不进入普通请求重试链路。
+- 不计入用户主请求费用。
+- 记录系统侧消耗日志，避免隐形成本不可见。
+- 预检日志使用常态 info 日志。
+- 预检失败时返回 HTTP 511。
+- 预检失败错误信息固定为：`预请求失败，请重试。`
+
+预检计费日志可见性：
+
+- 预检消耗日志标记 `channel_forward_precheck=true`。
+- 用户侧日志查询过滤该类记录。
+- token 维度日志查询过滤该类记录。
+- 用户使用量求和过滤该类记录。
+- 管理侧全量日志保留系统审计入口。
+
+主要改动文件：
+
+- `service/channel_forward.go`
+- `model/log.go`
+- `controller/relay.go`
+
+## 6. 渠道报错拦截
+
+目标：
+
+- 对已选中渠道发起后的上游错误做统一拦截。
+- 用户可见错误可替换为渠道配置的模板。
+- 日志仍保留真实上游错误，便于排查。
+
+支持模板变量：
+
+- `{request_id}`
+- `{response_code}`
+- `{error_code}`
+
+主要改动：
+
+- `dto/channel_settings.go`
+  - 增加错误拦截配置。
+- `service/error.go`
+  - 增加错误拦截模板处理。
+- `types/error.go`
+  - 保留上游真实 HTTP 状态码。
+  - `SetMessage` 同步更新嵌套 OpenAI / Claude 错误体。
+- `service/error_test.go`
+  - 增加错误模板替换和状态码保持相关测试。
+
+约束：
+
+- 拦截的是上游调用返回的错误。
+- 本地请求 JSON 无效、敏感词、余额不足、获取渠道失败、预检配置错误等仍保留各自原有处理语义。
+- 预检失败按专用 511 和固定文案处理。
+
+## 7. Claude Code 新消息提取修正
+
+问题：
+
+- Claude Code 会在用户消息附近插入 `<system-reminder>...</system-reminder>`。
+- 如果直接拿最后一个 user 内容参与预检，会把客户端提醒当成用户真实输入。
+
+处理：
+
+- Claude Messages 预检只提取最后一个真实用户文本块。
+- 遇到完整 `<system-reminder>...</system-reminder>` 块时跳过。
+- 如果最后一段是提醒块，则向前寻找同一轮或前一轮中的真实用户文本。
+
+主要改动：
+
+- `service/channel_forward.go`
+- `service/channel_forward_test.go`
+
+验证点：
+
+- 预检只使用用户说的“你好”等真实新消息。
+- 实际转发主请求仍保留完整原请求，不做内容裁剪。
+
+## 8. Xiaomi Claude 请求与响应诊断日志
+
+新增或增强的日志范围：
+
+- Claude Messages 原始入口 headers。
+- Xiaomi Claude 最终出站 URL、headers、body 摘要。
+- Xiaomi Claude 原始 upstream stream chunk。
+- Xiaomi Claude parsed chunk summary。
+- tool 列表摘要，包括 `web_search_20250305` 形态。
+- 上游非 200 响应体。
+
+目的：
+
+- 直接判断问题发生在请求映射、上游模型选择、上游响应还是网关响应转换。
+- 避免靠猜判断 Xiaomi 是否支持某类工具。
+
+主要改动文件：
+
+- `relay/claude_handler.go`
+- `relay/channel/api_request.go`
+- `relay/channel/xiaomi/adaptor.go`
+- `relay/channel/claude/relay-claude.go`
+- `relay/helper/stream_scanner.go`
+
+## 9. 全局模型倍率和用户倍率最终结算修复
+
+发现问题：
+
+- test 用户 `#2` 的 `users.global_model_ratio=2` 已正确写入数据库。
+- 最后两笔真实扣费走订阅额度：
+  - `log id=199`，扣费 `36183`
+  - `log id=200`，扣费 `52733`
+- 两笔扣费合计 `88916`，等于订阅 `amount_used=88916`。
+- 日志中只有 `model_ratio=1.25`、`group_ratio=1`、`user_group_ratio=-1`，实际扣费没有体现 2 倍。
+
+根因：
+
+- `relay/helper/price.go` 的预扣阶段已经计算了：
+  - `系统全局模型倍率 * 用户 global_model_ratio`
+- 该合成值存入 `PriceData.GlobalModelRatio`。
+- 但 `service/text_quota.go` 的文本最终结算只乘了：
+  - `model_ratio * group_ratio`
+- 最终 `actualQuota` 漏乘 `PriceData.GlobalModelRatio`。
+- 结果表现为预扣可能按 2 倍，最终结算又按 1 倍实际用量退回。
+
+修复：
+
+- `service/text_quota.go`
+  - `textQuotaSummary` 增加 `GlobalModelRatio`。
+  - token 计费最终结算改为：
+    - `model_ratio * group_ratio * global_model_ratio`
+  - 固定价格模型最终结算也乘：
+    - `model_price * quota_per_unit * group_ratio * global_model_ratio`
+- `service/log_info_generate.go`
+  - 日志 `other` 增加 `global_model_ratio`，方便后续查账。
+- `service/text_quota_test.go`
+  - 增加 `TestCalculateTextQuotaSummaryUsesGlobalModelRatio`。
+  - 覆盖 `GlobalModelRatio=2` 时最终结算翻倍。
+  - 旧测试显式设置 `GlobalModelRatio=1`，避免零值语义误判。
+
+结论：
+
+- 系统设置里的“全局模型倍率”和用户级 `global_model_ratio` 是合成到同一个 `PriceData.GlobalModelRatio` 中的。
+- 因此这次修复同时修复系统全局模型倍率和用户单独倍率在文本最终结算中漏乘的问题。
+- 本地 `options` 表未查询到 `GlobalModelRatio`，当前环境系统全局倍率应走默认值 `1`。
+
+验证：
+
+- `go test ./service -run "TestCalculateTextQuotaSummary"` 通过。
+- `go test ./relay/helper` 通过。
+- `go test ./service` 全量仍有既有失败，失败点在 channel affinity / task subscription 测试，与本次文本最终结算修复不在同一路径。
+
+## 10. 其他相关改动
+
+认证与日志：
+
+- `middleware/auth.go`
+  - 增强 token auth 调试日志，记录 token 来源、选中 key、token id、用户 id、group 等。
+- `constant/context_key.go`
+  - 增加 Xiaomi Claude trace、渠道转发预检等上下文 key。
+
+Responses / OpenAI compatible 辅助：
+
+- `service/openaicompat/responses_chat_compat.go`
+- `service/openaicompat/responses_chat_compat_test.go`
+- `service/openai_chat_responses_compat.go`
+- `relay/channel/xiaomi/responses_compat.go`
+
+用途：
+
+- 支撑 Claude / OpenAI Compatible / Responses 之间的兼容链路。
+- 记录 `request_conversion`，便于从日志判断最终请求协议。
+
+前端日志展示：
+
+- `web/src/components/table/usage-logs/UsageLogsColumnDefs.jsx`
+  - 配合新增日志字段展示计费来源、订阅扣费、倍率等信息。
+
+## 11. 本轮关键验证命令
+
+已跑过并通过：
+
+```bash
+go test ./service -run "TestCalculateTextQuotaSummary"
+go test ./relay/helper
+go test ./model -run 'TestNonExistent'
+go test ./controller ./dto
+```
+
+曾跑过但存在无关既有失败：
+
+```bash
+go test ./service
+```
+
+失败点集中在既有 channel affinity / task subscription 测试，不是 Xiaomi Claude、渠道转发预检或文本全局倍率修复引入的主路径失败。
+
+## 12. 当前已知风险与后续建议
+
+Xiaomi hosted/server tools：
+
+- `custom` tools 已确认可触发。
+- `web_search_20250305` 这类 Anthropic hosted/server tool 当前实测不通。
+- 若要让 Claude Code 的实时搜索真正可用，需要额外接入真实搜索后端，并由网关模拟 hosted tool 的执行和返回。
+
+渠道转发预检：
+
+- 预检依赖模型稳定输出 JSON。
+- 如果模型输出非 JSON 或指标缺失，应继续按 511 固定错误处理。
+- 预检消耗目前不向用户扣费，但需要持续保留系统侧成本记录。
+
+错误拦截：
+
+- 用户侧错误可被模板替换。
+- 日志必须继续保留真实上游错误，否则后续排障会失去证据。
+
+倍率计费：
+
+- 文本主路径已修复最终结算漏乘 `GlobalModelRatio`。
+- 后续如扩展到更多附加费用项，应明确它们是否也应受全局倍率影响，例如 hosted web search、file search、image generation call 等附加单价。

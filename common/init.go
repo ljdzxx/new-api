@@ -80,6 +80,7 @@ func InitEnv() {
 
 	// Initialize variables from constants.go that were using environment variables
 	DebugEnabled = os.Getenv("DEBUG") == "true"
+	DebugTraceEnabled = GetEnvOrDefaultBool("DEBUG_TRACE_ENABLED", false)
 	MemoryCacheEnabled = os.Getenv("MEMORY_CACHE_ENABLED") == "true"
 	IsMasterNode = os.Getenv("NODE_TYPE") != "slave"
 	NoWeb = BuildNoWeb || GetEnvOrDefaultBool("NO_WEB", false)

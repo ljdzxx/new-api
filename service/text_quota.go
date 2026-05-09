@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -36,6 +37,7 @@ type textQuotaSummary struct {
 	ImageRatio               float64
 	ModelRatio               float64
 	GroupRatio               float64
+	GlobalModelRatio         float64
 	ModelPrice               float64
 	CacheCreationRatio       float64
 	CacheCreationRatio5m     float64
@@ -87,6 +89,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		ImageRatio:           relayInfo.PriceData.ImageRatio,
 		ModelRatio:           relayInfo.PriceData.ModelRatio,
 		GroupRatio:           relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+		GlobalModelRatio:     relayInfo.PriceData.GlobalModelRatio,
 		ModelPrice:           relayInfo.PriceData.ModelPrice,
 		CacheCreationRatio:   relayInfo.PriceData.CacheCreationRatio,
 		CacheCreationRatio5m: relayInfo.PriceData.CacheCreation5mRatio,
@@ -125,6 +128,25 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		}
 		summary.PromptTokens -= summary.CacheCreationTokens
 	}
+
+	rawPromptTokens := summary.PromptTokens
+	rawCompletionTokens := summary.CompletionTokens
+	rawCacheTokens := summary.CacheTokens
+	rawCacheCreationTokens := summary.CacheCreationTokens
+	rawCacheCreationTokens5m := summary.CacheCreationTokens5m
+	rawCacheCreationTokens1h := summary.CacheCreationTokens1h
+	rawImageTokens := summary.ImageTokens
+	rawAudioTokens := summary.AudioTokens
+
+	summary.PromptTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.PromptTokens, summary.GlobalModelRatio)
+	summary.CompletionTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.CompletionTokens, summary.GlobalModelRatio)
+	summary.TotalTokens = summary.PromptTokens + summary.CompletionTokens
+	summary.CacheTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.CacheTokens, summary.GlobalModelRatio)
+	summary.CacheCreationTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.CacheCreationTokens, summary.GlobalModelRatio)
+	summary.CacheCreationTokens5m = relayhelper.ScaleTokensByGlobalModelRatio(summary.CacheCreationTokens5m, summary.GlobalModelRatio)
+	summary.CacheCreationTokens1h = relayhelper.ScaleTokensByGlobalModelRatio(summary.CacheCreationTokens1h, summary.GlobalModelRatio)
+	summary.ImageTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.ImageTokens, summary.GlobalModelRatio)
+	summary.AudioTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.AudioTokens, summary.GlobalModelRatio)
 
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
 	dCacheTokens := decimal.NewFromInt(int64(summary.CacheTokens))
@@ -275,6 +297,58 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.Quota = 1
 	}
 
+	if summary.GlobalModelRatio > 1 {
+		channelID := 0
+		if relayInfo.ChannelMeta != nil {
+			channelID = relayInfo.ChannelMeta.ChannelId
+		}
+		rawBaseTokens := rawPromptTokens
+		scaledBaseTokens := summary.PromptTokens
+		if !summary.IsClaudeUsageSemantic && !legacyClaudeDerived {
+			rawBaseTokens -= rawCacheTokens + rawCacheCreationTokens
+			scaledBaseTokens -= summary.CacheTokens + summary.CacheCreationTokens
+		}
+		if rawBaseTokens < 0 {
+			rawBaseTokens = 0
+		}
+		if scaledBaseTokens < 0 {
+			scaledBaseTokens = 0
+		}
+		rawCacheCreationRemaining := rawCacheCreationTokens - rawCacheCreationTokens5m - rawCacheCreationTokens1h
+		if rawCacheCreationRemaining < 0 {
+			rawCacheCreationRemaining = 0
+		}
+		scaledCacheCreationRemaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
+		if scaledCacheCreationRemaining < 0 {
+			scaledCacheCreationRemaining = 0
+		}
+		rawBillableTokens := float64(rawBaseTokens) +
+			float64(rawCacheTokens)*summary.CacheRatio +
+			float64(rawCacheCreationRemaining)*summary.CacheCreationRatio +
+			float64(rawCacheCreationTokens5m)*summary.CacheCreationRatio5m +
+			float64(rawCacheCreationTokens1h)*summary.CacheCreationRatio1h +
+			float64(rawImageTokens)*summary.ImageRatio +
+			float64(rawCompletionTokens)*summary.CompletionRatio
+		scaledBillableTokens := float64(scaledBaseTokens) +
+			float64(summary.CacheTokens)*summary.CacheRatio +
+			float64(scaledCacheCreationRemaining)*summary.CacheCreationRatio +
+			float64(summary.CacheCreationTokens5m)*summary.CacheCreationRatio5m +
+			float64(summary.CacheCreationTokens1h)*summary.CacheCreationRatio1h +
+			float64(summary.ImageTokens)*summary.ImageRatio +
+			float64(summary.CompletionTokens)*summary.CompletionRatio
+		rawQuotaBeforeRound := rawBillableTokens * summary.ModelRatio * summary.GroupRatio
+		scaledQuotaBeforeRound := scaledBillableTokens * summary.ModelRatio * summary.GroupRatio
+		logger.LogInfo(ctx, fmt.Sprintf(
+			"global model ratio token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={input:%d base:%d cache:%d cache_creation:%d cache_creation_5m:%d cache_creation_1h:%d output:%d image:%d audio:%d} scaled_tokens={input:%d base:%d cache:%d cache_creation:%d cache_creation_5m:%d cache_creation_1h:%d output:%d image:%d audio:%d} raw_formula=(base %d + cache %d*%.6f + cache_creation_remaining %d*%.6f + cache_creation_5m %d*%.6f + cache_creation_1h %d*%.6f + image %d*%.6f + output %d*%.6f) * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=(base %d + cache %d*%.6f + cache_creation_remaining %d*%.6f + cache_creation_5m %d*%.6f + cache_creation_1h %d*%.6f + image %d*%.6f + output %d*%.6f) * model_ratio %.6f * group_ratio %.6f = quota %.6f rounded_quota=%d",
+			relayInfo.UserId, channelID, relayInfo.TokenId, summary.ModelName,
+			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, summary.GlobalModelRatio,
+			rawPromptTokens, rawBaseTokens, rawCacheTokens, rawCacheCreationTokens, rawCacheCreationTokens5m, rawCacheCreationTokens1h, rawCompletionTokens, rawImageTokens, rawAudioTokens,
+			summary.PromptTokens, scaledBaseTokens, summary.CacheTokens, summary.CacheCreationTokens, summary.CacheCreationTokens5m, summary.CacheCreationTokens1h, summary.CompletionTokens, summary.ImageTokens, summary.AudioTokens,
+			rawBaseTokens, rawCacheTokens, summary.CacheRatio, rawCacheCreationRemaining, summary.CacheCreationRatio, rawCacheCreationTokens5m, summary.CacheCreationRatio5m, rawCacheCreationTokens1h, summary.CacheCreationRatio1h, rawImageTokens, summary.ImageRatio, rawCompletionTokens, summary.CompletionRatio, summary.ModelRatio, summary.GroupRatio, rawQuotaBeforeRound,
+			scaledBaseTokens, summary.CacheTokens, summary.CacheRatio, scaledCacheCreationRemaining, summary.CacheCreationRatio, summary.CacheCreationTokens5m, summary.CacheCreationRatio5m, summary.CacheCreationTokens1h, summary.CacheCreationRatio1h, summary.ImageTokens, summary.ImageRatio, summary.CompletionTokens, summary.CompletionRatio, summary.ModelRatio, summary.GroupRatio, scaledQuotaBeforeRound, summary.Quota,
+		))
+	}
+
 	return summary
 }
 
@@ -407,7 +481,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		// Only write this field when upstream/current conversion has already provided a
 		// reliable total input value and tagged the usage source. Do not infer it from
 		// prompt/cache fields here, otherwise old upstream payloads may be double-counted.
-		other["input_tokens_total"] = usage.InputTokens
+		other["input_tokens_total"] = relayhelper.ScaleTokensByGlobalModelRatio(usage.InputTokens, summary.GlobalModelRatio)
 	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

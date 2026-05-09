@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -19,17 +20,32 @@ import (
 // https://docs.claude.com/en/docs/build-with-claude/prompt-caching#1-hour-cache-duration
 const claudeCacheCreation1hMultiplier = 6 / 3.75
 
-func getEffectiveGlobalModelRatio(userID int) float64 {
-	effectiveRatio := ratio_setting.GetGlobalModelRatio()
-	if userID <= 0 {
-		return effectiveRatio
+func ScaleTokensByGlobalModelRatio(tokens int, globalModelRatio float64) int {
+	if tokens <= 0 {
+		return tokens
 	}
-	userRatio, err := model.GetUserGlobalModelRatio(userID, false)
+	if math.IsNaN(globalModelRatio) || math.IsInf(globalModelRatio, 0) {
+		globalModelRatio = ratio_setting.DefaultGlobalModelRatio
+	}
+	if globalModelRatio < 0 {
+		globalModelRatio = 0
+	}
+	return int(float64(tokens) * globalModelRatio)
+}
+
+func getEffectiveGlobalModelRatio(userID int) (float64, float64, float64) {
+	systemRatio := ratio_setting.GetGlobalModelRatio()
+	userRatio := ratio_setting.DefaultGlobalModelRatio
+	if userID <= 0 {
+		return systemRatio, userRatio, systemRatio * userRatio
+	}
+	var err error
+	userRatio, err = model.GetUserGlobalModelRatio(userID, false)
 	if err != nil {
 		common.SysError(fmt.Sprintf("failed to get user global model ratio, user_id=%d: %s", userID, err.Error()))
-		return effectiveRatio
+		userRatio = ratio_setting.DefaultGlobalModelRatio
 	}
-	return effectiveRatio * userRatio
+	return systemRatio, userRatio, systemRatio * userRatio
 }
 
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
@@ -65,7 +81,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
-	globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
+	systemGlobalModelRatio, userGlobalModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -106,28 +122,43 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		imageRatio, _ = ratio_setting.GetImageRatio(info.OriginModelName)
 		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
-		ratio := modelRatio * groupRatioInfo.GroupRatio * globalModelRatio
-		preConsumedQuota = int(float64(preConsumedTokens) * ratio)
+		scaledPreConsumedTokens := ScaleTokensByGlobalModelRatio(preConsumedTokens, globalModelRatio)
+		ratio := modelRatio * groupRatioInfo.GroupRatio
+		preConsumedQuota = int(float64(scaledPreConsumedTokens) * ratio)
+		if globalModelRatio > 1 {
+			channelID := 0
+			if info.ChannelMeta != nil {
+				channelID = info.ChannelMeta.ChannelId
+			}
+			logger.LogInfo(c, fmt.Sprintf(
+				"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_preconsume_tokens=%d scaled_preconsume_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
+				info.UserId, channelID, info.TokenId, info.OriginModelName,
+				systemGlobalModelRatio, userGlobalModelRatio, globalModelRatio,
+				preConsumedTokens, scaledPreConsumedTokens,
+				preConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, float64(preConsumedTokens)*modelRatio*groupRatioInfo.GroupRatio,
+				scaledPreConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, preConsumedQuota,
+			))
+		}
 	} else {
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * globalModelRatio)
+		preConsumedQuota = int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 	}
 
 	// check if free model pre-consume is disabled
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 		// if model price or ratio is 0, do not pre-consume quota
-		if groupRatioInfo.GroupRatio == 0 && globalModelRatio == 0 {
+		if groupRatioInfo.GroupRatio == 0 || globalModelRatio == 0 {
 			preConsumedQuota = 0
 			freeModel = true
 		} else if usePrice {
-			if modelPrice == 0 && globalModelRatio == 0 {
+			if modelPrice == 0 {
 				preConsumedQuota = 0
 				freeModel = true
 			}
 		} else {
-			if modelRatio == 0 && globalModelRatio == 0 {
+			if modelRatio == 0 {
 				preConsumedQuota = 0
 				freeModel = true
 			}
@@ -135,21 +166,23 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	priceData := types.PriceData{
-		FreeModel:            freeModel,
-		ModelPrice:           modelPrice,
-		ModelRatio:           modelRatio,
-		GlobalModelRatio:     globalModelRatio,
-		CompletionRatio:      completionRatio,
-		GroupRatioInfo:       groupRatioInfo,
-		UsePrice:             usePrice,
-		CacheRatio:           cacheRatio,
-		ImageRatio:           imageRatio,
-		AudioRatio:           audioRatio,
-		AudioCompletionRatio: audioCompletionRatio,
-		CacheCreationRatio:   cacheCreationRatio,
-		CacheCreation5mRatio: cacheCreationRatio5m,
-		CacheCreation1hRatio: cacheCreationRatio1h,
-		QuotaToPreConsume:    preConsumedQuota,
+		FreeModel:              freeModel,
+		ModelPrice:             modelPrice,
+		ModelRatio:             modelRatio,
+		SystemGlobalModelRatio: systemGlobalModelRatio,
+		UserGlobalModelRatio:   userGlobalModelRatio,
+		GlobalModelRatio:       globalModelRatio,
+		CompletionRatio:        completionRatio,
+		GroupRatioInfo:         groupRatioInfo,
+		UsePrice:               usePrice,
+		CacheRatio:             cacheRatio,
+		ImageRatio:             imageRatio,
+		AudioRatio:             audioRatio,
+		AudioCompletionRatio:   audioCompletionRatio,
+		CacheCreationRatio:     cacheCreationRatio,
+		CacheCreation5mRatio:   cacheCreationRatio5m,
+		CacheCreation1hRatio:   cacheCreationRatio1h,
+		QuotaToPreConsume:      preConsumedQuota,
 	}
 
 	if common.DebugEnabled {
@@ -162,7 +195,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
-	globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
+	systemGlobalModelRatio, userGlobalModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	// 如果没有配置价格，检查模型倍率配置
@@ -187,23 +220,25 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		}
 
 	}
-	quota := int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * globalModelRatio)
+	quota := int(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 
 	// 免费模型检测（与 ModelPriceHelper 对齐）
 	freeModel := false
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
-		if (groupRatioInfo.GroupRatio == 0 || modelPrice == 0) && globalModelRatio == 0 {
+		if groupRatioInfo.GroupRatio == 0 || modelPrice == 0 || globalModelRatio == 0 {
 			quota = 0
 			freeModel = true
 		}
 	}
 
 	priceData := types.PriceData{
-		FreeModel:        freeModel,
-		ModelPrice:       modelPrice,
-		GlobalModelRatio: globalModelRatio,
-		Quota:            quota,
-		GroupRatioInfo:   groupRatioInfo,
+		FreeModel:              freeModel,
+		ModelPrice:             modelPrice,
+		SystemGlobalModelRatio: systemGlobalModelRatio,
+		UserGlobalModelRatio:   userGlobalModelRatio,
+		GlobalModelRatio:       globalModelRatio,
+		Quota:                  quota,
+		GroupRatioInfo:         groupRatioInfo,
 	}
 	return priceData, nil
 }

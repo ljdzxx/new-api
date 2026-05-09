@@ -102,6 +102,65 @@ const REGION_EXAMPLE = {
 };
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8;
 
+const DEFAULT_FORWARD_PRECHECK_PROMPT =
+  '你是一个信息检察官，负责对用户输入的信息进行多维度的评判、打分，每个维度的满分均为100分：\n\nis_test:代表这是一条测试信息的分数，类似关键词：test/hi/hello/你好/测试/连通性测试/模型测试;\nis_check:代表这是一条身份检查信息的分数，类似关键词：who are u/你是什么大模型/你是谁/你是哪家公司的/你老板是谁/你是美国的吗/你是chatgpt吗/你的知识库截止时间;\nis_angry:代表这是一条愤怒信息的分数，用户是否正处于愤怒状态，情绪化的表达，类似关键词：你是傻逼/SB吗/你他妈/真是垃圾/去死吧/操你妈/尼玛/你妈逼/滚你妈;\n\n以纯JSON格式输出你的检查结果，示例：{"is_test":20,"is_check":90,"is_angry":0}';
+
+const stringifyForwardMetricRules = (rules) =>
+  Array.isArray(rules)
+    ? rules
+        .map((rule) =>
+          [rule.key || '', rule.op || '>=', rule.value ?? '']
+            .map((item) => String(item).trim())
+            .join(' '),
+        )
+        .filter((line) => line.trim())
+        .join('\n')
+    : '';
+
+const parseForwardMetricRules = (text) =>
+  String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      return {
+        key: parts[0] || '',
+        op: parts[1] || '>=',
+        value: Number(parts[2]) || 0,
+      };
+    });
+
+const stringifyForwardModelTargets = (targets) =>
+  Array.isArray(targets)
+    ? targets
+        .map((target) => `${target.model || ''} => ${target.target_channel_id || ''}`)
+        .filter((line) => line.replace(/=>|>=/g, '').trim())
+        .join('\n')
+    : '';
+
+const splitForwardModelTargetLine = (line) => {
+  const compactMatch = line.match(/^(.*?)(?:=>|>=)\s*(\d+)\s*$/);
+  if (compactMatch) {
+    return [compactMatch[1], compactMatch[2]];
+  }
+  const parts = line.split(/\s+/);
+  return [parts[0], parts[1]];
+};
+
+const parseForwardModelTargets = (text) =>
+  String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [model, channelId] = splitForwardModelTargetLine(line);
+      return {
+        model: String(model || '').trim(),
+        target_channel_id: Number(String(channelId || '').trim()) || 0,
+      };
+    });
+
 const PARAM_OVERRIDE_LEGACY_TEMPLATE = {
   temperature: 0,
 };
@@ -190,6 +249,16 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    forward_enabled: false,
+    forward_precheck_model: '',
+    forward_precheck_system_prompt: DEFAULT_FORWARD_PRECHECK_PROMPT,
+    forward_max_message_chars: 0,
+    forward_metric_logic: 'or',
+    forward_metric_rules_text: 'is_test >= 80\nis_check >= 90',
+    forward_model_targets_text: '',
+    error_intercept_enabled: false,
+    error_intercept_message:
+      'REQUEST ID:{request_id} - ERROR_CODE:{error_code}, 请报告你的错误信息联系客服处理。',
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
@@ -526,6 +595,17 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
+    system_prompt_override: false,
+    forward_enabled: false,
+    forward_precheck_model: '',
+    forward_precheck_system_prompt: DEFAULT_FORWARD_PRECHECK_PROMPT,
+    forward_max_message_chars: 0,
+    forward_metric_logic: 'or',
+    forward_metric_rules_text: 'is_test >= 80\nis_check >= 90',
+    forward_model_targets_text: '',
+    error_intercept_enabled: false,
+    error_intercept_message:
+      'REQUEST ID:{request_id} - ERROR_CODE:{error_code}, 请报告你的错误信息联系客服处理。',
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -846,6 +926,26 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.forward_enabled = parsedSettings.forward_enabled || false;
+          data.forward_precheck_model =
+            parsedSettings.forward_precheck_model || '';
+          data.forward_precheck_system_prompt =
+            parsedSettings.forward_precheck_system_prompt ||
+            DEFAULT_FORWARD_PRECHECK_PROMPT;
+          data.forward_max_message_chars =
+            Number(parsedSettings.forward_max_message_chars) || 0;
+          data.forward_metric_logic =
+            parsedSettings.forward_metric_logic || 'or';
+          data.forward_metric_rules_text = stringifyForwardMetricRules(
+            parsedSettings.forward_metric_rules,
+          );
+          data.forward_model_targets_text = stringifyForwardModelTargets(
+            parsedSettings.forward_model_targets,
+          );
+          data.error_intercept_enabled =
+            parsedSettings.error_intercept_enabled || false;
+          data.error_intercept_message =
+            parsedSettings.error_intercept_message || '';
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -854,6 +954,15 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.forward_enabled = false;
+          data.forward_precheck_model = '';
+          data.forward_precheck_system_prompt = DEFAULT_FORWARD_PRECHECK_PROMPT;
+          data.forward_max_message_chars = 0;
+          data.forward_metric_logic = 'or';
+          data.forward_metric_rules_text = 'is_test >= 80\nis_check >= 90';
+          data.forward_model_targets_text = '';
+          data.error_intercept_enabled = false;
+          data.error_intercept_message = '';
         }
       } else {
         data.force_format = false;
@@ -862,6 +971,15 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.forward_enabled = false;
+        data.forward_precheck_model = '';
+        data.forward_precheck_system_prompt = DEFAULT_FORWARD_PRECHECK_PROMPT;
+        data.forward_max_message_chars = 0;
+        data.forward_metric_logic = 'or';
+        data.forward_metric_rules_text = 'is_test >= 80\nis_check >= 90';
+        data.forward_model_targets_text = '';
+        data.error_intercept_enabled = false;
+        data.error_intercept_message = '';
       }
 
       if (data.settings) {
@@ -970,6 +1088,16 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        forward_enabled: data.forward_enabled || false,
+        forward_precheck_model: data.forward_precheck_model || '',
+        forward_precheck_system_prompt:
+          data.forward_precheck_system_prompt || DEFAULT_FORWARD_PRECHECK_PROMPT,
+        forward_max_message_chars: data.forward_max_message_chars || 0,
+        forward_metric_logic: data.forward_metric_logic || 'or',
+        forward_metric_rules_text: data.forward_metric_rules_text || '',
+        forward_model_targets_text: data.forward_model_targets_text || '',
+        error_intercept_enabled: data.error_intercept_enabled || false,
+        error_intercept_message: data.error_intercept_message || '',
       });
       initialModelsRef.current = (data.models || [])
         .map((model) => (model || '').trim())
@@ -1328,6 +1456,15 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: false,
       system_prompt: '',
       system_prompt_override: false,
+      forward_enabled: false,
+      forward_precheck_model: '',
+      forward_precheck_system_prompt: DEFAULT_FORWARD_PRECHECK_PROMPT,
+      forward_max_message_chars: 0,
+      forward_metric_logic: 'or',
+      forward_metric_rules_text: 'is_test >= 80\nis_check >= 90',
+      forward_model_targets_text: '',
+      error_intercept_enabled: false,
+      error_intercept_message: '',
     });
     // 重置密钥模式状态
     setKeyMode('append');
@@ -1686,6 +1823,71 @@ const EditChannelModal = (props) => {
       localInputs.other = 'v2.1';
     }
 
+    if (localInputs.forward_enabled) {
+      const forwardMetricRules = parseForwardMetricRules(
+        localInputs.forward_metric_rules_text,
+      );
+      const forwardModelTargets = parseForwardModelTargets(
+        localInputs.forward_model_targets_text,
+      );
+      if (!String(localInputs.forward_precheck_model || '').trim()) {
+        showInfo(t('请输入转发预检模型'));
+        return;
+      }
+      if (!String(localInputs.forward_precheck_system_prompt || '').trim()) {
+        showInfo(t('请输入转发预检系统提示词'));
+        return;
+      }
+      if (forwardMetricRules.length === 0) {
+        showInfo(t('请输入转发指标规则'));
+        return;
+      }
+      if (forwardModelTargets.length === 0) {
+        showInfo(t('请输入转发模型目标渠道'));
+        return;
+      }
+      for (const target of forwardModelTargets) {
+        if (!target.model || target.target_channel_id <= 0) {
+          showInfo(t('转发模型目标渠道格式错误'));
+          return;
+        }
+        if (isEdit && target.target_channel_id === parseInt(channelId)) {
+          showInfo(t('转发目标渠道不能是当前渠道自身'));
+          return;
+        }
+      }
+    }
+
+    if (false && localInputs.forward_enabled) {
+      const targetChannelId =
+        Number(localInputs.forward_target_channel_id) || 0;
+      const forwardRegex = String(localInputs.forward_match_regex || '').trim();
+      if (targetChannelId <= 0) {
+        showInfo(t('请输入转发目标渠道ID'));
+        return;
+      }
+      if (!forwardRegex) {
+        showInfo(t('请输入转发匹配正则'));
+        return;
+      }
+      if (isEdit && targetChannelId === parseInt(channelId)) {
+        showInfo(t('转发目标渠道不能是当前渠道自身'));
+        return;
+      }
+      try {
+        forwardRegex
+          .split('\n')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .forEach((pattern) => {
+            new RegExp(pattern);
+          });
+      } catch (error) {
+        showInfo(t('转发匹配正则格式错误'));
+        return;
+      }
+    }
+
     // 生成渠道额外设置JSON
     const channelExtraSettings = {
       force_format: localInputs.force_format || false,
@@ -1694,6 +1896,21 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      forward_enabled: localInputs.forward_enabled || false,
+      forward_precheck_model: localInputs.forward_precheck_model || '',
+      forward_precheck_system_prompt:
+        localInputs.forward_precheck_system_prompt || '',
+      forward_max_message_chars:
+        Number(localInputs.forward_max_message_chars) || 0,
+      forward_metric_logic: localInputs.forward_metric_logic || 'or',
+      forward_metric_rules: parseForwardMetricRules(
+        localInputs.forward_metric_rules_text,
+      ),
+      forward_model_targets: parseForwardModelTargets(
+        localInputs.forward_model_targets_text,
+      ),
+      error_intercept_enabled: localInputs.error_intercept_enabled || false,
+      error_intercept_message: localInputs.error_intercept_message || '',
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
@@ -1775,6 +1992,17 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.forward_enabled;
+    delete localInputs.forward_target_channel_id;
+    delete localInputs.forward_match_regex;
+    delete localInputs.forward_precheck_model;
+    delete localInputs.forward_precheck_system_prompt;
+    delete localInputs.forward_max_message_chars;
+    delete localInputs.forward_metric_logic;
+    delete localInputs.forward_metric_rules_text;
+    delete localInputs.forward_model_targets_text;
+    delete localInputs.error_intercept_enabled;
+    delete localInputs.error_intercept_message;
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
@@ -3945,6 +4173,158 @@ const EditChannelModal = (props) => {
                       extraText={t(
                         '如果用户请求中包含系统提示词，则使用此设置拼接到用户的系统提示词前面',
                       )}
+                    />
+                    <Form.Switch
+                      field='forward_enabled'
+                      label={t('渠道转发')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange('forward_enabled', value)
+                      }
+                      extraText={t(
+                        '命中系统提示词或当前新消息的正则后，将请求一跳转发到指定渠道',
+                      )}
+                    />
+                    {false && (
+                      <>
+                    <Form.InputNumber
+                      field='forward_target_channel_id'
+                      label={t('转发目标渠道ID')}
+                      placeholder={t('输入目标渠道ID')}
+                      min={0}
+                      value={inputs.forward_target_channel_id || undefined}
+                      onNumberChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_target_channel_id',
+                          Number(value) || 0,
+                        )
+                      }
+                      extraText={t('目标渠道不可用时会直接返回目标渠道自身的错误')}
+                    />
+                    <Form.TextArea
+                      field='forward_match_regex'
+                      label={t('转发匹配正则')}
+                      placeholder={t(
+                        '一行一个正则；仅检查系统提示词和当前新消息，不检查历史消息',
+                      )}
+                      onChange={(value) =>
+                        handleChannelSettingsChange('forward_match_regex', value)
+                      }
+                      autosize
+                      showClear
+                      extraText={t(
+                        '聊天类接口只检查最后一条用户新消息；多模态请求仅检查其中的文本内容',
+                      )}
+                    />
+                      </>
+                    )}
+                    <Form.Input
+                      field='forward_precheck_model'
+                      label={t('转发预检模型')}
+                      placeholder={t('例如 gpt-4o-mini')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_precheck_model',
+                          value,
+                        )
+                      }
+                      showClear
+                    />
+                    <Form.TextArea
+                      field='forward_precheck_system_prompt'
+                      label={t('转发预检系统提示词')}
+                      placeholder={t('要求模型输出纯 JSON 指标')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_precheck_system_prompt',
+                          value,
+                        )
+                      }
+                      autosize
+                      showClear
+                    />
+                    <Form.InputNumber
+                      field='forward_max_message_chars'
+                      label={t('最大新消息字符数')}
+                      placeholder={t('为空或 0 表示不限制')}
+                      min={0}
+                      value={inputs.forward_max_message_chars || undefined}
+                      onNumberChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_max_message_chars',
+                          Number(value) || 0,
+                        )
+                      }
+                      extraText={t('新消息长度大于该值时直接不转发')}
+                    />
+                    <Form.Select
+                      field='forward_metric_logic'
+                      label={t('指标关系')}
+                      optionList={[
+                        { label: 'OR', value: 'or' },
+                        { label: 'AND', value: 'and' },
+                      ]}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_metric_logic',
+                          value,
+                        )
+                      }
+                    />
+                    <Form.TextArea
+                      field='forward_metric_rules_text'
+                      label={t('指标规则')}
+                      placeholder={'is_test >= 80\nis_check >= 90'}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_metric_rules_text',
+                          value,
+                        )
+                      }
+                      autosize
+                      showClear
+                      extraText={t('每行一个规则：指标名 比较符 分值')}
+                    />
+                    <Form.TextArea
+                      field='forward_model_targets_text'
+                      label={t('模型目标渠道')}
+                      placeholder={'gpt-5.4 => 12\nclaude-* => 18'}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'forward_model_targets_text',
+                          value,
+                        )
+                      }
+                      autosize
+                      showClear
+                      extraText={t('按映射前的原始模型匹配，支持 * 通配符')}
+                    />
+                    <Form.Switch
+                      field='error_intercept_enabled'
+                      label={t('渠道报错拦截')}
+                      checkedText={t('寮€')}
+                      uncheckedText={t('关')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'error_intercept_enabled',
+                          value,
+                        )
+                      }
+                    />
+                    <Form.Input
+                      field='error_intercept_message'
+                      label={t('报错拦截模板')}
+                      placeholder={t(
+                        'REQUEST ID:{request_id} - ERROR_CODE:{error_code}',
+                      )}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'error_intercept_message',
+                          value,
+                        )
+                      }
+                      showClear
                     />
                   </Card>
                 </div>

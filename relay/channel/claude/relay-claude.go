@@ -782,11 +782,17 @@ func FormatClaudeResponseInfo(claudeResponse *dto.ClaudeResponse, oaiResponse *d
 }
 
 func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, data string) *types.NewAPIError {
+	if shouldLogXiaomiClaudeUpstreamResponse(c, info) {
+		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude] upstream stream chunk bytes=%d:\n%s", len(data), data))
+	}
 	var claudeResponse dto.ClaudeResponse
 	err := common.UnmarshalJsonStr(data, &claudeResponse)
 	if err != nil {
 		common.SysLog("error unmarshalling stream response: " + err.Error())
 		return types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	if shouldLogXiaomiClaudeUpstreamResponse(c, info) {
+		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude] parsed stream chunk summary: %s", summarizeClaudeResponseForLog(&claudeResponse)))
 	}
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
@@ -891,10 +897,16 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 }
 
 func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, httpResp *http.Response, data []byte) *types.NewAPIError {
+	if shouldLogXiaomiClaudeUpstreamResponse(c, info) {
+		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude] upstream response body bytes=%d:\n%s", len(data), string(data)))
+	}
 	var claudeResponse dto.ClaudeResponse
 	err := common.Unmarshal(data, &claudeResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	if shouldLogXiaomiClaudeUpstreamResponse(c, info) {
+		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude] parsed response summary: %s", summarizeClaudeResponseForLog(&claudeResponse)))
 	}
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
@@ -956,6 +968,99 @@ func ClaudeHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 		return nil, handleErr
 	}
 	return claudeInfo.Usage, nil
+}
+
+func shouldLogXiaomiClaudeUpstreamResponse(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	if !common.DebugEnabled && !common.DebugTraceEnabled {
+		return false
+	}
+	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyXiaomiClaudeDebug) {
+		return true
+	}
+	if info == nil {
+		return false
+	}
+	if info.ChannelType == constant.ChannelTypeXiaomi && info.GetFinalRequestRelayFormat() == types.RelayFormatClaude {
+		return true
+	}
+	return false
+}
+
+func summarizeClaudeResponseForLog(resp *dto.ClaudeResponse) string {
+	if resp == nil {
+		return "<nil>"
+	}
+
+	contentTypes := make([]string, 0, len(resp.Content))
+	contentNames := make([]string, 0, len(resp.Content))
+	for _, item := range resp.Content {
+		if item.Type != "" {
+			contentTypes = append(contentTypes, item.Type)
+		}
+		if item.Name != "" {
+			contentNames = append(contentNames, item.Name)
+		}
+	}
+
+	serverToolUse := 0
+	if resp.Usage != nil && resp.Usage.ServerToolUse != nil {
+		serverToolUse = resp.Usage.ServerToolUse.WebSearchRequests
+	}
+
+	contentBlockType := ""
+	contentBlockName := ""
+	if resp.ContentBlock != nil {
+		contentBlockType = resp.ContentBlock.Type
+		contentBlockName = resp.ContentBlock.Name
+	}
+
+	deltaType := ""
+	deltaName := ""
+	deltaStopReason := ""
+	if resp.Delta != nil {
+		deltaType = resp.Delta.Type
+		deltaName = resp.Delta.Name
+		if resp.Delta.StopReason != nil {
+			deltaStopReason = *resp.Delta.StopReason
+		}
+	}
+
+	messageType := ""
+	messageName := ""
+	if resp.Message != nil {
+		messageType = resp.Message.Type
+		messageName = resp.Message.Name
+	}
+
+	return fmt.Sprintf(
+		"type=%q role=%q stop_reason=%q model=%q content_types=%v content_names=%v content_block_type=%q content_block_name=%q delta_type=%q delta_name=%q delta_stop_reason=%q message_type=%q message_name=%q usage_in=%d usage_out=%d server_web_search_requests=%d",
+		resp.Type,
+		resp.Role,
+		resp.StopReason,
+		resp.Model,
+		contentTypes,
+		contentNames,
+		contentBlockType,
+		contentBlockName,
+		deltaType,
+		deltaName,
+		deltaStopReason,
+		messageType,
+		messageName,
+		func() int {
+			if resp.Usage == nil {
+				return 0
+			}
+			return resp.Usage.InputTokens
+		}(),
+		func() int {
+			if resp.Usage == nil {
+				return 0
+			}
+			return resp.Usage.OutputTokens
+		}(),
+		serverToolUse,
+	)
 }
 
 func mapToolChoice(toolChoice any, parallelToolCalls *bool) *dto.ClaudeToolChoice {

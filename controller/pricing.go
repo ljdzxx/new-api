@@ -38,6 +38,18 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 
+	// 白名单过滤：仅展示在系统设置中明确配置的模型
+	displayModels := ratio_setting.GetPricingDisplayModels()
+	if len(displayModels) > 0 {
+		filtered := make([]model.Pricing, 0, len(displayModels))
+		for _, p := range pricing {
+			if ratio_setting.IsPricingDisplayModel(p.ModelName) {
+				filtered = append(filtered, p)
+			}
+		}
+		pricing = filtered
+	}
+
 	c.JSON(200, gin.H{
 		"success":            true,
 		"data":               pricing,

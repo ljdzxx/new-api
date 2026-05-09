@@ -438,6 +438,10 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
+	channelSetting := channel.GetSetting()
+	if !isAdd && channelSetting.ForwardEnabled && channelSetting.ForwardTargetChannelID == channel.Id {
+		return fmt.Errorf("转发目标渠道不能是当前渠道自身")
+	}
 
 	// 如果是添加操作，检查 channel 和 key 是否为空
 	if isAdd {

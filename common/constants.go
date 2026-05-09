@@ -70,6 +70,7 @@ var EmailLoginAuthServerList = []string{
 }
 
 var DebugEnabled bool
+var DebugTraceEnabled bool
 var MemoryCacheEnabled bool
 
 var LogConsumeEnabled = true

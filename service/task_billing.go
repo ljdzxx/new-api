@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
 )
@@ -283,8 +284,20 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	if err == nil {
 		globalModelRatio *= userGlobalModelRatio
 	}
-	actualQuota := int(float64(totalTokens) * modelRatio * finalGroupRatio * globalModelRatio)
+	scaledTotalTokens := relayhelper.ScaleTokensByGlobalModelRatio(totalTokens, globalModelRatio)
+	actualQuota := int(float64(scaledTotalTokens) * modelRatio * finalGroupRatio)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
+	if globalModelRatio > 1 {
+		logger.LogInfo(ctx, fmt.Sprintf(
+			"global model ratio task token scaling billing: task_id=%s user_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens=%d scaled_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
+			task.TaskID, task.UserId, modelName,
+			ratio_setting.GetGlobalModelRatio(), userGlobalModelRatio, globalModelRatio,
+			totalTokens, scaledTotalTokens,
+			totalTokens, modelRatio, finalGroupRatio, float64(totalTokens)*modelRatio*finalGroupRatio,
+			scaledTotalTokens, modelRatio, finalGroupRatio, actualQuota,
+		))
+	}
+	reason = fmt.Sprintf("token recalculation: tokens=%d, scaledTokens=%d, globalModelRatio=%.2f, modelRatio=%.2f, groupRatio=%.2f", totalTokens, scaledTotalTokens, globalModelRatio, modelRatio, finalGroupRatio)
 	RecalculateTaskQuota(ctx, task, actualQuota, reason)
 }

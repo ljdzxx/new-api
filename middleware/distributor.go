@@ -165,10 +165,20 @@ func Distribute() func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
+		if shouldRecordChannelAffinityAfterRelay(c, channel) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
+}
+
+func shouldRecordChannelAffinityAfterRelay(c *gin.Context, channel *model.Channel) bool {
+	if c == nil || channel == nil || c.Writer == nil {
+		return false
+	}
+	if c.Writer.Status() >= http.StatusBadRequest {
+		return false
+	}
+	return !common.GetContextKeyBool(c, constant.ContextKeyChannelForwardedApplied)
 }
 
 // getModelFromRequest 从请求中读取模型信息

@@ -36,3 +36,5 @@ data/
 /ssl
 R2_Cli.md
 tmp_run_*.txt
+.proxy-certs
+__pycache__/
