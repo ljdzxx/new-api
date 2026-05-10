@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,10 @@ func SubscriptionAllowedGroupsFromContext(c *gin.Context) string {
 	}
 	if allowedGroups := common.GetContextKeyString(c, constant.ContextKeySubscriptionPlanAllowedGroups); strings.TrimSpace(allowedGroups) != "" {
 		return allowedGroups
+	}
+	userSetting, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
+	if !ok || common.NormalizeBillingPreference(userSetting.BillingPreference) != "subscription_only" {
+		return ""
 	}
 	return common.GetContextKeyString(c, constant.ContextKeySubscriptionAllowedGroups)
 }

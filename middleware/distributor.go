@@ -62,8 +62,12 @@ func subscriptionUnsupportedGroupError(group string) error {
 	return fmt.Errorf("套餐不支持在 %s 下使用", subscriptionGroupDisplayName(group))
 }
 
+func abortWithSubscriptionUnsupportedGroup(c *gin.Context, err error) {
+	abortWithOpenAiMessage(c, http.StatusBadRequest, err.Error(), types.ErrorCodeInvalidRequest)
+}
+
 func ensureSubscriptionAllowsRequestedGroup(c *gin.Context, group string) error {
-	allowedGroups := common.GetContextKeyString(c, constant.ContextKeySubscriptionAllowedGroups)
+	allowedGroups := service.SubscriptionAllowedGroupsFromContext(c)
 	if strings.TrimSpace(allowedGroups) == "" {
 		return nil
 	}
@@ -82,7 +86,7 @@ func ensureSubscriptionAllowsRequestedGroup(c *gin.Context, group string) error 
 }
 
 func buildSubscriptionUnsupportedGroupError(c *gin.Context, requestedGroup string, selectedGroup string) error {
-	allowedGroups := common.GetContextKeyString(c, constant.ContextKeySubscriptionAllowedGroups)
+	allowedGroups := service.SubscriptionAllowedGroupsFromContext(c)
 	if strings.TrimSpace(allowedGroups) == "" {
 		return nil
 	}
@@ -138,7 +142,7 @@ func Distribute() func(c *gin.Context) {
 				return
 			}
 			if restrictionErr := ensureSubscriptionAllowsRequestedGroup(c, channel.Group); restrictionErr != nil {
-				abortWithOpenAiMessage(c, http.StatusForbidden, restrictionErr.Error(), types.ErrorCodeInsufficientUserQuota)
+				abortWithSubscriptionUnsupportedGroup(c, restrictionErr)
 				return
 			}
 		} else {
@@ -187,14 +191,14 @@ func Distribute() func(c *gin.Context) {
 						usingGroup = playgroundRequest.Group
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 						if restrictionErr := ensureSubscriptionAllowsRequestedGroup(c, usingGroup); restrictionErr != nil {
-							abortWithOpenAiMessage(c, http.StatusForbidden, restrictionErr.Error(), types.ErrorCodeInsufficientUserQuota)
+							abortWithSubscriptionUnsupportedGroup(c, restrictionErr)
 							return
 						}
 					}
 				}
 
 				if restrictionErr := ensureSubscriptionAllowsRequestedGroup(c, usingGroup); restrictionErr != nil {
-					abortWithOpenAiMessage(c, http.StatusForbidden, restrictionErr.Error(), types.ErrorCodeInsufficientUserQuota)
+					abortWithSubscriptionUnsupportedGroup(c, restrictionErr)
 					return
 				}
 
@@ -209,7 +213,7 @@ func Distribute() func(c *gin.Context) {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
-							autoGroups = service.FilterGroupsBySubscription(autoGroups, common.GetContextKeyString(c, constant.ContextKeySubscriptionAllowedGroups))
+							autoGroups = service.FilterGroupsBySubscription(autoGroups, service.SubscriptionAllowedGroupsFromContext(c))
 							for _, g := range autoGroups {
 								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
 									selectGroup = g
@@ -250,7 +254,7 @@ func Distribute() func(c *gin.Context) {
 					}
 					if channel == nil {
 						if restrictionErr := buildSubscriptionUnsupportedGroupError(c, usingGroup, selectGroup); restrictionErr != nil {
-							abortWithOpenAiMessage(c, http.StatusForbidden, restrictionErr.Error(), types.ErrorCodeInsufficientUserQuota)
+							abortWithSubscriptionUnsupportedGroup(c, restrictionErr)
 							return
 						}
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)

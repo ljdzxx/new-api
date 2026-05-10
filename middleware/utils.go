@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -9,12 +10,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func markClientShouldNotRetry(c *gin.Context, statusCode int) {
+	if c == nil || statusCode >= http.StatusInternalServerError {
+		return
+	}
+	c.Header("x-should-retry", "false")
+}
+
 func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code ...types.ErrorCode) {
 	codeStr := ""
 	if len(code) > 0 {
 		codeStr = string(code[0])
 	}
 	userId := c.GetInt("id")
+	markClientShouldNotRetry(c, statusCode)
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"message": common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),

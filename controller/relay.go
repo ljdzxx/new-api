@@ -186,6 +186,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				logClaudeRelayError(c, "relay finished with error: request_id=%s status=%d err=%s %s", requestId, newAPIError.StatusCode, newAPIError.Error(), summarizeClaudeRelayHTTPForLog(c))
 			}
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
+			if types.IsSkipRetryError(newAPIError) || newAPIError.StatusCode < http.StatusInternalServerError {
+				c.Header("x-should-retry", "false")
+			}
 			if !applyChannelErrorInterceptIfNeeded(c, newAPIError, requestId) {
 				if !c.GetBool(contextKeyFixedErrorMessage) {
 					newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))

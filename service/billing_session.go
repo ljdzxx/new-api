@@ -33,6 +33,13 @@ type BillingSession struct {
 	mu               sync.Mutex
 }
 
+func isSubscriptionUnsupportedGroupError(apiErr *types.NewAPIError) bool {
+	if apiErr == nil {
+		return false
+	}
+	return apiErr.GetErrorCode() == types.ErrorCodeInvalidRequest && strings.Contains(apiErr.Error(), "套餐不支持在")
+}
+
 // Settle 根据实际消耗额度进行结算。
 // 资金来源和令牌额度分两步提交：若资金来源已提交但令牌调整失败，
 // 会标记 fundingSettled 防止 Refund 对已提交的资金来源执行退款。
@@ -160,7 +167,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	// ---- 1) 预扣令牌额度 ----
 	if effectiveQuota > 0 {
 		if err := PreConsumeTokenQuota(s.relayInfo, effectiveQuota); err != nil {
-			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			return types.NewErrorWithStatusCode(err, types.ErrorCodePreConsumeTokenQuotaFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		s.tokenConsumed = effectiveQuota
 	}
@@ -177,8 +184,11 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 		}
 		// TODO: model 层应定义哨兵错误（如 ErrNoActiveSubscription），用 errors.Is 替代字符串匹配
 		errMsg := err.Error()
-		if strings.Contains(errMsg, "套餐不支持在") || strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
-			return types.NewErrorWithStatusCode(fmt.Errorf("订阅额度不足或未配置订阅: %s", errMsg), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		if strings.Contains(errMsg, "套餐不支持在") {
+			return types.NewErrorWithStatusCode(fmt.Errorf("订阅套餐不支持当前分组: %s", errMsg), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
+		if strings.Contains(errMsg, "no active subscription") || strings.Contains(errMsg, "subscription quota insufficient") {
+			return types.NewErrorWithStatusCode(fmt.Errorf("订阅额度不足或未配置订阅: %s", errMsg), types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		return types.NewError(err, types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
 	}
@@ -272,13 +282,13 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		if userQuota <= 0 {
 			return nil, types.NewErrorWithStatusCode(
 				fmt.Errorf("用户额度不足, 剩余额度: %s", logger.FormatQuota(userQuota)),
-				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+				types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		if userQuota-preConsumedQuota < 0 {
 			return nil, types.NewErrorWithStatusCode(
 				fmt.Errorf("预扣费额度失败, 用户剩余额度: %s, 需要预扣费额度: %s", logger.FormatQuota(userQuota), logger.FormatQuota(preConsumedQuota)),
-				types.ErrorCodeInsufficientUserQuota, http.StatusForbidden,
+				types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
 		relayInfo.UserQuota = userQuota
@@ -348,7 +358,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		}
 		session, apiErr := trySubscription()
 		if apiErr != nil {
-			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
+			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota || isSubscriptionUnsupportedGroupError(apiErr) {
 				return tryWallet()
 			}
 			return nil, apiErr
