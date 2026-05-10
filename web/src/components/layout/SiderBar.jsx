@@ -36,6 +36,7 @@ const routerMap = {
   token: '/console/token',
   redemption: '/console/redemption',
   topup: '/console/topup',
+  order: '/console/order',
   user: '/console/user',
   subscription_rank: '/console/subscription-rank',
   subscription: '/console/subscription',
@@ -127,7 +128,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   const financeItems = useMemo(() => {
     const items = [
       {
-        text: t('钱包管理'),
+        text: t('钱包'),
         itemKey: 'topup',
         to: '/topup',
       },
@@ -164,6 +165,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('订阅管理'),
         itemKey: 'subscription',
         to: '/subscription',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('订单管理'),
+        itemKey: 'order',
+        to: '/order',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {
@@ -319,6 +326,37 @@ const SiderBar = ({ onNavigate = () => {} }) => {
   // 选中高亮颜色（统一）
   const SELECTED_COLOR = 'var(--semi-color-primary)';
 
+  const renderItemText = (item, textColor) => (
+    <span
+      className='truncate font-medium text-sm'
+      style={{
+        color: textColor,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      {item.text}
+      {item.itemKey === 'topup' && !collapsed && (
+        <span
+          style={{
+            marginLeft: 6,
+            fontSize: 9,
+            padding: '1px 5px',
+            borderRadius: 3,
+            background: 'var(--semi-color-primary)',
+            color: '#fff',
+            fontWeight: 500,
+            verticalAlign: 'middle',
+            lineHeight: '16px',
+          }}
+        >
+          {t('订阅')}
+        </span>
+      )}
+    </span>
+  );
+
   // 渲染自定义菜单项
   const renderNavItem = (item) => {
     // 跳过隐藏的项目
@@ -331,14 +369,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
       <Nav.Item
         key={item.itemKey}
         itemKey={item.itemKey}
-        text={
-          <span
-            className='truncate font-medium text-sm'
-            style={{ color: textColor }}
-          >
-            {item.text}
-          </span>
-        }
+        text={renderItemText(item, textColor)}
         icon={
           <div className='sidebar-icon-container flex-shrink-0'>
             {getLucideIcon(item.itemKey, isSelected)}

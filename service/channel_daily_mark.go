@@ -9,7 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
-func containsInsufficientQuotaKeyword(msg string) bool {
+func ContainsGlobalQuotaInsufficientKeyword(msg string) bool {
 	if strings.TrimSpace(msg) == "" {
 		return false
 	}
@@ -22,6 +22,22 @@ func containsInsufficientQuotaKeyword(msg string) bool {
 	return false
 }
 
+func ShouldMatchGlobalQuotaInsufficientKeyword(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	oai := err.ToOpenAIError()
+	if ContainsGlobalQuotaInsufficientKeyword(oai.Type) ||
+		ContainsGlobalQuotaInsufficientKeyword(oai.Message) ||
+		ContainsGlobalQuotaInsufficientKeyword(strings.TrimSpace(anyToString(oai.Code))) {
+		return true
+	}
+	if ContainsGlobalQuotaInsufficientKeyword(err.Error()) || ContainsGlobalQuotaInsufficientKeyword(err.ErrorWithStatusCode()) {
+		return true
+	}
+	return false
+}
+
 func ShouldMarkChannelQuotaInsufficient(err *types.NewAPIError) bool {
 	if err == nil {
 		return false
@@ -30,16 +46,7 @@ func ShouldMarkChannelQuotaInsufficient(err *types.NewAPIError) bool {
 		err.GetErrorCode() == types.ErrorCodePreConsumeTokenQuotaFailed {
 		return true
 	}
-	oai := err.ToOpenAIError()
-	if containsInsufficientQuotaKeyword(oai.Type) ||
-		containsInsufficientQuotaKeyword(oai.Message) ||
-		containsInsufficientQuotaKeyword(strings.TrimSpace(anyToString(oai.Code))) {
-		return true
-	}
-	if containsInsufficientQuotaKeyword(err.Error()) || containsInsufficientQuotaKeyword(err.ErrorWithStatusCode()) {
-		return true
-	}
-	return false
+	return ShouldMatchGlobalQuotaInsufficientKeyword(err)
 }
 
 func MarkChannelQuotaInsufficientDaily(channelID int, reason string) error {

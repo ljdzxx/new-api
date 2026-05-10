@@ -10,8 +10,6 @@ import (
 )
 
 func TestShouldMarkChannelQuotaInsufficientByConfiguredKeywords(t *testing.T) {
-	t.Parallel()
-
 	original := operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords
 	operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords = []string{"余额不足"}
 	t.Cleanup(func() {
@@ -25,19 +23,28 @@ func TestShouldMarkChannelQuotaInsufficientByConfiguredKeywords(t *testing.T) {
 	}, 400)
 
 	require.True(t, ShouldMarkChannelQuotaInsufficient(err))
+	require.True(t, ShouldMatchGlobalQuotaInsufficientKeyword(err))
+}
+
+func TestShouldMatchGlobalQuotaInsufficientKeywordOnlyByConfiguredKeywords(t *testing.T) {
+	original := operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords
+	operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords = []string{"upstream_balance_empty"}
+	t.Cleanup(func() {
+		operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords = original
+	})
+
+	err := types.NewError(errors.New("local quota exhausted"), types.ErrorCodeInsufficientUserQuota)
+	require.True(t, ShouldMarkChannelQuotaInsufficient(err))
+	require.False(t, ShouldMatchGlobalQuotaInsufficientKeyword(err))
 }
 
 func TestShouldMarkChannelQuotaInsufficientByErrorCodeAndMessageCode(t *testing.T) {
-	t.Parallel()
-
 	t.Run("new api error code insufficient_user_quota", func(t *testing.T) {
-		t.Parallel()
 		err := types.NewError(errors.New("quota exceeded"), types.ErrorCodeInsufficientUserQuota)
 		require.True(t, ShouldMarkChannelQuotaInsufficient(err))
 	})
 
 	t.Run("openai code insufficient_quota", func(t *testing.T) {
-		t.Parallel()
 		original := operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords
 		operation_setting.GetMonitorSetting().GlobalQuotaInsufficientKeywords = []string{"insufficient_quota"}
 		t.Cleanup(func() {

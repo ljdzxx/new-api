@@ -132,6 +132,7 @@ func (p *RetryParam) buildRetryCandidates() error {
 		}
 		userGroup := common.GetContextKeyString(p.Ctx, constant.ContextKeyUserGroup)
 		autoGroups := GetUserAutoGroup(userGroup)
+		autoGroups = FilterGroupsBySubscription(autoGroups, SubscriptionAllowedGroupsFromContext(p.Ctx))
 		for i, autoGroup := range autoGroups {
 			if err := appendGroupChannels(autoGroup, i); err != nil {
 				return err
@@ -237,6 +238,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			return nil, selectGroup, errors.New("auto groups is not enabled")
 		}
 		autoGroups := GetUserAutoGroup(userGroup)
+		autoGroups = FilterGroupsBySubscription(autoGroups, SubscriptionAllowedGroupsFromContext(param.Ctx))
 
 		// startGroupIndex: the group index to start searching from
 		// startGroupIndex: 开始搜索的分组索引
@@ -299,6 +301,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
+		if !SubscriptionAllowsGroup(param.TokenGroup, SubscriptionAllowedGroupsFromContext(param.Ctx)) {
+			return nil, param.TokenGroup, nil
+		}
 		channel, err = model.GetRandomSatisfiedChannelWithNameFilter(param.TokenGroup, param.ModelName, param.GetRetry(), allowedChannelSet)
 		if err != nil {
 			return nil, param.TokenGroup, err

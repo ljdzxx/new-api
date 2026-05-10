@@ -107,6 +107,20 @@ type AdminUpsertSubscriptionPlanRequest struct {
 	Plan model.SubscriptionPlan `json:"plan"`
 }
 
+func normalizeAndValidateSubscriptionAllowedGroups(groups string) (string, bool) {
+	normalized := model.NormalizeSubscriptionAllowedGroups(groups)
+	if normalized == "" {
+		return "", true
+	}
+	groupRatio := ratio_setting.GetGroupRatioCopy()
+	for _, group := range strings.Split(normalized, ",") {
+		if _, ok := groupRatio[group]; !ok {
+			return normalized, false
+		}
+	}
+	return normalized, true
+}
+
 func AdminCreateSubscriptionPlan(c *gin.Context) {
 	var req AdminUpsertSubscriptionPlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -150,6 +164,12 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 			common.ApiErrorMsg(c, "升级分组不存在")
 			return
 		}
+	}
+	var validAllowedGroups bool
+	req.Plan.AllowedGroups, validAllowedGroups = normalizeAndValidateSubscriptionAllowedGroups(req.Plan.AllowedGroups)
+	if !validAllowedGroups {
+		common.ApiErrorMsg(c, "可用分组包含不存在的分组")
+		return
 	}
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
@@ -214,6 +234,12 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
+	var validAllowedGroups bool
+	req.Plan.AllowedGroups, validAllowedGroups = normalizeAndValidateSubscriptionAllowedGroups(req.Plan.AllowedGroups)
+	if !validAllowedGroups {
+		common.ApiErrorMsg(c, "可用分组包含不存在的分组")
+		return
+	}
 	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
 	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
@@ -238,6 +264,7 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"max_purchase_per_user":      req.Plan.MaxPurchasePerUser,
 			"total_amount":               req.Plan.TotalAmount,
 			"upgrade_group":              req.Plan.UpgradeGroup,
+			"allowed_groups":             req.Plan.AllowedGroups,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
 			"updated_at":                 common.GetTimestamp(),

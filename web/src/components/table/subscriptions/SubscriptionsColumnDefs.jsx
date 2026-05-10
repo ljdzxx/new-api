@@ -92,6 +92,8 @@ const renderPlanTitle = (text, record, t) => {
         )}
         <Text type='tertiary'>{t('升级分组')}</Text>
         <Text>{plan?.upgrade_group ? plan.upgrade_group : t('不升级')}</Text>
+        <Text type='tertiary'>{t('可用分组')}</Text>
+        {renderAllowedGroups(null, record, t)}
         <Text type='tertiary'>{t('购买上限')}</Text>
         <Text>
           {plan?.max_purchase_per_user > 0
@@ -190,6 +192,36 @@ const renderUpgradeGroup = (text, record, t) => {
     <Text type={group ? 'secondary' : 'tertiary'}>
       {group ? group : t('不升级')}
     </Text>
+  );
+};
+
+const getAllowedGroups = (plan) => {
+  return String(plan?.allowed_groups || '')
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean);
+};
+
+const renderAllowedGroups = (text, record, t) => {
+  const groups = getAllowedGroups(record?.plan);
+  if (groups.length === 0) {
+    return <Text type='tertiary'>{t('不限')}</Text>;
+  }
+  return (
+    <Space spacing={4} wrap>
+      {groups.slice(0, 3).map((group) => (
+        <Tag key={group} color='blue' shape='circle'>
+          {group}
+        </Tag>
+      ))}
+      {groups.length > 3 && (
+        <Tooltip content={groups.slice(3).join(', ')}>
+          <Tag color='grey' shape='circle'>
+            +{groups.length - 3}
+          </Tag>
+        </Tooltip>
+      )}
+    </Space>
   );
 };
 
@@ -351,6 +383,11 @@ export const getSubscriptionsColumns = ({
       title: t('升级分组'),
       width: 100,
       render: (text, record) => renderUpgradeGroup(text, record, t),
+    },
+    {
+      title: t('可用分组'),
+      width: 140,
+      render: (text, record) => renderAllowedGroups(text, record, t),
     },
     {
       title: t('操作'),

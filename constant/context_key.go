@@ -40,6 +40,10 @@ const (
 	ContextKeyChannelForwardedApplied  ContextKey = "forwarded_channel_applied"
 	ContextKeyChannelForwardLockedId   ContextKey = "forward_locked_channel_id"
 
+	ContextKeySubscriptionAllowedGroups       ContextKey = "subscription_allowed_groups"
+	ContextKeySubscriptionPlanAllowedGroups   ContextKey = "subscription_plan_allowed_groups"
+	ContextKeySubscriptionPlanRestrictedGroup ContextKey = "subscription_plan_restricted_group"
+
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"

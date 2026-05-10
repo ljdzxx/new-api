@@ -38,7 +38,7 @@ import {
   renderQuota,
 } from '../../helpers';
 import { getPaymentCurrencyConfig } from '../../helpers/render';
-import { RefreshCw } from 'lucide-react';
+import { Check, RefreshCw } from 'lucide-react';
 import SubscriptionPurchaseModal from './modals/SubscriptionPurchaseModal';
 import {
   formatSubscriptionDuration,
@@ -76,6 +76,13 @@ function isExpiredSubscription(subscription, nowSeconds) {
   return (
     subscription?.status === 'expired' || (endTime > 0 && endTime < nowSeconds)
   );
+}
+
+function getAllowedGroups(plan) {
+  return String(plan?.allowed_groups || '')
+    .split(',')
+    .map((group) => group.trim())
+    .filter(Boolean);
 }
 
 const SubscriptionPlansCard = ({
@@ -598,6 +605,7 @@ const SubscriptionPlansCard = ({
                 const upgradeLabel = plan?.upgrade_group
                   ? `${t('升级分组')}: ${plan.upgrade_group}`
                   : null;
+                const allowedGroups = getAllowedGroups(plan);
                 const planBenefits = [
                   {
                     label: `${t('有效期')}: ${formatSubscriptionDuration(plan, t)}`,
@@ -734,6 +742,42 @@ const SubscriptionPlansCard = ({
                           );
                         })}
                       </div>
+
+                      {allowedGroups.length > 0 && (
+                        <div className='pb-2'>
+                          <div className='flex items-center gap-1.5 mb-1'>
+                            <Check
+                              size={11}
+                              style={{
+                                color: 'var(--semi-color-success)',
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: 'var(--semi-color-text-1)',
+                              }}
+                            >
+                              {t('授权分组')}
+                            </span>
+                          </div>
+                          <div className='flex flex-wrap gap-1 ml-4'>
+                            {allowedGroups.map((group) => (
+                              <Tag
+                                key={group}
+                                color='blue'
+                                size='small'
+                                shape='circle'
+                                type='light'
+                                style={{ fontSize: 10 }}
+                              >
+                                {group}
+                              </Tag>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <div className='mt-auto'>
                         <Divider margin={12} />

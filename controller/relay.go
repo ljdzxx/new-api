@@ -338,7 +338,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	retryLoopLimit := relayRetryLoopLimit()
+	for ; retryParam.GetRetry() <= retryLoopLimit; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -422,6 +423,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 		retryParam.MarkChannelFailed(channel.Id)
 
+		if forceRetry, finalErr := shouldForceRetryForGlobalQuotaInsufficient(c, channel.Id, newAPIError); finalErr != nil {
+			newAPIError = finalErr
+			break
+		} else if forceRetry {
+			continue
+		}
+
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
@@ -445,12 +453,88 @@ const (
 	contextKeyUpstreamCallStarted  = "upstream_call_started"
 	contextKeyUpstreamResponseCode = "upstream_response_code"
 	contextKeyFixedErrorMessage    = "fixed_error_message"
+	maxGlobalQuotaInsufficientHits = 3
 )
 
 func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func newNoAvailableChannelError() *types.NewAPIError {
+	return types.NewErrorWithStatusCode(
+		fmt.Errorf("当前无可用渠道"),
+		types.ErrorCodeGetChannelFailed,
+		http.StatusServiceUnavailable,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
+
+func taskNoAvailableChannelError() *dto.TaskError {
+	return service.TaskErrorWrapperLocal(fmt.Errorf("当前无可用渠道"), string(types.ErrorCodeGetChannelFailed), http.StatusServiceUnavailable)
+}
+
+func isSpecificChannelRequest(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if _, ok := c.Get("specific_channel_id"); ok {
+		return true
+	}
+	_, ok := common.GetContextKey(c, constant.ContextKeyTokenSpecificChannelId)
+	return ok
+}
+
+func recordGlobalQuotaInsufficientHit(c *gin.Context, channelID int, errText string) int {
+	hits := c.GetInt("global_quota_insufficient_hits") + 1
+	c.Set("global_quota_insufficient_hits", hits)
+	logger.LogInfo(c, fmt.Sprintf("global quota insufficient keyword matched: hit=%d/%d channel_id=%d err=%s", hits, maxGlobalQuotaInsufficientHits, channelID, errText))
+	return hits
+}
+
+func shouldForceRetryForGlobalQuotaInsufficient(c *gin.Context, channelID int, err *types.NewAPIError) (bool, *types.NewAPIError) {
+	if err == nil || !service.ShouldMatchGlobalQuotaInsufficientKeyword(err) {
+		return false, nil
+	}
+	hits := recordGlobalQuotaInsufficientHit(c, channelID, err.ErrorWithStatusCode())
+	if hits >= maxGlobalQuotaInsufficientHits {
+		return false, newNoAvailableChannelError()
+	}
+	if isSpecificChannelRequest(c) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func shouldForceRetryTaskForGlobalQuotaInsufficient(c *gin.Context, channelID int, taskErr *dto.TaskError) (bool, *dto.TaskError) {
+	if taskErr == nil {
+		return false, nil
+	}
+	err := taskErr.Error
+	if err == nil {
+		err = errors.New(taskErr.Message)
+	}
+	apiErr := types.NewOpenAIError(err, types.ErrorCode(taskErr.Code), taskErr.StatusCode)
+	if !service.ShouldMatchGlobalQuotaInsufficientKeyword(apiErr) {
+		return false, nil
+	}
+	hits := recordGlobalQuotaInsufficientHit(c, channelID, taskErr.Message)
+	if hits >= maxGlobalQuotaInsufficientHits {
+		return false, taskNoAvailableChannelError()
+	}
+	if isSpecificChannelRequest(c) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func relayRetryLoopLimit() int {
+	limit := common.RetryTimes
+	if minLimit := maxGlobalQuotaInsufficientHits - 1; limit < minLimit {
+		return minLimit
+	}
+	return limit
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -1184,7 +1268,8 @@ func RelayTask(c *gin.Context) {
 		Retry:      common.GetPointer(0),
 	}
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	retryLoopLimit := relayRetryLoopLimit()
+	for ; retryParam.GetRetry() <= retryLoopLimit; retryParam.IncreaseRetry() {
 		var channel *model.Channel
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
@@ -1229,6 +1314,13 @@ func RelayTask(c *gin.Context) {
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
 		retryParam.MarkChannelFailed(channel.Id)
+
+		if forceRetry, finalErr := shouldForceRetryTaskForGlobalQuotaInsufficient(c, channel.Id, taskErr); finalErr != nil {
+			taskErr = finalErr
+			break
+		} else if forceRetry {
+			continue
+		}
 
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
 			break

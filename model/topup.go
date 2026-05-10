@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -15,6 +16,7 @@ import (
 type TopUp struct {
 	Id            int     `json:"id"`
 	UserId        int     `json:"user_id" gorm:"index"`
+	Username      string  `json:"username" gorm:"-"`
 	Amount        int64   `json:"amount"`
 	Money         float64 `json:"money"`
 	TradeNo       string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
@@ -22,6 +24,14 @@ type TopUp struct {
 	CreateTime    int64   `json:"create_time"`
 	CompleteTime  int64   `json:"complete_time"`
 	Status        string  `json:"status"`
+}
+
+type TopUpFilter struct {
+	Keyword        string
+	UserId         int
+	Username       string
+	StartTimestamp int64
+	EndTimestamp   int64
 }
 
 func (topUp *TopUp) Insert() error {
@@ -225,31 +235,7 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 
 // GetAllTopUps 获取全平台的充值记录（管理员使用）
 func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	if err = tx.Model(&TopUp{}).Count(&total).Error; err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	if err = tx.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-
-	return topups, total, nil
+	return SearchAllTopUpsWithFilter(TopUpFilter{}, pageInfo)
 }
 
 // SearchUserTopUps 按订单号搜索某用户的充值记录
@@ -288,6 +274,65 @@ func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (to
 
 // SearchAllTopUps 按订单号搜索全平台充值记录（管理员使用）
 func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	return SearchAllTopUpsWithFilter(TopUpFilter{Keyword: keyword}, pageInfo)
+}
+
+func applyTopUpFilter(query *gorm.DB, filter TopUpFilter) *gorm.DB {
+	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
+		like := "%%" + keyword + "%%"
+		query = query.Where("trade_no LIKE ?", like)
+	}
+	if filter.UserId > 0 {
+		query = query.Where("user_id = ?", filter.UserId)
+	}
+	if username := strings.TrimSpace(filter.Username); username != "" {
+		like := "%%" + username + "%%"
+		userQuery := DB.Model(&User{}).Select("id").Where("username LIKE ?", like)
+		query = query.Where("user_id IN (?)", userQuery)
+	}
+	if filter.StartTimestamp > 0 {
+		query = query.Where("create_time >= ?", filter.StartTimestamp)
+	}
+	if filter.EndTimestamp > 0 {
+		query = query.Where("create_time <= ?", filter.EndTimestamp)
+	}
+	return query
+}
+
+func fillTopUpUsernames(topups []*TopUp) {
+	if len(topups) == 0 {
+		return
+	}
+	userIdSet := make(map[int]struct{})
+	for _, topup := range topups {
+		if topup != nil && topup.UserId > 0 {
+			userIdSet[topup.UserId] = struct{}{}
+		}
+	}
+	if len(userIdSet) == 0 {
+		return
+	}
+	userIds := make([]int, 0, len(userIdSet))
+	for userId := range userIdSet {
+		userIds = append(userIds, userId)
+	}
+	var users []User
+	if err := DB.Select("id", "username").Where("id IN ?", userIds).Find(&users).Error; err != nil {
+		return
+	}
+	usernameById := make(map[int]string, len(users))
+	for _, user := range users {
+		usernameById[user.Id] = user.Username
+	}
+	for _, topup := range topups {
+		if topup != nil {
+			topup.Username = usernameById[topup.UserId]
+		}
+	}
+}
+
+// SearchAllTopUpsWithFilter 按订单号、用户和时间范围搜索全平台充值记录（管理员使用）
+func SearchAllTopUpsWithFilter(filter TopUpFilter, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -298,11 +343,7 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 		}
 	}()
 
-	query := tx.Model(&TopUp{})
-	if keyword != "" {
-		like := "%%" + keyword + "%%"
-		query = query.Where("trade_no LIKE ?", like)
-	}
+	query := applyTopUpFilter(tx.Model(&TopUp{}), filter)
 
 	if err = query.Count(&total).Error; err != nil {
 		tx.Rollback()
@@ -317,6 +358,7 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
+	fillTopUpUsernames(topups)
 	return topups, total, nil
 }
 

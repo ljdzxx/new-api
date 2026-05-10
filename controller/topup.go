@@ -371,18 +371,23 @@ func GetUserTopUps(c *gin.Context) {
 // GetAllTopUps 管理员获取全平台充值记录
 func GetAllTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
+	userId, _ := strconv.Atoi(c.Query("user_id"))
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	filter := model.TopUpFilter{
+		Keyword:        c.Query("keyword"),
+		UserId:         userId,
+		Username:       c.Query("username"),
+		StartTimestamp: startTimestamp,
+		EndTimestamp:   endTimestamp,
+	}
 
 	var (
 		topups []*model.TopUp
 		total  int64
 		err    error
 	)
-	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetAllTopUps(pageInfo)
-	}
+	topups, total, err = model.SearchAllTopUpsWithFilter(filter, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return

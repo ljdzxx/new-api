@@ -81,6 +81,26 @@ const AddEditSubscriptionModal = ({
   const isEdit = editingPlan?.plan?.id !== undefined;
   const formKey = isEdit ? `edit-${editingPlan?.plan?.id}` : 'create';
 
+  const parseAllowedGroups = (groups) => {
+    if (Array.isArray(groups)) {
+      return groups.filter(Boolean);
+    }
+    return String(groups || '')
+      .split(',')
+      .map((g) => g.trim())
+      .filter(Boolean);
+  };
+
+  const stringifyAllowedGroups = (groups) => {
+    if (!Array.isArray(groups)) {
+      return String(groups || '').trim();
+    }
+    return groups
+      .map((g) => String(g || '').trim())
+      .filter(Boolean)
+      .join(',');
+  };
+
   const getInitValues = () => ({
     title: '',
     subtitle: '',
@@ -96,6 +116,7 @@ const AddEditSubscriptionModal = ({
     max_purchase_per_user: 0,
     total_amount: 0,
     upgrade_group: '',
+    allowed_groups: [],
     stripe_price_id: '',
     creem_product_id: '',
     mall_link: '',
@@ -123,6 +144,7 @@ const AddEditSubscriptionModal = ({
         quotaToDisplayAmount(p.total_amount || 0).toFixed(2),
       ),
       upgrade_group: p.upgrade_group || '',
+      allowed_groups: parseAllowedGroups(p.allowed_groups),
       stripe_price_id: p.stripe_price_id || '',
       creem_product_id: p.creem_product_id || '',
       mall_link: p.mall_link || '',
@@ -167,6 +189,7 @@ const AddEditSubscriptionModal = ({
           max_purchase_per_user: Number(values.max_purchase_per_user || 0),
           total_amount: displayAmountToQuota(values.total_amount),
           upgrade_group: values.upgrade_group || '',
+          allowed_groups: stringifyAllowedGroups(values.allowed_groups),
           mall_link: (values.mall_link || '').trim(),
         },
       };
@@ -338,6 +361,28 @@ const AddEditSubscriptionModal = ({
                         )}
                       >
                         <Select.Option value=''>{t('不升级')}</Select.Option>
+                        {(groupOptions || []).map((g) => (
+                          <Select.Option key={g} value={g}>
+                            {g}
+                          </Select.Option>
+                        ))}
+                      </Form.Select>
+                    </Col>
+
+                    <Col span={24}>
+                      <Form.Select
+                        field='allowed_groups'
+                        label={t('可用分组')}
+                        multiple
+                        showClear
+                        loading={groupLoading}
+                        placeholder={t('不限分组')}
+                        extraText={t(
+                          '留空表示不限分组；选择后套餐只能在这些分组下使用。如果对分组的概念不熟悉可查阅“令牌分组”。',
+                        )}
+                        maxTagCount={4}
+                        style={{ width: '100%' }}
+                      >
                         {(groupOptions || []).map((g) => (
                           <Select.Option key={g} value={g}>
                             {g}
