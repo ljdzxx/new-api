@@ -7,6 +7,7 @@ import re
 import signal
 import socket
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,11 @@ import threading
 import time
 import urllib.parse
 from pathlib import Path
+
+try:
+    import socks as pysocks
+except ImportError:
+    pysocks = None
 
 
 BUFFER_SIZE = 65536
@@ -368,28 +374,49 @@ class UpstreamProxy:
         if "://" not in proxy_url:
             proxy_url = f"http://{proxy_url}"
         parsed = urllib.parse.urlsplit(proxy_url)
-        if parsed.scheme.lower() != "http":
-            raise ValueError("--proxy only supports HTTP proxies, for example http://127.0.0.1:10809")
+        scheme = parsed.scheme.lower()
+        if scheme not in ("http", "socks5"):
+            raise ValueError("--proxy supports http:// or socks5:// proxies, e.g. http://127.0.0.1:10809 or socks5://user:pass@127.0.0.1:1080")
         if not parsed.hostname:
             raise ValueError(f"bad proxy URL: {proxy_url!r}")
+        if scheme == "socks5" and pysocks is None:
+            raise RuntimeError("socks5 upstream proxy requires PySocks: pip install pysocks")
 
+        self.scheme = scheme
         self.url = proxy_url
         self.host = parsed.hostname
-        self.port = parsed.port or 80
+        self.port = parsed.port or (1080 if scheme == "socks5" else 80)
+        self.username = urllib.parse.unquote(parsed.username) if parsed.username else None
+        self.password = urllib.parse.unquote(parsed.password or "") if parsed.username else None
         self.auth_header = None
-        if parsed.username is not None:
-            username = urllib.parse.unquote(parsed.username)
-            password = urllib.parse.unquote(parsed.password or "")
-            token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+        if scheme == "http" and parsed.username is not None:
+            token = base64.b64encode(f"{self.username}:{self.password}".encode("utf-8")).decode("ascii")
             self.auth_header = f"Basic {token}"
 
     def display(self):
-        return f"http://{self.host}:{self.port}"
+        return f"{self.scheme}://{self.host}:{self.port}"
+
+    def _socks5_socket(self, dest_host, dest_port):
+        s = pysocks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
+        s.set_proxy(
+            pysocks.SOCKS5,
+            self.host,
+            self.port,
+            username=self.username,
+            password=self.password,
+        )
+        s.settimeout(30)
+        s.connect((dest_host, dest_port))
+        return s
 
     def connect_forward(self):
+        if self.scheme == "socks5":
+            raise RuntimeError("socks5 upstream does not support HTTP absolute-form forwarding; use connect_tunnel instead")
         return socket.create_connection((self.host, self.port), timeout=30)
 
     def connect_tunnel(self, host, port):
+        if self.scheme == "socks5":
+            return self._socks5_socket(host, port)
         raw = self.connect_forward()
         target = format_host_port(host, port)
         headers = [
@@ -492,13 +519,14 @@ def connect_upstream(host, port, tls, server_name, upstream_proxy=None, proxy_fo
 
 
 class ProxyServer:
-    def __init__(self, host, port, logger, cert_store=None, upstream_proxy=None, mitm_targets=None):
+    def __init__(self, host, port, logger, cert_store=None, upstream_proxy=None, mitm_targets=None, auth=None):
         self.host = host
         self.port = port
         self.logger = logger
         self.cert_store = cert_store
         self.upstream_proxy = upstream_proxy
         self.mitm_targets = [t.lower() for t in (mitm_targets or [])]
+        self.auth = auth
         self.counter = 0
         self.counter_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -573,6 +601,16 @@ class ProxyServer:
                 return True
         return False
 
+    def _check_proxy_auth(self, headers):
+        expected = base64.b64encode(self.auth.encode("utf-8")).decode("ascii")
+        auth_value = header_get(headers, "Proxy-Authorization")
+        if not auth_value:
+            return False
+        parts = auth_value.split(None, 1)
+        if len(parts) != 2 or parts[0].lower() != "basic":
+            return False
+        return parts[1] == expected
+
     def serve_forever(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -609,6 +647,15 @@ class ProxyServer:
             header_bytes, already = split_headers(raw)
             start, headers = parse_header_lines(header_bytes)
             self.logger.line(request_id, f"client={addr[0]}:{addr[1]} start={start!r}")
+            if self.auth and not self._check_proxy_auth(headers):
+                self.logger.line(request_id, "AUTH FAILED - returning 407")
+                client.sendall(
+                    b"HTTP/1.1 407 Proxy Authentication Required\r\n"
+                    b"Proxy-Authenticate: Basic realm=\"proxy\"\r\n"
+                    b"Content-Length: 0\r\n"
+                    b"\r\n"
+                )
+                return
             if start.upper().startswith("CONNECT "):
                 self.handle_connect(client, request_id, start)
             else:
@@ -630,6 +677,9 @@ class ProxyServer:
         port = int(port_text or "443")
         self.logger.line(request_id, f"CONNECT target={host}:{port}")
         client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        self._relay_after_connect(client, request_id, host, port)
+
+    def _relay_after_connect(self, client, request_id, host, port):
         if not self.should_mitm(host):
             self.tunnel_blind(client, request_id, host, port)
             return
@@ -691,15 +741,19 @@ class ProxyServer:
         self.close_socket(upstream)
 
     def handle_one_request(self, client, request_id, start, headers, body, default_host, default_port, tls):
-        absolute_form = self.upstream_proxy is not None and not tls
+        can_absolute = (
+            self.upstream_proxy is not None
+            and self.upstream_proxy.scheme == "http"
+            and not tls
+        )
         scheme, host, port, path, outbound_head = rewrite_request_for_origin(
             start,
             headers,
             default_host,
             default_port,
             tls,
-            absolute_form=absolute_form,
-            proxy_authorization=self.upstream_proxy.auth_header if absolute_form else None,
+            absolute_form=can_absolute,
+            proxy_authorization=self.upstream_proxy.auth_header if can_absolute else None,
         )
         upstream_tls = scheme == "https"
         via = f" via {self.upstream_proxy.display()}" if self.upstream_proxy else ""
@@ -707,7 +761,7 @@ class ProxyServer:
         self.logger.block(request_id, "request headers", outbound_head)
         self.logger.block(request_id, "request body", body)
 
-        proxy_forward = self.upstream_proxy is not None and not upstream_tls and not tls
+        proxy_forward = can_absolute and not upstream_tls
         use_connect = self.upstream_proxy if not proxy_forward else None
         upstream = connect_upstream(
             host,
@@ -742,10 +796,160 @@ class ProxyServer:
                 pass
 
 
-def install_shutdown_handlers(server):
+class Socks5Server:
+    def __init__(self, host, port, proxy, auth=None):
+        self.host = host
+        self.port = port
+        self.proxy = proxy
+        self.auth = auth
+        self.server_socket = None
+
+    def shutdown(self):
+        if self.server_socket:
+            self.proxy.close_socket(self.server_socket)
+
+    def serve_forever(self):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((self.host, self.port))
+        server.listen(200)
+        server.settimeout(0.5)
+        self.server_socket = server
+        print(f"SOCKS5 proxy listening on {self.host}:{self.port}")
+        try:
+            while not self.proxy.stop_event.is_set():
+                try:
+                    client, addr = server.accept()
+                except socket.timeout:
+                    continue
+                except OSError:
+                    if self.proxy.stop_event.is_set():
+                        break
+                    raise
+                self.proxy.track_socket(client)
+                thread = threading.Thread(target=self.handle_client, args=(client, addr))
+                self.proxy.track_thread(thread)
+                thread.start()
+        finally:
+            self.shutdown()
+
+    @staticmethod
+    def _recv_exact(sock, n):
+        data = bytearray()
+        while len(data) < n:
+            chunk = sock.recv(n - len(data))
+            if not chunk:
+                return None
+            data.extend(chunk)
+        return bytes(data)
+
+    def _socks5_reply(self, client, rep):
+        client.sendall(struct.pack("!BBBB4sH", 0x05, rep, 0x00, 0x01, b"\x00\x00\x00\x00", 0))
+
+    def handle_client(self, client, addr):
+        request_id = self.proxy.next_id()
+        try:
+            client.settimeout(120)
+
+            ver_nmethods = self._recv_exact(client, 2)
+            if not ver_nmethods or ver_nmethods[0] != 0x05:
+                return
+            methods = self._recv_exact(client, ver_nmethods[1])
+            if not methods:
+                return
+
+            if self.auth:
+                if 0x02 not in methods:
+                    client.sendall(b"\x05\xFF")
+                    return
+                client.sendall(b"\x05\x02")
+
+                sub_ver = self._recv_exact(client, 1)
+                if not sub_ver or sub_ver[0] != 0x01:
+                    return
+                ulen = self._recv_exact(client, 1)
+                if not ulen:
+                    return
+                username = self._recv_exact(client, ulen[0])
+                if not username:
+                    return
+                plen = self._recv_exact(client, 1)
+                if not plen:
+                    return
+                password = self._recv_exact(client, plen[0])
+                if not password:
+                    return
+
+                expected_user, _, expected_pass = self.auth.partition(":")
+                if username.decode("utf-8", errors="replace") != expected_user or \
+                   password.decode("utf-8", errors="replace") != expected_pass:
+                    self.proxy.logger.line(request_id, f"SOCKS5 AUTH FAILED from {addr[0]}:{addr[1]}")
+                    client.sendall(b"\x01\x01")
+                    return
+                client.sendall(b"\x01\x00")
+            else:
+                if 0x00 not in methods:
+                    client.sendall(b"\x05\xFF")
+                    return
+                client.sendall(b"\x05\x00")
+
+            header = self._recv_exact(client, 4)
+            if not header:
+                return
+            ver, cmd, _, atyp = header
+            if ver != 0x05:
+                return
+            if cmd != 0x01:
+                self._socks5_reply(client, 0x07)
+                return
+
+            if atyp == 0x01:
+                raw_addr = self._recv_exact(client, 4)
+                if not raw_addr:
+                    return
+                dest_host = socket.inet_ntoa(raw_addr)
+            elif atyp == 0x03:
+                name_len_byte = self._recv_exact(client, 1)
+                if not name_len_byte:
+                    return
+                domain = self._recv_exact(client, name_len_byte[0])
+                if not domain:
+                    return
+                dest_host = domain.decode("ascii")
+            elif atyp == 0x04:
+                raw_addr = self._recv_exact(client, 16)
+                if not raw_addr:
+                    return
+                dest_host = socket.inet_ntop(socket.AF_INET6, raw_addr)
+            else:
+                self._socks5_reply(client, 0x08)
+                return
+
+            raw_port = self._recv_exact(client, 2)
+            if not raw_port:
+                return
+            dest_port = struct.unpack("!H", raw_port)[0]
+
+            self.proxy.logger.line(request_id, f"SOCKS5 CONNECT {dest_host}:{dest_port} from {addr[0]}:{addr[1]}")
+            self._socks5_reply(client, 0x00)
+            self.proxy._relay_after_connect(client, request_id, dest_host, dest_port)
+
+        except Exception as exc:
+            self.proxy.logger.line(request_id, f"SOCKS5 ERROR {type(exc).__name__}: {exc}")
+        finally:
+            self.proxy.untrack_socket(client)
+            try:
+                client.close()
+            except Exception:
+                pass
+            self.proxy.untrack_current_thread()
+
+
+def install_shutdown_handlers(*servers):
     def stop(signum=None, frame=None):
         print("\nStopping proxy.")
-        server.shutdown()
+        for s in servers:
+            s.shutdown()
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
@@ -763,7 +967,9 @@ def install_shutdown_handlers(server):
                 stop()
                 if ctrl_type in close_events:
                     def force_exit():
-                        server.join_threads(timeout=2)
+                        for s in servers:
+                            if hasattr(s, "join_threads"):
+                                s.join_threads(timeout=2)
                         os._exit(0)
 
                     threading.Thread(target=force_exit, daemon=True).start()
@@ -788,11 +994,13 @@ def main():
     parser = argparse.ArgumentParser(description="Small HTTP/HTTPS capture proxy for local debugging.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8888)
+    parser.add_argument("--socks-port", type=int, default=None, help="SOCKS5 proxy listen port (e.g. 1080). If not set, SOCKS5 entry is disabled.")
+    parser.add_argument("--auth", default=None, help="Inbound proxy auth credentials, format user:pass. Applies to both HTTP and SOCKS5 entry.")
     parser.add_argument("--log", default=str(default_log))
     parser.add_argument("--mitm", action="store_true", help="Intercept HTTPS CONNECT traffic with a local CA.")
     parser.add_argument("--cert-dir", default=".proxy-certs")
     parser.add_argument("--openssl", default=os.environ.get("OPENSSL", "openssl"))
-    parser.add_argument("--proxy", help="HTTP proxy used by this proxy for outbound traffic, e.g. http://127.0.0.1:10809.")
+    parser.add_argument("--proxy", help="Upstream proxy for outbound traffic, e.g. http://127.0.0.1:10809 or socks5://user:pass@127.0.0.1:1080.")
     parser.add_argument(
         "--mitm-target",
         action="append",
@@ -818,14 +1026,30 @@ def main():
         print(f"MITM target domains: {', '.join(mitm_targets)}")
     else:
         print("MITM disabled (no --mitm-target specified, all traffic tunneled blindly)")
-    server = ProxyServer(args.host, args.port, logger, cert_store, upstream_proxy, mitm_targets)
-    install_shutdown_handlers(server)
+
+    if args.auth:
+        print(f"Inbound proxy authentication enabled (user: {args.auth.split(':')[0]})")
+
+    server = ProxyServer(args.host, args.port, logger, cert_store, upstream_proxy, mitm_targets, auth=args.auth)
+
+    socks_server = None
+    if args.socks_port:
+        socks_server = Socks5Server(args.host, args.socks_port, server, auth=args.auth)
+
+    all_servers = [s for s in [server, socks_server] if s]
+    install_shutdown_handlers(*all_servers)
+
+    if socks_server:
+        threading.Thread(target=socks_server.serve_forever, daemon=True).start()
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        server.shutdown()
+        pass
     finally:
-        server.shutdown()
+        for s in all_servers:
+            s.shutdown()
+        server.join_threads()
         logger.close()
 
 
