@@ -64,6 +64,12 @@ const resolveCurrencyLabel = (currencyConfig) => {
   return currencyConfig.type || currencyConfig.symbol || '';
 };
 
+const formatUsdAmount = (amount) => {
+  const numericAmount = Number(amount || 0);
+  const digits = Number.isInteger(numericAmount) ? 0 : 2;
+  return `$${numericAmount.toFixed(digits)}`;
+};
+
 const renderAmountHighlight = (value, accentColor = '#111827') => {
   const text = String(value || '');
   const matched = text.match(/^([^0-9-]*)([0-9][0-9,]*(?:\.[0-9]+)?)$/);
@@ -130,7 +136,6 @@ const RechargeCard = ({
   presetAmounts,
   selectedPreset,
   selectPresetAmount,
-  formatLargeNumber,
   priceRatio,
   topUpCount,
   payMethods,
@@ -194,34 +199,19 @@ const RechargeCard = ({
     const discount =
       preset.discount || topupInfo?.discount?.[preset.value] || 1.0;
     const actualPay = preset.value * priceRatio * discount;
-    const quotaCurrency = getCurrencyConfig();
     const paymentCurrency = getPaymentCurrencyConfig();
     const topupRate =
       Number.isFinite(Number(priceRatio)) && Number(priceRatio) > 0
         ? Number(priceRatio)
         : 1;
-    const currentMultiplier =
-      topupRate > 0 ? (1 / topupRate).toFixed(2) : '0.00';
-
-    let displayValue = preset.value;
-    if (quotaCurrency.type === 'CNY') {
-      displayValue = preset.value * topupRate;
-    } else if (quotaCurrency.type === 'CUSTOM') {
-      displayValue = preset.value * quotaCurrency.rate;
-    }
 
     return {
       discount,
-      paymentAmountCompact: convertTopupBaseToPaymentCurrency(
-        actualPay,
-        topupRate,
-        0,
-      ),
+      quotaAmountCompact: formatUsdAmount(preset.value),
       paymentAmountText: convertTopupBaseToPaymentCurrency(actualPay, topupRate),
-      quotaAmountText: `${quotaCurrency.symbol}${formatLargeNumber(displayValue)}`,
-      currentMultiplier,
+      quotaAmountText: formatUsdAmount(preset.value),
+      currentMultiplier: topupRate.toFixed(2),
       paymentCurrencyLabel: resolveCurrencyLabel(paymentCurrency),
-      quotaCurrencyLabel: resolveCurrencyLabel(quotaCurrency),
     };
   };
 
@@ -265,7 +255,7 @@ const RechargeCard = ({
                     letterSpacing: '0.01em',
                   }}
                 >
-                  {presetDetail?.paymentAmountCompact}
+                  {presetDetail?.quotaAmountCompact}
                 </div>
               </div>
             </Card>
@@ -533,9 +523,8 @@ const RechargeCard = ({
                             color: 'var(--semi-color-text-1)',
                           }}
                         >
-                          1 {selectedPresetDetail.paymentCurrencyLabel} ={' '}
-                          {selectedPresetDetail.currentMultiplier}{' '}
-                          {selectedPresetDetail.quotaCurrencyLabel}
+                          1 USD = {selectedPresetDetail.currentMultiplier}{' '}
+                          {selectedPresetDetail.paymentCurrencyLabel}
                         </span>
                       </div>
                       <div className='flex items-center justify-between gap-4'>
@@ -751,6 +740,3 @@ const RechargeCard = ({
 };
 
 export default RechargeCard;
-
-
-

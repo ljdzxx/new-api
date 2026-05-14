@@ -237,7 +237,7 @@ const formatGlobalModelRatio = (ratio) => {
   return value.toFixed(4).replace(/\.?0+$/, '');
 };
 
-const renderGlobalModelRatio = (text, record, t) => {
+export const renderGlobalModelRatio = (text, record, t) => {
   const ratio = Number(record?.global_model_ratio);
   const value = Number.isFinite(ratio) ? ratio : 1;
   const formattedValue = formatGlobalModelRatio(value);
@@ -298,7 +298,7 @@ const renderInviteInfo = (text, record, t) => {
 /**
  * Render operations column
  */
-const renderOperations = (
+export const renderOperations = (
   text,
   record,
   {
@@ -565,7 +565,6 @@ export const getUsersColumns = ({
     },
   ];
 };
-
 
 
 

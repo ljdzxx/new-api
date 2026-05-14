@@ -26,18 +26,26 @@ type UserSubscriptionUsageSnapshot struct {
 }
 
 type SubscriptionUsageRankUser struct {
-	UserId      int    `json:"user_id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Group       string `json:"group"`
+	UserId           int     `json:"user_id"`
+	Id               int     `json:"id"`
+	Username         string  `json:"username"`
+	DisplayName      string  `json:"display_name"`
+	Group            string  `json:"group"`
+	Status           int     `json:"status"`
+	Role             int     `json:"role"`
+	GlobalModelRatio float64 `json:"global_model_ratio"`
 }
 
 type SubscriptionUsageRankItem struct {
 	Rank                       int     `json:"rank"`
 	UserId                     int     `json:"user_id"`
+	Id                         int     `json:"id"`
 	Username                   string  `json:"username"`
 	DisplayName                string  `json:"display_name"`
 	Group                      string  `json:"group"`
+	Status                     int     `json:"status"`
+	Role                       int     `json:"role"`
+	GlobalModelRatio           float64 `json:"global_model_ratio"`
 	UsageAmount                int64   `json:"usage_amount"`
 	RequestCount               int64   `json:"request_count"`
 	ActiveMinutes              int64   `json:"active_minutes"`
@@ -78,10 +86,13 @@ type subscriptionUsageRankSnapshotRow struct {
 }
 
 type subscriptionUsageRankUserRow struct {
-	Id          int    `gorm:"column:id"`
-	Username    string `gorm:"column:username"`
-	DisplayName string `gorm:"column:display_name"`
-	Group       string `gorm:"column:group_name"`
+	Id               int     `gorm:"column:id"`
+	Username         string  `gorm:"column:username"`
+	DisplayName      string  `gorm:"column:display_name"`
+	Group            string  `gorm:"column:group_name"`
+	Status           int     `gorm:"column:status"`
+	Role             int     `gorm:"column:role"`
+	GlobalModelRatio float64 `gorm:"column:global_model_ratio"`
 }
 
 func NormalizeSubscriptionUsageRankRange(rangeKey string) string {
@@ -184,9 +195,13 @@ func GetSubscriptionUsageRankPage(pageInfo *common.PageInfo, rangeKey string, ke
 
 		items = append(items, &SubscriptionUsageRankItem{
 			UserId:                     userInfo.UserId,
+			Id:                         userInfo.Id,
 			Username:                   userInfo.Username,
 			DisplayName:                userInfo.DisplayName,
 			Group:                      userInfo.Group,
+			Status:                     userInfo.Status,
+			Role:                       userInfo.Role,
+			GlobalModelRatio:           userInfo.GlobalModelRatio,
 			UsageAmount:                logAgg.UsageAmount,
 			RequestCount:               logAgg.RequestCount,
 			ActiveMinutes:              activeMinutes,
@@ -281,7 +296,7 @@ func getSubscriptionUsageRankUsers(userIDs []int, keyword string) (map[int]*Subs
 
 	rows := make([]subscriptionUsageRankUserRow, 0)
 	query := DB.Model(&User{}).
-		Select("id, username, display_name, "+commonGroupCol+" AS group_name").
+		Select("id, username, display_name, "+commonGroupCol+" AS group_name, status, role, global_model_ratio").
 		Where("id IN ?", userIDs)
 
 	keyword = strings.TrimSpace(keyword)
@@ -304,10 +319,14 @@ func getSubscriptionUsageRankUsers(userIDs []int, keyword string) (map[int]*Subs
 			continue
 		}
 		result[row.Id] = &SubscriptionUsageRankUser{
-			UserId:      row.Id,
-			Username:    row.Username,
-			DisplayName: row.DisplayName,
-			Group:       row.Group,
+			UserId:           row.Id,
+			Id:               row.Id,
+			Username:         row.Username,
+			DisplayName:      row.DisplayName,
+			Group:            row.Group,
+			Status:           row.Status,
+			Role:             row.Role,
+			GlobalModelRatio: row.GlobalModelRatio,
 		}
 	}
 	return result, nil

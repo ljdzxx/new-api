@@ -1,6 +1,6 @@
 # Project Review Notes
 
-Last updated: 2026-04-24
+Last updated: 2026-05-14
 
 This note summarizes the static review findings and codebase entry points that were identified during the review session. It is intended as a quick handoff file for future sessions.
 
@@ -1781,3 +1781,34 @@ Xiaomi hosted/server tools：
 
 - 文本主路径已修复最终结算漏乘 `GlobalModelRatio`。
 - 后续如扩展到更多附加费用项，应明确它们是否也应受全局倍率影响，例如 hosted web search、file search、image generation call 等附加单价。
+
+---
+
+# 2026-05-14 钱包充值页金额展示调整
+
+目标：
+
+- `/console/topup` 的“额度充值”预设卡片面额改回美元额度展示，例如 `$20`。
+- 用户选定面额后的提示卡继续区分实际支付金额和到账美元余额。
+- “当前倍率”文案方向从 `1 CNY = 6.67 USD` 改为 `1 USD = 0.15 CNY`。
+
+主要改动：
+
+- `web/src/components/topup/RechargeCard.jsx`
+  - 新增 `formatUsdAmount()` 用于充值额度美元展示。
+  - 预设卡片从实际支付币种金额改为显示美元充值额度。
+  - `到账余额` 改为美元额度，例如 `$20`。
+  - `支付金额` 继续使用 `convertTopupBaseToPaymentCurrency(...)` 显示实际支付币种金额。
+  - `当前倍率` 改为使用 `priceRatio` 直接展示 `1 USD = {priceRatio} {支付币种}`。
+
+历史追踪：
+
+- `git log -- web/src/components/topup/RechargeCard.jsx` 显示相关 UI 大改集中在 `b38b7def`。
+- 当时卡面金额接入 `convertTopupBaseToPaymentCurrency(...)`，导致卡片从美元额度改成了实际支付币种金额。
+
+验证：
+
+- 使用临时输出目录验证前端构建，避免覆盖 `web/dist`：
+  - `bunx vite build --outDir ../.vite-topup-usd-check --emptyOutDir=true`
+- 构建通过，仅保留项目已有的 chunk size / circular chunk 警告。
+- 临时目录 `.vite-topup-usd-check` 已清理。

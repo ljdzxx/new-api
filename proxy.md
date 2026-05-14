@@ -80,7 +80,7 @@ main()
 
 ## 验证
 
-1. 启动测试：`python proxy.py --port 8888 --socks-port 1080 --auth testuser:testpass --proxy socks5://user:pass@127.0.0.1:7890`
+1. 启动测试：`python proxy.py --host 0.0.0.0 --port 8888 --socks-port 1080 --auth testuser:testpass --proxy socks5://user:pass@127.0.0.1:7890`
 2. HTTP 入口认证测试：`curl -x http://testuser:testpass@127.0.0.1:8888 http://httpbin.org/ip`
 3. SOCKS5 入口认证测试：`curl -x socks5://testuser:testpass@127.0.0.1:1080 http://httpbin.org/ip`
 4. 无认证应被拒绝：`curl -x http://127.0.0.1:8888 http://httpbin.org/ip` → 407

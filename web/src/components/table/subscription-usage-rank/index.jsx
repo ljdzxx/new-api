@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Avatar,
   Button,
@@ -37,6 +37,19 @@ import { createCardProPagination } from '../../../helpers/utils';
 import { renderQuota } from '../../../helpers/render';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { useSubscriptionUsageRankData } from '../../../hooks/subscription-usage-rank/useSubscriptionUsageRankData';
+import {
+  renderGlobalModelRatio,
+  renderOperations,
+} from '../users/UsersColumnDefs';
+import EditUserModal from '../users/modals/EditUserModal';
+import PromoteUserModal from '../users/modals/PromoteUserModal';
+import DemoteUserModal from '../users/modals/DemoteUserModal';
+import EnableDisableUserModal from '../users/modals/EnableDisableUserModal';
+import DeleteUserModal from '../users/modals/DeleteUserModal';
+import ResetPasskeyModal from '../users/modals/ResetPasskeyModal';
+import ResetTwoFAModal from '../users/modals/ResetTwoFAModal';
+import UserSubscriptionsModal from '../users/modals/UserSubscriptionsModal';
+import UserSubscriptionStatsModal from '../users/modals/UserSubscriptionStatsModal';
 
 const { Text } = Typography;
 
@@ -160,8 +173,99 @@ const SubscriptionUsageRankPage = () => {
     activePage,
     pageSize,
     total,
+    manageUser,
+    resetUserPasskey,
+    resetUserTwoFA,
     t,
   } = rankData;
+
+  const [editingUser, setEditingUser] = useState({ id: undefined });
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [modalUser, setModalUser] = useState(null);
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showDemoteModal, setShowDemoteModal] = useState(false);
+  const [showEnableDisableModal, setShowEnableDisableModal] = useState(false);
+  const [enableDisableAction, setEnableDisableAction] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showResetPasskeyModal, setShowResetPasskeyModal] = useState(false);
+  const [showResetTwoFAModal, setShowResetTwoFAModal] = useState(false);
+  const [showUserSubscriptionsModal, setShowUserSubscriptionsModal] =
+    useState(false);
+  const [showUserSubscriptionStatsModal, setShowUserSubscriptionStatsModal] =
+    useState(false);
+
+  const closeEditUser = () => {
+    setShowEditUser(false);
+    setEditingUser({ id: undefined });
+  };
+
+  const refreshRankings = (page = activePage) => refresh({ page });
+
+  const showPromoteUserModal = (user) => {
+    setModalUser(user);
+    setShowPromoteModal(true);
+  };
+
+  const showDemoteUserModal = (user) => {
+    setModalUser(user);
+    setShowDemoteModal(true);
+  };
+
+  const showEnableDisableUserModal = (user, action) => {
+    setModalUser(user);
+    setEnableDisableAction(action);
+    setShowEnableDisableModal(true);
+  };
+
+  const showDeleteUserModal = (user) => {
+    setModalUser(user);
+    setShowDeleteModal(true);
+  };
+
+  const showResetPasskeyUserModal = (user) => {
+    setModalUser(user);
+    setShowResetPasskeyModal(true);
+  };
+
+  const showResetTwoFAUserModal = (user) => {
+    setModalUser(user);
+    setShowResetTwoFAModal(true);
+  };
+
+  const showUserSubscriptionsUserModal = (user) => {
+    setModalUser(user);
+    setShowUserSubscriptionsModal(true);
+  };
+
+  const showUserSubscriptionStatsUserModal = (user) => {
+    setModalUser(user);
+    setShowUserSubscriptionStatsModal(true);
+  };
+
+  const handlePromoteConfirm = () => {
+    manageUser(modalUser.id, 'promote');
+    setShowPromoteModal(false);
+  };
+
+  const handleDemoteConfirm = () => {
+    manageUser(modalUser.id, 'demote');
+    setShowDemoteModal(false);
+  };
+
+  const handleEnableDisableConfirm = () => {
+    manageUser(modalUser.id, enableDisableAction);
+    setShowEnableDisableModal(false);
+  };
+
+  const handleResetPasskeyConfirm = async () => {
+    await resetUserPasskey(modalUser);
+    setShowResetPasskeyModal(false);
+  };
+
+  const handleResetTwoFAConfirm = async () => {
+    await resetUserTwoFA(modalUser);
+    setShowResetTwoFAModal(false);
+  };
 
   const columns = useMemo(
     () => [
@@ -192,6 +296,12 @@ const SubscriptionUsageRankPage = () => {
             </div>
           </div>
         ),
+      },
+      {
+        title: t('用户倍率'),
+        dataIndex: 'global_model_ratio',
+        width: 120,
+        render: (text, record) => renderGlobalModelRatio(text, record, t),
       },
       {
         title: t('窗口使用量'),
@@ -249,8 +359,40 @@ const SubscriptionUsageRankPage = () => {
         width: 190,
         render: (_, record) => formatDateTime(record?.last_request_at),
       },
+      {
+        title: t('操作'),
+        dataIndex: 'operate',
+        fixed: 'right',
+        width: 380,
+        render: (text, record) =>
+          renderOperations(text, record, {
+            showUserSubscriptionStatsModal: showUserSubscriptionStatsUserModal,
+            setEditingUser,
+            setShowEditUser,
+            showPromoteModal: showPromoteUserModal,
+            showDemoteModal: showDemoteUserModal,
+            showEnableDisableModal: showEnableDisableUserModal,
+            showDeleteModal: showDeleteUserModal,
+            showResetPasskeyModal: showResetPasskeyUserModal,
+            showResetTwoFAModal: showResetTwoFAUserModal,
+            showUserSubscriptionsModal: showUserSubscriptionsUserModal,
+            t,
+          }),
+      },
     ],
-    [t],
+    [
+      t,
+      setEditingUser,
+      setShowEditUser,
+      showPromoteUserModal,
+      showDemoteUserModal,
+      showEnableDisableUserModal,
+      showDeleteUserModal,
+      showResetPasskeyUserModal,
+      showResetTwoFAUserModal,
+      showUserSubscriptionsUserModal,
+      showUserSubscriptionStatsUserModal,
+    ],
   );
 
   const summaryCards = useMemo(
@@ -290,7 +432,8 @@ const SubscriptionUsageRankPage = () => {
   );
 
   return (
-    <CardPro
+    <>
+      <CardPro
       type='type1'
       descriptionArea={
         <div className='flex flex-col md:flex-row justify-between items-start md:items-center gap-2 w-full'>
@@ -324,7 +467,7 @@ const SubscriptionUsageRankPage = () => {
             <Button
               size='small'
               icon={<IconRefresh />}
-              onClick={() => refresh()}
+              onClick={() => refreshRankings()}
             >
               {t('刷新')}
             </Button>
@@ -387,7 +530,82 @@ const SubscriptionUsageRankPage = () => {
           scroll={compactMode ? undefined : { x: 'max-content' }}
         />
       </div>
-    </CardPro>
+      </CardPro>
+
+      <EditUserModal
+        visible={showEditUser}
+        handleClose={closeEditUser}
+        editingUser={editingUser}
+        refresh={refreshRankings}
+      />
+
+      <PromoteUserModal
+        visible={showPromoteModal}
+        onCancel={() => setShowPromoteModal(false)}
+        onConfirm={handlePromoteConfirm}
+        user={modalUser}
+        t={t}
+      />
+
+      <DemoteUserModal
+        visible={showDemoteModal}
+        onCancel={() => setShowDemoteModal(false)}
+        onConfirm={handleDemoteConfirm}
+        user={modalUser}
+        t={t}
+      />
+
+      <EnableDisableUserModal
+        visible={showEnableDisableModal}
+        onCancel={() => setShowEnableDisableModal(false)}
+        onConfirm={handleEnableDisableConfirm}
+        user={modalUser}
+        action={enableDisableAction}
+        t={t}
+      />
+
+      <DeleteUserModal
+        visible={showDeleteModal}
+        onCancel={() => setShowDeleteModal(false)}
+        user={modalUser}
+        users={items}
+        activePage={activePage}
+        refresh={refreshRankings}
+        manageUser={manageUser}
+        t={t}
+      />
+
+      <ResetPasskeyModal
+        visible={showResetPasskeyModal}
+        onCancel={() => setShowResetPasskeyModal(false)}
+        onConfirm={handleResetPasskeyConfirm}
+        user={modalUser}
+        t={t}
+      />
+
+      <ResetTwoFAModal
+        visible={showResetTwoFAModal}
+        onCancel={() => setShowResetTwoFAModal(false)}
+        onConfirm={handleResetTwoFAConfirm}
+        user={modalUser}
+        t={t}
+      />
+
+      <UserSubscriptionsModal
+        visible={showUserSubscriptionsModal}
+        onCancel={() => setShowUserSubscriptionsModal(false)}
+        user={modalUser}
+        t={t}
+        onSuccess={() => refreshRankings()}
+      />
+
+      <UserSubscriptionStatsModal
+        visible={showUserSubscriptionStatsModal}
+        onCancel={() => setShowUserSubscriptionStatsModal(false)}
+        user={modalUser}
+        t={t}
+      />
+    </>
   );
 };
 

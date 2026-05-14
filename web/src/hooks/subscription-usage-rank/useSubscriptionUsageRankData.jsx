@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { API, showError } from '../../helpers';
+import { API, showError, showSuccess } from '../../helpers';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 
 const DEFAULT_RANGE = '1d';
@@ -39,6 +39,14 @@ export const useSubscriptionUsageRankData = () => {
   const [activePage, setActivePage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
+
+  const normalizeRankItems = (rankItems = []) =>
+    rankItems.map((item) => ({
+      ...item,
+      id: item?.id || item?.user_id,
+      key: item?.user_id,
+      DeletedAt: item?.DeletedAt ?? null,
+    }));
 
   const loadRankings = async ({
     page = activePage,
@@ -68,7 +76,7 @@ export const useSubscriptionUsageRankData = () => {
       const payload = res.data?.data || {};
       const pageData = payload?.page || {};
 
-      setItems(pageData.items || []);
+      setItems(normalizeRankItems(pageData.items || []));
       setTotal(pageData.total || 0);
       setSummary(payload.summary || null);
       setActivePage(pageData.page || page);
@@ -135,6 +143,76 @@ export const useSubscriptionUsageRankData = () => {
     });
   };
 
+  const manageUser = async (userId, action) => {
+    setLoading(true);
+    try {
+      const res = await API.post('/api/user/manage', {
+        id: userId,
+        action,
+      });
+
+      const { success, message, data } = res.data;
+      if (success) {
+        showSuccess(t('操作成功完成！'));
+        setItems((prevItems) =>
+          prevItems.map((item) => {
+            if (item.id !== userId && item.user_id !== userId) {
+              return item;
+            }
+            if (action === 'delete') {
+              return { ...item, DeletedAt: new Date() };
+            }
+            return {
+              ...item,
+              status: data?.status ?? item.status,
+              role: data?.role ?? item.role,
+            };
+          }),
+        );
+      } else {
+        showError(message);
+      }
+    } catch (error) {
+      showError(t('鎿嶄綔澶辫触锛岃閲嶈瘯'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetUserPasskey = async (user) => {
+    if (!user) {
+      return;
+    }
+    try {
+      const res = await API.delete(`/api/user/${user.id}/reset_passkey`);
+      const { success, message } = res.data;
+      if (success) {
+        showSuccess(t('Passkey 已重置'));
+      } else {
+        showError(message || t('鎿嶄綔澶辫触锛岃閲嶈瘯'));
+      }
+    } catch (error) {
+      showError(t('鎿嶄綔澶辫触锛岃閲嶈瘯'));
+    }
+  };
+
+  const resetUserTwoFA = async (user) => {
+    if (!user) {
+      return;
+    }
+    try {
+      const res = await API.delete(`/api/user/${user.id}/2fa`);
+      const { success, message } = res.data;
+      if (success) {
+        showSuccess(t('二步验证已重置'));
+      } else {
+        showError(message || t('鎿嶄綔澶辫触锛岃閲嶈瘯'));
+      }
+    } catch (error) {
+      showError(t('鎿嶄綔澶辫触锛岃閲嶈瘯'));
+    }
+  };
+
   useEffect(() => {
     loadRankings({
       page: 1,
@@ -162,6 +240,9 @@ export const useSubscriptionUsageRankData = () => {
     handleRangeChange,
     handlePageChange,
     handlePageSizeChange,
+    manageUser,
+    resetUserPasskey,
+    resetUserTwoFA,
     refresh: loadRankings,
     t,
   };

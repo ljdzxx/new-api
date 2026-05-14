@@ -359,6 +359,7 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		session, apiErr := trySubscription()
 		if apiErr != nil {
 			if apiErr.GetErrorCode() == types.ErrorCodeInsufficientUserQuota || isSubscriptionUnsupportedGroupError(apiErr) {
+				logger.LogInfo(c, fmt.Sprintf("用户 %d 订阅优先扣费失败，切换钱包扣费: %s", relayInfo.UserId, apiErr.Error()))
 				return tryWallet()
 			}
 			return nil, apiErr
