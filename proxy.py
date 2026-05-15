@@ -657,7 +657,7 @@ class ProxyServer:
                 )
                 return
             if start.upper().startswith("CONNECT "):
-                self.handle_connect(client, request_id, start)
+                self.handle_connect(client, request_id, start, already)
             else:
                 body = read_body(client, already, headers)
                 self.handle_one_request(client, request_id, start, headers, body, None, None, False)
@@ -671,17 +671,25 @@ class ProxyServer:
                 pass
             self.untrack_current_thread()
 
-    def handle_connect(self, client, request_id, start):
+    def handle_connect(self, client, request_id, start, already=b""):
         target = start.split(" ")[1]
         host, _, port_text = target.partition(":")
         port = int(port_text or "443")
         self.logger.line(request_id, f"CONNECT target={host}:{port}")
         if not self.should_mitm(host):
-            upstream = connect_tcp(host, port, self.upstream_proxy)
+            try:
+                upstream = connect_tcp(host, port, self.upstream_proxy)
+            except Exception as exc:
+                self.logger.line(request_id, f"CONNECT upstream failed target={host}:{port} err={type(exc).__name__}: {exc}")
+                try:
+                    client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                except Exception:
+                    pass
+                return
             self.track_socket(upstream)
             try:
                 client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                self.tunnel_blind(client, upstream, request_id)
+                self.tunnel_blind(client, upstream, request_id, already)
             finally:
                 self.untrack_socket(upstream)
                 self.close_socket(upstream)
@@ -724,7 +732,7 @@ class ProxyServer:
             self.untrack_socket(tls_client)
             self.close_socket(tls_client)
 
-    def tunnel_blind(self, client, upstream, request_id):
+    def tunnel_blind(self, client, upstream, request_id, already=b""):
         if self.upstream_proxy:
             self.logger.line(request_id, f"blind CONNECT tunnel via upstream proxy {self.upstream_proxy.display()}")
         else:
@@ -732,6 +740,9 @@ class ProxyServer:
 
         client.settimeout(None)
         upstream.settimeout(None)
+        if already:
+            self.logger.line(request_id, f"forwarding buffered CONNECT payload bytes={len(already)}")
+            upstream.sendall(already)
 
         def pump(src, dst, label):
             try:
