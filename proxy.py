@@ -676,12 +676,29 @@ class ProxyServer:
         host, _, port_text = target.partition(":")
         port = int(port_text or "443")
         self.logger.line(request_id, f"CONNECT target={host}:{port}")
+        if not self.should_mitm(host):
+            upstream = connect_tcp(host, port, self.upstream_proxy)
+            self.track_socket(upstream)
+            try:
+                client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                self.tunnel_blind(client, upstream, request_id)
+            finally:
+                self.untrack_socket(upstream)
+                self.close_socket(upstream)
+            return
+
         client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         self._relay_after_connect(client, request_id, host, port)
 
     def _relay_after_connect(self, client, request_id, host, port):
         if not self.should_mitm(host):
-            self.tunnel_blind(client, request_id, host, port)
+            upstream = connect_tcp(host, port, self.upstream_proxy)
+            self.track_socket(upstream)
+            try:
+                self.tunnel_blind(client, upstream, request_id)
+            finally:
+                self.untrack_socket(upstream)
+                self.close_socket(upstream)
             return
 
         cert, key = self.cert_store.cert_for(host)
@@ -707,13 +724,14 @@ class ProxyServer:
             self.untrack_socket(tls_client)
             self.close_socket(tls_client)
 
-    def tunnel_blind(self, client, request_id, host, port):
-        upstream = connect_tcp(host, port, self.upstream_proxy)
-        self.track_socket(upstream)
+    def tunnel_blind(self, client, upstream, request_id):
         if self.upstream_proxy:
             self.logger.line(request_id, f"blind CONNECT tunnel via upstream proxy {self.upstream_proxy.display()}")
         else:
             self.logger.line(request_id, "blind CONNECT tunnel; enable --mitm and trust CA to see HTTPS bodies")
+
+        client.settimeout(None)
+        upstream.settimeout(None)
 
         def pump(src, dst, label):
             try:
@@ -722,12 +740,13 @@ class ProxyServer:
                     if not data:
                         break
                     dst.sendall(data)
-            except Exception:
-                pass
+            except OSError as exc:
+                if not self.stop_event.is_set():
+                    self.logger.line(request_id, f"blind tunnel error side={label} err={exc}")
             finally:
                 self.logger.line(request_id, f"blind tunnel closed side={label}")
                 try:
-                    dst.shutdown(socket.SHUT_RDWR)
+                    dst.shutdown(socket.SHUT_WR)
                 except Exception:
                     pass
 
@@ -737,8 +756,6 @@ class ProxyServer:
         t2.start()
         t1.join()
         t2.join()
-        self.untrack_socket(upstream)
-        self.close_socket(upstream)
 
     def handle_one_request(self, client, request_id, start, headers, body, default_host, default_port, tls):
         can_absolute = (
