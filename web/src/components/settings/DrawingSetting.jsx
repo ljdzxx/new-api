@@ -22,16 +22,25 @@ import { Card, Spin } from '@douyinfe/semi-ui';
 import SettingsDrawing from '../../pages/Setting/Drawing/SettingsDrawing';
 import { API, showError, toBoolean } from '../../helpers';
 
+const defaultDrawingInputs = {
+  DrawingEnabled: false,
+  MjNotifyEnabled: false,
+  MjAccountFilterEnabled: false,
+  MjForwardUrlEnabled: false,
+  MjModeClearEnabled: false,
+  MjActionCheckSuccessEnabled: false,
+  'image_storage_setting.r2_enabled': false,
+  'image_storage_setting.r2_account_id': '',
+  'image_storage_setting.r2_bucket': '',
+  'image_storage_setting.r2_endpoint': '',
+  'image_storage_setting.r2_access_key_id': '',
+  'image_storage_setting.r2_secret': '',
+  'image_storage_setting.r2_object_prefix': 'generated-images/',
+  'image_storage_setting.r2_url_expire_hours': 24,
+};
+
 const DrawingSetting = () => {
-  let [inputs, setInputs] = useState({
-    /* 绘图设置 */
-    DrawingEnabled: false,
-    MjNotifyEnabled: false,
-    MjAccountFilterEnabled: false,
-    MjForwardUrlEnabled: false,
-    MjModeClearEnabled: false,
-    MjActionCheckSuccessEnabled: false,
-  });
+  let [inputs, setInputs] = useState(defaultDrawingInputs);
 
   let [loading, setLoading] = useState(false);
 
@@ -39,9 +48,9 @@ const DrawingSetting = () => {
     const res = await API.get('/api/option/');
     const { success, message, data } = res.data;
     if (success) {
-      let newInputs = {};
+      let newInputs = { ...defaultDrawingInputs };
       data.forEach((item) => {
-        if (item.key.endsWith('Enabled')) {
+        if (item.key.endsWith('Enabled') || typeof inputs[item.key] === 'boolean') {
           newInputs[item.key] = toBoolean(item.value);
         } else {
           newInputs[item.key] = item.value;

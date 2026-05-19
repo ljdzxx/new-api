@@ -526,9 +526,14 @@ DTO 结构见：[dto/openai_image.go](/e:/go_project/new-api/dto/openai_image.go
   "prompt": "A futuristic city at sunset",
   "size": "1024x1024",
   "quality": "high",
-  "n": 1
+  "n": 1,
+  "response_format": "url"
 }
 ```
+
+说明：
+- 当系统启用 Cloudflare R2 图片存储时，上游返回的 `b64_json` 图片会被上传到 R2，并改写为 `data[].url` 返回。
+- 当上游本身返回 `data[].url` 时，本项目会直接透传该 URL，不下载、不转存。
 
 ### 7.2 `POST /v1/images/edits`
 
@@ -544,6 +549,7 @@ DTO 结构见：[dto/openai_image.go](/e:/go_project/new-api/dto/openai_image.go
 - `n`
 - `size`
 - `quality`
+- `response_format`
 - `watermark`
 
 ### 7.3 `POST /v1/edits`

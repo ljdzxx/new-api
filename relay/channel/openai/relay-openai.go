@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 
@@ -572,6 +573,14 @@ func OpenaiHandlerWithUsage(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 	// 写入新的 response body
+	if info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits {
+		rewrittenBody, rewriteErr := service.StoreImageResultsToR2(c, info, responseBody)
+		if rewriteErr != nil {
+			logger.LogError(c, "image R2 storage failed, falling back to upstream response: "+rewriteErr.Error())
+		} else {
+			responseBody = rewrittenBody
+		}
+	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// Once we've written to the client, we should not return errors anymore

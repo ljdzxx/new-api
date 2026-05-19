@@ -258,7 +258,7 @@ const ImageGeneration = () => {
     size,
     n: FIXED_IMAGE_COUNT,
     quality,
-    response_format: 'b64_json',
+    response_format: 'url',
   });
 
   const buildFormPayload = () => {
@@ -268,7 +268,7 @@ const ImageGeneration = () => {
     formData.append('size', size);
     formData.append('n', String(FIXED_IMAGE_COUNT));
     formData.append('quality', quality);
-    formData.append('response_format', 'b64_json');
+    formData.append('response_format', 'url');
     referenceImages.forEach((item) => {
       formData.append('image[]', item.file);
     });
@@ -370,7 +370,7 @@ const ImageGeneration = () => {
     "size": "auto",
     "n": 1,
     "quality": "auto",
-    "response_format": "b64_json"
+    "response_format": "url"
   }'`}
         </pre>
       </section>
@@ -386,7 +386,7 @@ const ImageGeneration = () => {
   -F 'size=auto' \\
   -F 'n=1' \\
   -F 'quality=auto' \\
-  -F 'response_format=b64_json' \\
+  -F 'response_format=url' \\
   -F 'image[]=@/path/to/image1.png' \\
   -F 'image[]=@/path/to/image2.png'`}
         </pre>
@@ -396,7 +396,7 @@ const ImageGeneration = () => {
           {t('注意事项')}
         </Title>
         <ul className='text-sm text-[var(--semi-color-text-2)] list-disc pl-4 flex flex-col gap-1'>
-          <li>{t('页面强制请求 b64_json，当前结果只在本页临时保存。')}</li>
+          <li>{t('页面默认请求 URL 返回，后端可将 b64_json 结果转存为临时 URL。')}</li>
           <li>
             {t('品质默认为 auto，由模型自行决定合适的生成质量。')}
           </li>
@@ -636,7 +636,7 @@ const ImageGeneration = () => {
               </Text>
             </div>
             <div className='hidden md:flex items-center gap-2'>
-              <Tag color='blue'>response_format=b64_json</Tag>
+              <Tag color='blue'>response_format=url</Tag>
               <Tag color='teal'>quality={quality}</Tag>
             </div>
           </div>
