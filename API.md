@@ -793,4 +793,3 @@ DTO 结构见：[dto/audio.go](/e:/go_project/new-api/dto/audio.go:12)
 - `POST /v1/fine-tunes/:id/cancel`
 - `GET /v1/fine-tunes/:id/events`
 - `DELETE /v1/models/:model`
-

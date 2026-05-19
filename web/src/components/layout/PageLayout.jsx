@@ -58,6 +58,7 @@ const PageLayout = () => {
     '/console/token',
     '/console/midjourney',
     '/console/task',
+    '/console/image-generation',
     '/console/models',
     '/pricing',
   ];

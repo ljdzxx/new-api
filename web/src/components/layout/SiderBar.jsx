@@ -50,6 +50,7 @@ const routerMap = {
   models: '/console/models',
   deployment: '/console/deployment',
   playground: '/console/playground',
+  image_generation: '/console/image-generation',
   personal: '/console/personal',
   level: '/console/level',
 };
@@ -226,6 +227,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('操练场'),
         itemKey: 'playground',
         to: '/playground',
+      },
+      {
+        text: t('图像生成'),
+        itemKey: 'image_generation',
+        to: '/console/image-generation',
       },
       {
         text: t('聊天'),

@@ -2,6 +2,7 @@
 import argparse
 import base64
 import datetime as _dt
+import ipaddress
 import os
 import re
 import signal
@@ -210,6 +211,81 @@ class CertStore:
         key_path = self.cert_dir / f"{name}.key.pem"
         cert_path = self.cert_dir / f"{name}.cert.pem"
         return key_path.exists() and cert_path.exists()
+
+
+def run_openssl(openssl, args):
+    result = subprocess.run(
+        [openssl, *args],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+
+
+def cert_alt_name(name):
+    try:
+        ipaddress.ip_address(name)
+        return f"IP:{name}"
+    except ValueError:
+        return f"DNS:{name}"
+
+
+def ensure_inbound_tls_cert(cert_dir, openssl, name):
+    root = Path(cert_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    safe_name = safe_host(name)
+    key_path = root / f"inbound-{safe_name}.key.pem"
+    cert_path = root / f"inbound-{safe_name}.cert.pem"
+    ext_path = root / f"inbound-{safe_name}.ext"
+    if key_path.exists() and cert_path.exists():
+        return cert_path, key_path
+    ext_path.write_text(
+        "\n".join(
+            [
+                "basicConstraints=CA:FALSE",
+                "keyUsage = digitalSignature, keyEncipherment",
+                "extendedKeyUsage = serverAuth",
+                f"subjectAltName = {cert_alt_name(name)}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_openssl(openssl, ["genrsa", "-out", str(key_path), "2048"])
+    run_openssl(
+        openssl,
+        [
+            "req",
+            "-new",
+            "-key",
+            str(key_path),
+            "-out",
+            str(root / f"inbound-{safe_name}.csr.pem"),
+            "-subj",
+            f"/CN={name}",
+        ],
+    )
+    run_openssl(
+        openssl,
+        [
+            "x509",
+            "-req",
+            "-in",
+            str(root / f"inbound-{safe_name}.csr.pem"),
+            "-signkey",
+            str(key_path),
+            "-out",
+            str(cert_path),
+            "-days",
+            "825",
+            "-sha256",
+            "-extfile",
+            str(ext_path),
+        ],
+    )
+    return cert_path, key_path
 
 
 def recv_until(sock, delimiter=b"\r\n\r\n", limit=HEADER_LIMIT):
@@ -504,7 +580,16 @@ def rewrite_request_for_origin(
 def connect_tcp(host, port, upstream_proxy=None):
     if upstream_proxy:
         return upstream_proxy.connect_tunnel(host, port)
-    return socket.create_connection((host, port), timeout=30)
+    sock = socket.create_connection((host, port), timeout=30)
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except Exception:
+        pass
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    except Exception:
+        pass
+    return sock
 
 
 def connect_upstream(host, port, tls, server_name, upstream_proxy=None, proxy_forward=False):
@@ -519,7 +604,17 @@ def connect_upstream(host, port, tls, server_name, upstream_proxy=None, proxy_fo
 
 
 class ProxyServer:
-    def __init__(self, host, port, logger, cert_store=None, upstream_proxy=None, mitm_targets=None, auth=None):
+    def __init__(
+        self,
+        host,
+        port,
+        logger,
+        cert_store=None,
+        upstream_proxy=None,
+        mitm_targets=None,
+        auth=None,
+        inbound_tls_context=None,
+    ):
         self.host = host
         self.port = port
         self.logger = logger
@@ -527,6 +622,7 @@ class ProxyServer:
         self.upstream_proxy = upstream_proxy
         self.mitm_targets = [t.lower() for t in (mitm_targets or [])]
         self.auth = auth
+        self.inbound_tls_context = inbound_tls_context
         self.counter = 0
         self.counter_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -618,7 +714,8 @@ class ProxyServer:
         server.listen(200)
         server.settimeout(0.5)
         self.server_socket = server
-        print(f"Proxy listening on {self.host}:{self.port}")
+        scheme = "HTTPS proxy" if self.inbound_tls_context else "Proxy"
+        print(f"{scheme} listening on {self.host}:{self.port}")
         try:
             while not self.stop_event.is_set():
                 try:
@@ -629,6 +726,25 @@ class ProxyServer:
                     if self.stop_event.is_set():
                         break
                     raise
+                if self.inbound_tls_context:
+                    try:
+                        client = self.inbound_tls_context.wrap_socket(client, server_side=True)
+                    except Exception as exc:
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
+                        request_id = self.next_id()
+                        self.logger.line(request_id, f"inbound TLS handshake failed client={addr[0]}:{addr[1]} err={type(exc).__name__}: {exc}")
+                        continue
+                try:
+                    client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except Exception:
+                    pass
+                try:
+                    client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                except Exception:
+                    pass
                 self.track_socket(client)
                 thread = threading.Thread(target=self.handle_client, args=(client, addr))
                 self.track_thread(thread)
@@ -646,7 +762,7 @@ class ProxyServer:
                 return
             header_bytes, already = split_headers(raw)
             start, headers = parse_header_lines(header_bytes)
-            self.logger.line(request_id, f"client={addr[0]}:{addr[1]} start={start!r}")
+            self.logger.line(request_id, f"client={addr[0]}:{addr[1]} start={start!r} buffered={len(already)}")
             if self.auth and not self._check_proxy_auth(headers):
                 self.logger.line(request_id, "AUTH FAILED - returning 407")
                 client.sendall(
@@ -688,8 +804,13 @@ class ProxyServer:
                 return
             self.track_socket(upstream)
             try:
-                client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                self.tunnel_blind(client, upstream, request_id, already)
+                try:
+                    client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                    self.logger.line(request_id, f"CONNECT established target={host}:{port} buffered={len(already)}")
+                except Exception as exc:
+                    self.logger.line(request_id, f"CONNECT response failed target={host}:{port} err={type(exc).__name__}: {exc}")
+                    return
+                self.tunnel_blind(client, upstream, request_id, already, tunnel_kind="CONNECT")
             finally:
                 self.untrack_socket(upstream)
                 self.close_socket(upstream)
@@ -703,7 +824,7 @@ class ProxyServer:
             upstream = connect_tcp(host, port, self.upstream_proxy)
             self.track_socket(upstream)
             try:
-                self.tunnel_blind(client, upstream, request_id)
+                self.tunnel_blind(client, upstream, request_id, tunnel_kind="CONNECT")
             finally:
                 self.untrack_socket(upstream)
                 self.close_socket(upstream)
@@ -732,30 +853,38 @@ class ProxyServer:
             self.untrack_socket(tls_client)
             self.close_socket(tls_client)
 
-    def tunnel_blind(self, client, upstream, request_id, already=b""):
+    def tunnel_blind(self, client, upstream, request_id, already=b"", tunnel_kind="CONNECT"):
         if self.upstream_proxy:
-            self.logger.line(request_id, f"blind CONNECT tunnel via upstream proxy {self.upstream_proxy.display()}")
+            self.logger.line(request_id, f"blind {tunnel_kind} tunnel via upstream proxy {self.upstream_proxy.display()}")
         else:
-            self.logger.line(request_id, "blind CONNECT tunnel; enable --mitm and trust CA to see HTTPS bodies")
+            self.logger.line(request_id, f"blind {tunnel_kind} tunnel; enable --mitm and trust CA to see HTTPS bodies")
 
         client.settimeout(None)
         upstream.settimeout(None)
+        started = time.time()
         if already:
             self.logger.line(request_id, f"forwarding buffered CONNECT payload bytes={len(already)}")
             upstream.sendall(already)
 
         def pump(src, dst, label):
+            total = 0
+            first_logged = False
             try:
                 while not self.stop_event.is_set():
                     data = src.recv(BUFFER_SIZE)
                     if not data:
                         break
+                    total += len(data)
+                    if not first_logged:
+                        first_logged = True
+                        self.logger.line(request_id, f"blind tunnel first bytes side={label} bytes={len(data)}")
                     dst.sendall(data)
             except OSError as exc:
                 if not self.stop_event.is_set():
-                    self.logger.line(request_id, f"blind tunnel error side={label} err={exc}")
+                    self.logger.line(request_id, f"blind tunnel error side={label} bytes={total} err={exc}")
             finally:
-                self.logger.line(request_id, f"blind tunnel closed side={label}")
+                elapsed_ms = int((time.time() - started) * 1000)
+                self.logger.line(request_id, f"blind tunnel closed side={label} bytes={total} duration_ms={elapsed_ms}")
                 try:
                     dst.shutdown(socket.SHUT_WR)
                 except Exception:
@@ -854,6 +983,14 @@ class Socks5Server:
                     if self.proxy.stop_event.is_set():
                         break
                     raise
+                try:
+                    client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except Exception:
+                    pass
+                try:
+                    client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                except Exception:
+                    pass
                 self.proxy.track_socket(client)
                 thread = threading.Thread(target=self.handle_client, args=(client, addr))
                 self.proxy.track_thread(thread)
@@ -876,17 +1013,20 @@ class Socks5Server:
 
     def handle_client(self, client, addr):
         request_id = self.proxy.next_id()
+        stage = "greeting"
         try:
             client.settimeout(120)
 
             ver_nmethods = self._recv_exact(client, 2)
             if not ver_nmethods or ver_nmethods[0] != 0x05:
                 return
+            stage = "methods"
             methods = self._recv_exact(client, ver_nmethods[1])
             if not methods:
                 return
 
             if self.auth:
+                stage = "auth"
                 if 0x02 not in methods:
                     client.sendall(b"\x05\xFF")
                     return
@@ -921,6 +1061,7 @@ class Socks5Server:
                     return
                 client.sendall(b"\x05\x00")
 
+            stage = "request"
             header = self._recv_exact(client, 4)
             if not header:
                 return
@@ -928,6 +1069,7 @@ class Socks5Server:
             if ver != 0x05:
                 return
             if cmd != 0x01:
+                self.proxy.logger.line(request_id, f"SOCKS5 unsupported cmd={cmd} from {addr[0]}:{addr[1]}")
                 self._socks5_reply(client, 0x07)
                 return
 
@@ -959,11 +1101,32 @@ class Socks5Server:
             dest_port = struct.unpack("!H", raw_port)[0]
 
             self.proxy.logger.line(request_id, f"SOCKS5 CONNECT {dest_host}:{dest_port} from {addr[0]}:{addr[1]}")
+            stage = f"connect {dest_host}:{dest_port}"
+            if not self.proxy.should_mitm(dest_host):
+                try:
+                    upstream = connect_tcp(dest_host, dest_port, self.proxy.upstream_proxy)
+                except Exception as exc:
+                    self.proxy.logger.line(request_id, f"SOCKS5 upstream failed target={dest_host}:{dest_port} err={type(exc).__name__}: {exc}")
+                    try:
+                        self._socks5_reply(client, 0x05)
+                    except Exception:
+                        pass
+                    return
+                self.proxy.track_socket(upstream)
+                try:
+                    self._socks5_reply(client, 0x00)
+                    self.proxy.logger.line(request_id, f"SOCKS5 established target={dest_host}:{dest_port}")
+                    self.proxy.tunnel_blind(client, upstream, request_id, tunnel_kind="SOCKS5")
+                finally:
+                    self.proxy.untrack_socket(upstream)
+                    self.proxy.close_socket(upstream)
+                return
+
             self._socks5_reply(client, 0x00)
             self.proxy._relay_after_connect(client, request_id, dest_host, dest_port)
 
         except Exception as exc:
-            self.proxy.logger.line(request_id, f"SOCKS5 ERROR {type(exc).__name__}: {exc}")
+            self.proxy.logger.line(request_id, f"SOCKS5 ERROR stage={stage} client={addr[0]}:{addr[1]} err={type(exc).__name__}: {exc}")
         finally:
             self.proxy.untrack_socket(client)
             try:
@@ -1028,6 +1191,10 @@ def main():
     parser.add_argument("--mitm", action="store_true", help="Intercept HTTPS CONNECT traffic with a local CA.")
     parser.add_argument("--cert-dir", default=".proxy-certs")
     parser.add_argument("--openssl", default=os.environ.get("OPENSSL", "openssl"))
+    parser.add_argument("--inbound-tls", action="store_true", help="Accept HTTPS proxy connections from clients. Generates a self-signed certificate if --inbound-cert/--inbound-key are omitted.")
+    parser.add_argument("--inbound-cert", help="TLS certificate PEM for --inbound-tls.")
+    parser.add_argument("--inbound-key", help="TLS private key PEM for --inbound-tls.")
+    parser.add_argument("--inbound-name", default=None, help="DNS name or IP address to put in the generated --inbound-tls certificate SAN.")
     parser.add_argument("--proxy", help="Upstream proxy for outbound traffic, e.g. http://127.0.0.1:10809 or socks5://user:pass@127.0.0.1:1080.")
     parser.add_argument(
         "--mitm-target",
@@ -1047,6 +1214,23 @@ def main():
         print(f"MITM CA certificate: {cert_store.ca_cert.resolve()}")
         print("Trust this CA, or set NODE_EXTRA_CA_CERTS to this file for Node/VS Code extension traffic.")
 
+    inbound_tls_context = None
+    if args.inbound_tls:
+        if bool(args.inbound_cert) != bool(args.inbound_key):
+            parser.error("--inbound-cert and --inbound-key must be provided together")
+        if args.inbound_cert and args.inbound_key:
+            inbound_cert = Path(args.inbound_cert)
+            inbound_key = Path(args.inbound_key)
+        else:
+            inbound_name = args.inbound_name or args.host
+            if inbound_name in ("0.0.0.0", "::"):
+                parser.error("--inbound-name is required when --inbound-tls is used with wildcard --host")
+            inbound_cert, inbound_key = ensure_inbound_tls_cert(args.cert_dir, args.openssl, inbound_name)
+        inbound_tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        inbound_tls_context.load_cert_chain(certfile=str(inbound_cert), keyfile=str(inbound_key))
+        print(f"Inbound HTTPS proxy enabled with certificate: {Path(inbound_cert).resolve()}")
+        print("Configure clients to use an HTTPS proxy and trust this certificate if they verify proxy certificates.")
+
     logger = CaptureLogger(args.log)
     print(f"Writing capture log to: {Path(args.log).resolve()}")
     mitm_targets = split_csv_args(args.mitm_target)
@@ -1058,7 +1242,16 @@ def main():
     if args.auth:
         print(f"Inbound proxy authentication enabled (user: {args.auth.split(':')[0]})")
 
-    server = ProxyServer(args.host, args.port, logger, cert_store, upstream_proxy, mitm_targets, auth=args.auth)
+    server = ProxyServer(
+        args.host,
+        args.port,
+        logger,
+        cert_store,
+        upstream_proxy,
+        mitm_targets,
+        auth=args.auth,
+        inbound_tls_context=inbound_tls_context,
+    )
 
     socks_server = None
     if args.socks_port:

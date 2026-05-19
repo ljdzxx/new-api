@@ -51,6 +51,13 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
+		if common.DebugTraceEnabled {
+			if bodyBytes, bodyErr := storage.Bytes(); bodyErr == nil {
+				service.LogImageRelayJSONRequestTrace(c, "pass-through", bodyBytes)
+			} else {
+				logger.LogWarn(c, fmt.Sprintf("[image trace] request pass-through read failed: %s", bodyErr.Error()))
+			}
+		}
 		requestBody = common.ReaderOnly(storage)
 	} else {
 		convertedRequest, err := adaptor.ConvertImageRequest(c, info, *request)
@@ -79,6 +86,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			if common.DebugEnabled {
 				logger.LogDebug(c, fmt.Sprintf("image request body: %s", string(jsonData)))
 			}
+			service.LogImageRelayJSONRequestTrace(c, "converted", jsonData)
 			requestBody = bytes.NewBuffer(jsonData)
 		}
 	}
@@ -124,9 +132,13 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		usage.(*dto.Usage).PromptTokens = int(imageN)
 	}
 
-	quality := "standard"
+	/* quality := "standard"
 	if request.Quality == "hd" {
 		quality = "hd"
+	} */
+	quality := request.Quality
+	if quality == "" {
+		quality = "auto"
 	}
 
 	var logContent []string

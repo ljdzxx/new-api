@@ -448,6 +448,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 			}
 			mf = c.Request.MultipartForm
 		}
+		service.LogImageRelayMultipartRequestTrace(c, "converted multipart", mf)
 
 		// 写入所有非文件字段
 		if mf != nil {

@@ -44,6 +44,7 @@ import Task from './pages/Task';
 import ModelPage from './pages/Model';
 import ModelDeploymentPage from './pages/ModelDeployment';
 import Playground from './pages/Playground';
+import ImageGeneration from './pages/ImageGeneration';
 import Subscription from './pages/Subscription';
 import Order from './pages/Order';
 import OAuth2Callback from './components/auth/OAuth2Callback';
@@ -156,6 +157,14 @@ function App() {
           element={
             <PrivateRoute>
               <Playground />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/image-generation'
+          element={
+            <PrivateRoute>
+              <ImageGeneration />
             </PrivateRoute>
           }
         />
