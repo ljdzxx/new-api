@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -580,7 +579,14 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			logXiaomiClaudeTrace(c, "FINAL upstream request body source=converted %s details=%s", summarizeClaudeJSONBodyForLog(jsonData), summarizeClaudeJSONBodyDetailsForLog(jsonData))
 			logXiaomiClaudeTrace(c, "FINAL upstream request body raw bytes=%d:\n%s", len(jsonData), string(jsonData))
 		}
-		requestBody = bytes.NewBuffer(jsonData)
+		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		defer closer.Close()
+		jsonData = nil
+		info.UpstreamRequestBodySize = size
+		requestBody = body
 	}
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
