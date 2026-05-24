@@ -25,9 +25,11 @@ import {
   Empty,
   ImagePreview,
   InputNumber,
+  Modal,
   Select,
   SideSheet,
   Spin,
+  Switch,
   Tag,
   TextArea,
   Toast,
@@ -123,6 +125,13 @@ function getImageFilename(index) {
   return `image-generation-${time}-${index + 1}.png`;
 }
 
+function createImageRecordId() {
+  const random =
+    window.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `img_${String(random).replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
+
 function downloadImage(src, index) {
   if (!src) return;
   const link = document.createElement('a');
@@ -133,6 +142,22 @@ function downloadImage(src, index) {
   document.body.removeChild(link);
 }
 
+function attachRecordToImages(imageData, recordId) {
+  return imageData.map((item) => ({
+    ...item,
+    _record_id: recordId,
+  }));
+}
+
+function getReadableError(error, fallback) {
+  return (
+    error?.response?.data?.error?.message ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
+  );
+}
+
 const ImageGeneration = () => {
   const { t } = useTranslation();
   const [tokens, setTokens] = useState([]);
@@ -141,9 +166,15 @@ const ImageGeneration = () => {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [size, setSize] = useState('auto');
   const [quality, setQuality] = useState('auto');
+  const [autoCompressReferenceImages, setAutoCompressReferenceImages] =
+    useState(true);
   const [referenceImages, setReferenceImages] = useState([]);
   const [results, setResults] = useState([]);
   const [responseMeta, setResponseMeta] = useState(null);
+  const [activeRecordId, setActiveRecordId] = useState('');
+  const [recordStatus, setRecordStatus] = useState('');
+  const [recordLoading, setRecordLoading] = useState(false);
+  const [recordDeleting, setRecordDeleting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [docVisible, setDocVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -269,6 +300,10 @@ const ImageGeneration = () => {
     formData.append('n', String(FIXED_IMAGE_COUNT));
     formData.append('quality', quality);
     formData.append('response_format', 'url');
+    formData.append(
+      'auto_compress_reference_image',
+      String(autoCompressReferenceImages),
+    );
     referenceImages.forEach((item) => {
       formData.append('image[]', item.file);
     });
@@ -279,6 +314,9 @@ const ImageGeneration = () => {
     if (!validateBeforeSubmit()) return;
 
     setGenerating(true);
+    const recordId = createImageRecordId();
+    setActiveRecordId(recordId);
+    setRecordStatus('IN_PROGRESS');
     try {
       const rawKey = await fetchTokenKey(selectedTokenId);
       const endpoint = hasReferenceImages
@@ -291,6 +329,7 @@ const ImageGeneration = () => {
       const res = await API.post(endpoint, payload, {
         headers: {
           Authorization: `Bearer sk-${rawKey}`,
+          'X-Newapi-Image-Record-Id': recordId,
         },
         //timeout: 120000,
         skipErrorHandler: true,
@@ -301,7 +340,10 @@ const ImageGeneration = () => {
       if (imageData.length === 0) {
         Toast.warning(t('接口未返回图片数据'));
       }
-      setResults(imageData);
+      setResults((current) => [
+        ...attachRecordToImages(imageData, recordId),
+        ...current,
+      ]);
       setResponseMeta({
         created: data.created,
         model: data.model || IMAGE_MODEL,
@@ -311,16 +353,126 @@ const ImageGeneration = () => {
         output_format: data.output_format,
         usage: data.usage,
       });
+      setRecordStatus('SUCCESS');
     } catch (error) {
-      const message =
-        error?.response?.data?.error?.message ||
-        error?.response?.data?.message ||
-        error?.message ||
-        t('生成失败');
-      showError(message);
+      const message = getReadableError(error, t('生成失败'));
+      setRecordStatus('IN_PROGRESS');
+      Toast.error({
+        content: `${message}。${t('如果图片实际已生成，请稍后点击刷新结果查询生图记录。')}`,
+        duration: 0,
+      });
     } finally {
       setGenerating(false);
     }
+  };
+
+  const applyRecordResult = (record) => {
+    if (!record) return;
+    setRecordStatus(record.status || '');
+    const result = record.result || {};
+    const imageData = Array.isArray(result.data) ? result.data : [];
+    if (imageData.length > 0) {
+      const recordImages = attachRecordToImages(imageData, record.record_id);
+      setResults((current) => {
+        const withoutSameRecord = current.filter(
+          (item) => item._record_id !== record.record_id,
+        );
+        return [...recordImages, ...withoutSameRecord];
+      });
+      setResponseMeta({
+        created: result.created,
+        model: result.model || record.model || IMAGE_MODEL,
+        size: result.size || record.size || size,
+        quality: result.quality || record.quality,
+        background: result.background,
+        output_format: result.output_format,
+        usage: result.usage,
+      });
+    }
+  };
+
+  const refreshActiveRecord = async () => {
+    if (!activeRecordId) {
+      Toast.warning(t('暂无可刷新的生图记录'));
+      return;
+    }
+    setRecordLoading(true);
+    try {
+      const res = await API.get(`/api/image_records/${activeRecordId}`, {
+        skipErrorHandler: true,
+        disableDuplicate: true,
+      });
+      const { success, data, message } = res.data || {};
+      if (!success) {
+        Toast.error({
+          content: message || t('刷新失败'),
+          duration: 0,
+        });
+        return;
+      }
+      applyRecordResult(data);
+      if (data?.status === 'SUCCESS') {
+        Toast.success(t('生图结果已刷新'));
+      } else if (data?.status === 'FAILURE') {
+        if (data?.fail_reason) {
+          console.warn('[image record] generation failed:', data.fail_reason);
+        }
+        Toast.error({
+          content: t('这条生图记录最终失败，不会再产生图片，请重新生成。'),
+          duration: 0,
+        });
+      } else {
+        Toast.info(t('生图仍在处理中，请稍后再刷新'));
+      }
+    } catch (error) {
+      Toast.error({
+        content: getReadableError(error, t('刷新失败')),
+        duration: 0,
+      });
+    } finally {
+      setRecordLoading(false);
+    }
+  };
+
+  const deleteImageRecord = (recordId) => {
+    if (!recordId) {
+      Toast.warning(t('暂无可删除的生图记录'));
+      return;
+    }
+    Modal.confirm({
+      title: t('确认删除'),
+      content: t('将永久删除这张图片、对应生图记录及其 R2 存储，删除后不可恢复。'),
+      okText: t('确认删除'),
+      cancelText: t('取消'),
+      okButtonProps: { type: 'danger' },
+      onOk: async () => {
+        setRecordDeleting(true);
+        try {
+          const res = await API.delete(`/api/image_records/${recordId}`, {
+            skipErrorHandler: true,
+          });
+          const { success, message } = res.data || {};
+          if (!success) {
+            Toast.error({ content: message || t('删除失败'), duration: 0 });
+            return;
+          }
+          setResults((current) =>
+            current.filter((item) => item._record_id !== recordId),
+          );
+          if (activeRecordId === recordId) {
+            setActiveRecordId('');
+            setRecordStatus('');
+            setResponseMeta(null);
+          }
+          Toast.success(t('已删除生图记录'));
+        } catch (error) {
+          const message = getReadableError(error, t('删除失败'));
+          Toast.error({ content: message, duration: 0 });
+        } finally {
+          setRecordDeleting(false);
+        }
+      },
+    });
   };
 
   const openPreview = (src) => {
@@ -387,6 +539,7 @@ const ImageGeneration = () => {
   -F 'n=1' \\
   -F 'quality=auto' \\
   -F 'response_format=url' \\
+  -F 'auto_compress_reference_image=true' \\
   -F 'image[]=@/path/to/image1.png' \\
   -F 'image[]=@/path/to/image2.png'`}
         </pre>
@@ -399,6 +552,11 @@ const ImageGeneration = () => {
           <li>{t('页面默认请求 URL 返回，后端可将 b64_json 结果转存为临时 URL。')}</li>
           <li>
             {t('品质默认为 auto，由模型自行决定合适的生成质量。')}
+          </li>
+          <li>
+            {t(
+              'edits 支持 auto_compress_reference_image 参数，默认为 true，用于自动压缩过大的参考图；该参数只在本项目后端生效，不会转发给上游。',
+            )}
           </li>
           <li>{t('同步生成可能耗时 10-60 秒，请耐心等待。')}</li>
         </ul>
@@ -556,6 +714,16 @@ const ImageGeneration = () => {
                     : t('将使用 generations 接口')}
                 </Text>
               </div>
+              <div className='flex items-center justify-between gap-3 mb-3'>
+                <Text type='tertiary' size='small'>
+                  {t('自动压缩过大的参考图')}
+                </Text>
+                <Switch
+                  size='small'
+                  checked={autoCompressReferenceImages}
+                  onChange={setAutoCompressReferenceImages}
+                />
+              </div>
 
               <div className='grid grid-cols-4 gap-2'>
                 <button
@@ -636,6 +804,17 @@ const ImageGeneration = () => {
               </Text>
             </div>
             <div className='hidden md:flex items-center gap-2'>
+              {activeRecordId && (
+                <Button
+                  size='small'
+                  icon={<RefreshCcw size={14} />}
+                  loading={recordLoading}
+                  onClick={refreshActiveRecord}
+                >
+                  {t('刷新结果')}
+                </Button>
+              )}
+              {recordStatus && <Tag color='grey'>{recordStatus}</Tag>}
               <Tag color='blue'>response_format=url</Tag>
               <Tag color='teal'>quality={quality}</Tag>
             </div>
@@ -649,13 +828,26 @@ const ImageGeneration = () => {
                 <div className='text-xs leading-relaxed'>
                   <div>
                     {t(
-                      '图片仅在当前页面临时保存，刷新或离开后无法找回，请及时下载。',
+                      '如遇网络超时或 524，后端会继续处理已创建的生图记录，可稍后点击刷新结果查询。',
                     )}
                   </div>
-                  <div>{t('请勿生成违反法律法规或平台规则的内容。')}</div>
+                  <div>{t('请勿生成违反法律法规及社会公序良俗的的内容，生图成功请即时保存，所有图片24小时后永久删除。')}</div>
                 </div>
               }
             />
+            {activeRecordId && (
+              <div className='mt-2 flex md:hidden items-center gap-2'>
+                <Button
+                  size='small'
+                  icon={<RefreshCcw size={14} />}
+                  loading={recordLoading}
+                  onClick={refreshActiveRecord}
+                >
+                  {t('刷新结果')}
+                </Button>
+                {recordStatus && <Tag color='grey'>{recordStatus}</Tag>}
+              </div>
+            )}
           </div>
 
           <Spin
@@ -714,6 +906,21 @@ const ImageGeneration = () => {
                               }}
                             />
                           </Tooltip>
+                          {item._record_id && (
+                            <Tooltip content={t('删除')}>
+                              <Button
+                                size='small'
+                                type='primary'
+                                className='!bg-black/60 !border-0 hover:!bg-black/80 !rounded-full'
+                                icon={<Trash2 size={14} />}
+                                loading={recordDeleting}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  deleteImageRecord(item._record_id);
+                                }}
+                              />
+                            </Tooltip>
+                          )}
                         </div>
                         {item.revised_prompt && (
                           <div className='absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/75 to-transparent opacity-0 group-hover:opacity-100 transition-opacity'>

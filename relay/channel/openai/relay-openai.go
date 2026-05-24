@@ -580,6 +580,7 @@ func OpenaiHandlerWithUsage(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 		} else {
 			responseBody = rewrittenBody
 		}
+		service.MarkImageRecordSuccess(c, responseBody)
 	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 

@@ -43,6 +43,11 @@ const defaultDrawingInputs = {
   'image_storage_setting.r2_secret': '',
   'image_storage_setting.r2_object_prefix': 'generated-images/',
   'image_storage_setting.r2_url_expire_hours': 24,
+  'image_storage_setting.edit_reference_image_compression_enabled': true,
+  'image_storage_setting.edit_reference_image_compress_threshold_mb': 8,
+  'image_storage_setting.edit_reference_image_target_size_mb': 8,
+  'image_storage_setting.edit_reference_image_max_side': 2048,
+  'image_storage_setting.edit_reference_image_min_jpeg_quality': 65,
 };
 
 export default function SettingsDrawing(props) {
@@ -213,6 +218,103 @@ export default function SettingsDrawing(props) {
                     setInputs({
                       ...inputs,
                       MjActionCheckSuccessEnabled: value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row>
+              <Button size='default' onClick={onSubmit}>
+                {t('保存绘图设置')}
+              </Button>
+            </Row>
+          </Form.Section>
+
+          <Form.Section text={t('图片编辑参考图压缩')}>
+            <Banner
+              type='info'
+              description={t(
+                '开启后，edits 接口会在转发上游前自动压缩过大的参考图；用户仍可在图像生成页面为单次请求关闭自动压缩。',
+              )}
+              style={{ marginBottom: 16 }}
+            />
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'image_storage_setting.edit_reference_image_compression_enabled'}
+                  label={t('启用参考图自动压缩')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.edit_reference_image_compression_enabled':
+                        value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'image_storage_setting.edit_reference_image_compress_threshold_mb'}
+                  label={t('触发压缩阈值（MB）')}
+                  min={1}
+                  max={100}
+                  extraText={t('单张参考图大于该值时才会压缩')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.edit_reference_image_compress_threshold_mb':
+                        value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'image_storage_setting.edit_reference_image_target_size_mb'}
+                  label={t('目标大小（MB）')}
+                  min={1}
+                  max={100}
+                  extraText={t('压缩后尽量不超过该大小')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.edit_reference_image_target_size_mb':
+                        value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'image_storage_setting.edit_reference_image_max_side'}
+                  label={t('最大边长（像素）')}
+                  min={256}
+                  max={8192}
+                  extraText={t('超过该边长会等比缩小')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.edit_reference_image_max_side':
+                        value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.InputNumber
+                  field={'image_storage_setting.edit_reference_image_min_jpeg_quality'}
+                  label={t('最低 JPEG 质量')}
+                  min={1}
+                  max={92}
+                  extraText={t('越低越小，但画质损失越明显')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.edit_reference_image_min_jpeg_quality':
+                        value,
                     })
                   }
                 />

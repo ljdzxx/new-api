@@ -27,6 +27,7 @@ func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {
 		return
 	}
 	LogImageRelayResponseTrace(c, "client", src, data)
+	MarkImageRecordSuccess(c, data)
 
 	body := io.NopCloser(bytes.NewBuffer(data))
 

@@ -449,16 +449,20 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 			mf = c.Request.MultipartForm
 		}
 		service.LogImageRelayMultipartRequestTrace(c, "converted multipart", mf)
+		autoCompressReferenceImage := true
 
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || key == service.ImageEditAutoCompressField {
 					continue
 				}
 				for _, value := range values {
 					writer.WriteField(key, value)
 				}
+			}
+			if values := mf.Value[service.ImageEditAutoCompressField]; len(values) > 0 {
+				autoCompressReferenceImage = service.ShouldAutoCompressImageEditReference(values[0])
 			}
 		}
 
@@ -500,25 +504,33 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 					fieldName = "image[]"
 				}
 
-				// Determine MIME type based on file extension
-				mimeType := detectImageMimeType(fileHeader.Filename)
+				fileBytes, err := io.ReadAll(file)
+				_ = file.Close()
+				if err != nil {
+					return nil, fmt.Errorf("read image file failed for image %d: %w", i, err)
+				}
+
+				compressed, err := service.CompressImageEditReferenceIfNeeded(fileBytes, fileHeader.Filename, fileHeader.Header.Get("Content-Type"), autoCompressReferenceImage)
+				if err != nil {
+					return nil, fmt.Errorf("compress image file failed for image %d: %w", i, err)
+				}
+				if compressed.Compressed {
+					logger.LogInfo(c, fmt.Sprintf("[image edit] compressed reference image: index=%d filename=%s original=%d compressed=%d quality=%d size=%dx%d", i, fileHeader.Filename, compressed.OriginalLen, len(compressed.Data), compressed.Quality, compressed.Width, compressed.Height))
+				}
 
 				// Create a form file with the appropriate content type
 				h := make(textproto.MIMEHeader)
-				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileHeader.Filename))
-				h.Set("Content-Type", mimeType)
+				h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, compressed.Filename))
+				h.Set("Content-Type", compressed.ContentType)
 
 				part, err := writer.CreatePart(h)
 				if err != nil {
 					return nil, fmt.Errorf("create form part failed for image %d: %w", i, err)
 				}
 
-				if _, err := io.Copy(part, file); err != nil {
+				if _, err := io.Copy(part, bytes.NewReader(compressed.Data)); err != nil {
 					return nil, fmt.Errorf("copy file failed for image %d: %w", i, err)
 				}
-
-				// 复制完立即关闭，避免在循环内使用 defer 占用资源
-				_ = file.Close()
 			}
 
 			// Handle mask file if present

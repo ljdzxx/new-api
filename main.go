@@ -238,8 +238,13 @@ func InjectGoogleAnalytics() {
 func InitResources() error {
 	// Initialize resources here if needed
 	// This is a placeholder function for future resource initialization
-	err := godotenv.Load(".env")
+	common.ParseCommandLineFlags()
+	configFilePath := common.GetConfigFilePath()
+	err := godotenv.Load(configFilePath)
 	if err != nil {
+		if common.IsConfigFileSet() {
+			return fmt.Errorf("failed to load config file %s: %w", configFilePath, err)
+		}
 		if common.DebugEnabled {
 			common.SysLog("No .env file found, using default environment variables. If needed, please create a .env file and set the relevant variables.")
 		}

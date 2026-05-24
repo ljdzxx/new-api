@@ -334,6 +334,14 @@ func SetApiRouter(router *gin.Engine) {
 			taskRoute.GET("/", middleware.AdminAuth(), controller.GetAllTask)
 		}
 
+		imageRecordRoute := apiRouter.Group("/image_records")
+		imageRecordRoute.Use(middleware.UserAuth())
+		{
+			imageRecordRoute.GET("/self", controller.GetUserImageRecords)
+			imageRecordRoute.GET("/:record_id", controller.GetUserImageRecord)
+			imageRecordRoute.DELETE("/:record_id", controller.DeleteUserImageRecord)
+		}
+
 		vendorRoute := apiRouter.Group("/vendors")
 		vendorRoute.Use(middleware.AdminAuth())
 		{

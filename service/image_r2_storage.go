@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/gin-gonic/gin"
 )
+
+const imageR2UploadTimeout = 5 * time.Minute
 
 func StoreImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, responseBody []byte) ([]byte, error) {
 	setting := image_storage_setting.GetImageStorageSetting()
@@ -70,7 +73,9 @@ func StoreImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, response
 
 		contentType := http.DetectContentType(imageBytes)
 		objectKey := buildR2ImageObjectKey(setting.ObjectPrefix(), requestIDForObjectKey(c, info), userIDForObjectKey(c, info), i, contentType)
-		url, err := uploadImageToR2(c.Request.Context(), setting, objectKey, imageBytes, contentType)
+		uploadCtx, cancel := context.WithTimeout(context.Background(), imageR2UploadTimeout)
+		url, err := uploadImageToR2(uploadCtx, setting, objectKey, imageBytes, contentType)
+		cancel()
 		if err != nil {
 			return nil, err
 		}
@@ -194,21 +199,12 @@ func imageExtension(contentType string) string {
 }
 
 func uploadImageToR2(ctx context.Context, setting *image_storage_setting.ImageStorageSetting, objectKey string, data []byte, contentType string) (string, error) {
-	endpoint := setting.Endpoint()
-	if missing := missingR2ImageStorageSettings(setting, endpoint); len(missing) > 0 {
-		return "", fmt.Errorf("R2 image storage is enabled but required settings are incomplete: missing %s", strings.Join(missing, ", "))
+	client, err := newR2S3Client(setting)
+	if err != nil {
+		return "", err
 	}
 
-	cfg := aws.Config{
-		Region:      "auto",
-		Credentials: credentials.NewStaticCredentialsProvider(setting.R2AccessKeyID, setting.R2SecretAccessKey, ""),
-	}
-	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(endpoint)
-		o.UsePathStyle = true
-	})
-
-	_, err := client.PutObject(ctx, &s3.PutObjectInput{
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(setting.R2Bucket),
 		Key:         aws.String(objectKey),
 		Body:        bytes.NewReader(data),
@@ -229,6 +225,100 @@ func uploadImageToR2(ctx context.Context, setting *image_storage_setting.ImageSt
 		return "", fmt.Errorf("presign R2 image URL failed: %w", err)
 	}
 	return presigned.URL, nil
+}
+
+func newR2S3Client(setting *image_storage_setting.ImageStorageSetting) (*s3.Client, error) {
+	endpoint := setting.Endpoint()
+	if missing := missingR2ImageStorageSettings(setting, endpoint); len(missing) > 0 {
+		return nil, fmt.Errorf("R2 image storage is enabled but required settings are incomplete: missing %s", strings.Join(missing, ", "))
+	}
+
+	cfg := aws.Config{
+		Region:      "auto",
+		Credentials: credentials.NewStaticCredentialsProvider(setting.R2AccessKeyID, setting.R2SecretAccessKey, ""),
+	}
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(endpoint)
+		o.UsePathStyle = true
+	})
+	return client, nil
+}
+
+func DeleteR2ImagesByResponseBody(ctx context.Context, responseBody []byte) (int, error) {
+	setting := image_storage_setting.GetImageStorageSetting()
+	if setting == nil || !setting.R2Enabled || len(responseBody) == 0 {
+		return 0, nil
+	}
+
+	var root map[string]json.RawMessage
+	if err := common.Unmarshal(responseBody, &root); err != nil {
+		return 0, fmt.Errorf("parse image record result failed: %w", err)
+	}
+	dataRaw, ok := root["data"]
+	if !ok || len(dataRaw) == 0 {
+		return 0, nil
+	}
+
+	var imageData []map[string]json.RawMessage
+	if err := common.Unmarshal(dataRaw, &imageData); err != nil {
+		return 0, fmt.Errorf("parse image record data failed: %w", err)
+	}
+	keys := make([]string, 0, len(imageData))
+	for _, item := range imageData {
+		objectKey := r2ObjectKeyFromURL(jsonStringValue(item["url"]), setting)
+		if objectKey != "" {
+			keys = append(keys, objectKey)
+		}
+	}
+	if len(keys) == 0 {
+		return 0, nil
+	}
+
+	client, err := newR2S3Client(setting)
+	if err != nil {
+		return 0, err
+	}
+
+	deleted := 0
+	for _, key := range keys {
+		_, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(setting.R2Bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			return deleted, fmt.Errorf("delete image from R2 failed: key=%s: %w", key, err)
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
+func r2ObjectKeyFromURL(rawURL string, setting *image_storage_setting.ImageStorageSetting) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" || setting == nil {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed == nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	endpoint, err := url.Parse(setting.Endpoint())
+	if err != nil || endpoint == nil || !strings.EqualFold(parsed.Host, endpoint.Host) {
+		return ""
+	}
+	cleanPath := strings.TrimLeft(parsed.EscapedPath(), "/")
+	if cleanPath == "" {
+		return ""
+	}
+	parts := strings.SplitN(cleanPath, "/", 2)
+	if len(parts) != 2 || parts[0] != setting.R2Bucket {
+		return ""
+	}
+	objectKey, err := url.PathUnescape(parts[1])
+	if err != nil {
+		return ""
+	}
+	return strings.TrimLeft(objectKey, "/")
 }
 
 func missingR2ImageStorageSettings(setting *image_storage_setting.ImageStorageSetting, endpoint string) []string {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -19,17 +20,38 @@ var (
 	PrintVersion = flag.Bool("version", false, "print version and exit")
 	PrintHelp    = flag.Bool("help", false, "print help and exit")
 	LogDir       = flag.String("log-dir", "./logs", "specify the log directory")
+	ConfigFile   = flag.String("config", "", "specify the config file path")
+
+	parseFlagsOnce sync.Once
 )
 
 func printHelp() {
 	fmt.Println("NewAPI(Based OneAPI) " + Version + " - The next-generation LLM gateway and AI asset management system supports multiple languages.")
 	fmt.Println("Original Project: OneAPI by JustSong - https://github.com/songquanpeng/one-api")
 	fmt.Println("Maintainer: QuantumNous - https://github.com/QuantumNous/new-api")
-	fmt.Println("Usage: newapi [--port <port>] [--log-dir <log directory>] [--version] [--help]")
+	fmt.Println("Usage: newapi [--port <port>] [--log-dir <log directory>] [--config <config file path>] [--version] [--help]")
+}
+
+func ParseCommandLineFlags() {
+	parseFlagsOnce.Do(func() {
+		flag.Parse()
+	})
+}
+
+func GetConfigFilePath() string {
+	configFile := strings.TrimSpace(*ConfigFile)
+	if configFile == "" {
+		return ".env"
+	}
+	return configFile
+}
+
+func IsConfigFileSet() bool {
+	return strings.TrimSpace(*ConfigFile) != ""
 }
 
 func InitEnv() {
-	flag.Parse()
+	ParseCommandLineFlags()
 
 	envVersion := os.Getenv("VERSION")
 	if envVersion != "" {
