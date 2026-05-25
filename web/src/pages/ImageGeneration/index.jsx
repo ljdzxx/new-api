@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Banner,
@@ -46,7 +46,6 @@ import {
 } from 'lucide-react';
 import { API, showError } from '../../helpers';
 import { fetchTokenKey, getServerAddress } from '../../helpers/token';
-import { StatusContext } from '../../context/Status';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -129,14 +128,6 @@ function fileToPreview(file) {
   };
 }
 
-function getCachedStatus() {
-  try {
-    return JSON.parse(localStorage.getItem('status') || '{}');
-  } catch {
-    return {};
-  }
-}
-
 function normalizePositiveNumber(value, fallback) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) && numericValue > 0
@@ -146,8 +137,11 @@ function normalizePositiveNumber(value, fallback) {
 
 function getReferenceImageCompressionConfig(status) {
   const raw = status?.image_reference_compression || {};
-  const fallback = getCachedStatus()?.image_reference_compression || {};
-  const source = Object.keys(raw).length > 0 ? raw : fallback;
+  const source = raw;
+  const sourceName =
+    Object.keys(raw).length > 0
+      ? status?._imageReferenceCompressionSourceName || 'status-context'
+      : 'default';
   const minJpegQuality = normalizePositiveNumber(
     source.min_jpeg_quality,
     DEFAULT_REFERENCE_IMAGE_COMPRESSION.minJpegQuality,
@@ -171,7 +165,24 @@ function getReferenceImageCompressionConfig(status) {
       DEFAULT_REFERENCE_IMAGE_COMPRESSION.maxSide,
     ),
     minJpegQuality: Math.min(92, Math.max(1, minJpegQuality)),
+    sourceName,
+    raw: source,
   };
+}
+
+function getImageEditsBaseUrl(status) {
+  const fromStatus = status?.image_edits_base_url;
+  if (typeof fromStatus === 'string') return fromStatus.trim();
+  return '';
+}
+
+function buildImageEditsEndpoint(baseUrl) {
+  const cleanBaseUrl = String(baseUrl || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (!cleanBaseUrl) return '/v1/images/edits';
+  if (cleanBaseUrl.endsWith('/v1')) return `${cleanBaseUrl}/images/edits`;
+  return `${cleanBaseUrl}/v1/images/edits`;
 }
 
 function formatFileSize(bytes) {
@@ -215,7 +226,31 @@ async function createBitmapFromFile(file) {
 async function compressReferenceImageFile(file, config) {
   const thresholdBytes = config.thresholdMb * 1024 * 1024;
   const targetBytes = config.targetSizeMb * 1024 * 1024;
+  console.info('[image compression] start', {
+    name: file.name,
+    type: file.type,
+    originalSize: file.size,
+    originalSizeText: formatFileSize(file.size),
+    config: {
+      enabled: config.enabled,
+      thresholdMb: config.thresholdMb,
+      targetSizeMb: config.targetSizeMb,
+      maxSide: config.maxSide,
+      minJpegQuality: config.minJpegQuality,
+      sourceName: config.sourceName,
+      raw: config.raw,
+    },
+  });
   if (!config.enabled || file.size <= thresholdBytes) {
+    console.info('[image compression] skipped', {
+      name: file.name,
+      reason: !config.enabled
+        ? 'disabled by system/user setting'
+        : 'file size is not greater than threshold',
+      originalSize: file.size,
+      thresholdBytes,
+      thresholdText: formatFileSize(thresholdBytes),
+    });
     return {
       file,
       compressed: false,
@@ -225,31 +260,60 @@ async function compressReferenceImageFile(file, config) {
   }
 
   const bitmap = await createBitmapFromFile(file);
+  const originalWidth = bitmap.width;
+  const originalHeight = bitmap.height;
   const scale = Math.min(
     1,
-    config.maxSide / Math.max(bitmap.width, bitmap.height),
+    config.maxSide / Math.max(originalWidth, originalHeight),
   );
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const width = Math.max(1, Math.round(originalWidth * scale));
+  const height = Math.max(1, Math.round(originalHeight * scale));
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) {
+    throw new Error('无法创建 Canvas 2D 上下文');
+  }
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close?.();
+  console.info('[image compression] decoded and resized', {
+    name: file.name,
+    originalWidth,
+    originalHeight,
+    canvasWidth: width,
+    canvasHeight: height,
+    scale,
+  });
 
   const minQuality = config.minJpegQuality / 100;
   let low = minQuality;
   let high = MAX_JPEG_QUALITY;
   let bestBlob = await canvasToBlob(canvas, high);
+  console.info('[image compression] jpeg encode initial', {
+    name: file.name,
+    quality: high,
+    size: bestBlob.size,
+    sizeText: formatFileSize(bestBlob.size),
+    targetBytes,
+    targetText: formatFileSize(targetBytes),
+  });
 
   if (bestBlob.size > targetBytes) {
     bestBlob = null;
     for (let i = 0; i < 7; i += 1) {
       const mid = (low + high) / 2;
       const blob = await canvasToBlob(canvas, mid);
+      console.info('[image compression] jpeg encode attempt', {
+        name: file.name,
+        attempt: i + 1,
+        quality: Number(mid.toFixed(4)),
+        size: blob.size,
+        sizeText: formatFileSize(blob.size),
+        accepted: blob.size <= targetBytes,
+      });
       if (blob.size <= targetBytes) {
         bestBlob = blob;
         low = mid;
@@ -259,10 +323,26 @@ async function compressReferenceImageFile(file, config) {
     }
     if (!bestBlob) {
       bestBlob = await canvasToBlob(canvas, minQuality);
+      console.info('[image compression] jpeg encode min quality fallback', {
+        name: file.name,
+        quality: minQuality,
+        size: bestBlob.size,
+        sizeText: formatFileSize(bestBlob.size),
+      });
     }
   }
 
   if (bestBlob.size >= file.size) {
+    console.info(
+      '[image compression] kept original because compressed is not smaller',
+      {
+        name: file.name,
+        originalSize: file.size,
+        compressedSize: bestBlob.size,
+        originalSizeText: formatFileSize(file.size),
+        compressedSizeText: formatFileSize(bestBlob.size),
+      },
+    );
     return {
       file,
       compressed: false,
@@ -279,6 +359,14 @@ async function compressReferenceImageFile(file, config) {
       lastModified: Date.now(),
     },
   );
+  console.info('[image compression] success', {
+    name: file.name,
+    outputName: compressedFile.name,
+    originalSize: file.size,
+    compressedSize: compressedFile.size,
+    originalSizeText: formatFileSize(file.size),
+    compressedSizeText: formatFileSize(compressedFile.size),
+  });
   return {
     file: compressedFile,
     compressed: true,
@@ -292,28 +380,58 @@ async function prepareReferenceImageFiles(items, shouldCompress, config) {
     ...config,
     enabled: shouldCompress && config.enabled,
   };
+  console.info('[image compression] prepare reference images', {
+    shouldCompress,
+    systemEnabled: config.enabled,
+    effectiveEnabled: effectiveConfig.enabled,
+    fileCount: items.length,
+    config: effectiveConfig,
+  });
   const results = [];
   for (const item of items) {
     try {
-      results.push(
-        await compressReferenceImageFile(item.file, effectiveConfig),
+      const result = await compressReferenceImageFile(
+        item.file,
+        effectiveConfig,
       );
-    } catch (error) {
-      console.warn('[image compression] keep original reference image:', error);
-      results.push({
-        file: item.file,
-        compressed: false,
-        originalSize: item.file.size,
-        finalSize: item.file.size,
+      console.info('[image compression] file result', {
+        name: item.file.name,
+        compressed: result.compressed,
+        originalSize: result.originalSize,
+        finalSize: result.finalSize,
+        originalSizeText: formatFileSize(result.originalSize),
+        finalSizeText: formatFileSize(result.finalSize),
+        outputName: result.file.name,
+        outputType: result.file.type,
       });
+      results.push(result);
+    } catch (error) {
+      console.error('[image compression] failed', {
+        name: item.file.name,
+        type: item.file.type,
+        size: item.file.size,
+        sizeText: formatFileSize(item.file.size),
+        error,
+        message: error?.message,
+        stack: error?.stack,
+      });
+      throw error;
     }
   }
-  return {
+  const summary = {
     files: results.map((item) => item.file),
     compressedCount: results.filter((item) => item.compressed).length,
     originalBytes: results.reduce((sum, item) => sum + item.originalSize, 0),
     finalBytes: results.reduce((sum, item) => sum + item.finalSize, 0),
   };
+  console.info('[image compression] summary', {
+    compressedCount: summary.compressedCount,
+    originalBytes: summary.originalBytes,
+    finalBytes: summary.finalBytes,
+    originalText: formatFileSize(summary.originalBytes),
+    finalText: formatFileSize(summary.finalBytes),
+  });
+  return summary;
 }
 
 function buildImageUrl(item) {
@@ -333,20 +451,56 @@ function createImageRecordId() {
   return `img_${String(random).replace(/[^a-zA-Z0-9_-]/g, '')}`;
 }
 
-function downloadImage(src, index) {
-  if (!src) return;
+function triggerBrowserDownload(blobOrUrl, filename) {
   const link = document.createElement('a');
-  link.href = src;
-  link.download = getImageFilename(index);
+  const objectUrl =
+    blobOrUrl instanceof Blob ? URL.createObjectURL(blobOrUrl) : blobOrUrl;
+  link.href = objectUrl;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  if (blobOrUrl instanceof Blob) {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
+}
+
+async function downloadImage(item, index) {
+  const src = buildImageUrl(item);
+  if (!src) return;
+  const filename = getImageFilename(index);
+  if (item?._record_id) {
+    const res = await API.get(
+      `/api/image_records/${item._record_id}/download`,
+      {
+        params: { index: item._record_index || 0 },
+        responseType: 'blob',
+        skipErrorHandler: true,
+        disableDuplicate: true,
+      },
+    );
+    triggerBrowserDownload(res.data, filename);
+    return;
+  }
+
+  if (src.startsWith('data:')) {
+    triggerBrowserDownload(src, filename);
+    return;
+  }
+
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error(`download failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  triggerBrowserDownload(blob, filename);
 }
 
 function attachRecordToImages(imageData, recordId) {
-  return imageData.map((item) => ({
+  return imageData.map((item, index) => ({
     ...item,
     _record_id: recordId,
+    _record_index: index,
   }));
 }
 
@@ -433,7 +587,6 @@ function shouldSuggestImageRecordRefresh(error) {
 
 const ImageGeneration = () => {
   const { t } = useTranslation();
-  const [statusState] = useContext(StatusContext);
   const [tokens, setTokens] = useState([]);
   const [tokensLoading, setTokensLoading] = useState(false);
   const [selectedTokenId, setSelectedTokenId] = useState('');
@@ -442,6 +595,8 @@ const ImageGeneration = () => {
   const [quality, setQuality] = useState('auto');
   const [autoCompressReferenceImages, setAutoCompressReferenceImages] =
     useState(true);
+  const [directCompressionConfig, setDirectCompressionConfig] = useState(null);
+  const [directImageEditsBaseUrl, setDirectImageEditsBaseUrl] = useState(null);
   const [referenceImages, setReferenceImages] = useState([]);
   const [results, setResults] = useState([]);
   const [responseMeta, setResponseMeta] = useState(null);
@@ -457,9 +612,23 @@ const ImageGeneration = () => {
   const referenceImagesRef = useRef([]);
 
   const serverAddress = useMemo(() => getServerAddress(), []);
-  const referenceImageCompressionConfig = useMemo(
-    () => getReferenceImageCompressionConfig(statusState?.status),
-    [statusState?.status],
+  const referenceImageCompressionConfig = useMemo(() => {
+    const status =
+      directCompressionConfig !== null
+        ? {
+            _imageReferenceCompressionSourceName: 'api-image-config',
+            image_reference_compression: directCompressionConfig,
+          }
+        : undefined;
+    return getReferenceImageCompressionConfig(status);
+  }, [directCompressionConfig]);
+  const imageEditsBaseUrl = useMemo(() => {
+    if (directImageEditsBaseUrl !== null) return directImageEditsBaseUrl;
+    return '';
+  }, [directImageEditsBaseUrl]);
+  const imageEditsEndpoint = useMemo(
+    () => buildImageEditsEndpoint(imageEditsBaseUrl),
+    [imageEditsBaseUrl],
   );
   const usableTokens = useMemo(
     () => tokens.filter((token) => tokenSupportsModel(token, IMAGE_MODEL)),
@@ -511,6 +680,63 @@ const ImageGeneration = () => {
   useEffect(() => {
     loadTokens();
   }, []);
+
+  useEffect(() => {
+    let canceled = false;
+    const loadCompressionConfig = async () => {
+      try {
+        const res = await API.get('/api/image/config', {
+          disableDuplicate: true,
+          skipErrorHandler: true,
+        });
+        const { success, data } = res.data || {};
+        if (canceled) return;
+        if (success) {
+          setDirectImageEditsBaseUrl(
+            typeof data.image_edits_base_url === 'string'
+              ? data.image_edits_base_url.trim()
+              : '',
+          );
+        }
+        if (success && data?.image_reference_compression) {
+          setDirectCompressionConfig(data.image_reference_compression);
+          console.info(
+            '[image compression] loaded config from /api/image/config',
+            {
+              raw: data.image_reference_compression,
+              imageEditsBaseUrl: data.image_edits_base_url || '',
+            },
+          );
+        } else {
+          console.warn(
+            '[image compression] /api/image/config has no compression config',
+            {
+              success,
+              data,
+            },
+          );
+        }
+      } catch (error) {
+        if (!canceled) {
+          console.error('[image compression] load /api/image/config failed', {
+            error,
+            message: error?.message,
+            response: error?.response?.data,
+          });
+        }
+      }
+    };
+    loadCompressionConfig();
+    return () => {
+      canceled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    console.info('[image compression] effective config', {
+      config: referenceImageCompressionConfig,
+    });
+  }, [referenceImageCompressionConfig]);
 
   useEffect(() => {
     referenceImagesRef.current = referenceImages;
@@ -603,7 +829,7 @@ const ImageGeneration = () => {
     try {
       const rawKey = await fetchTokenKey(selectedTokenId);
       const endpoint = hasReferenceImages
-        ? '/v1/images/edits'
+        ? imageEditsEndpoint
         : '/v1/images/generations';
       const payload = hasReferenceImages
         ? await buildFormPayload()
@@ -619,6 +845,13 @@ const ImageGeneration = () => {
             after: formatFileSize(payload.compressionSummary.finalBytes),
           }),
         );
+      }
+      if (hasReferenceImages) {
+        console.info('[image edits] request endpoint', {
+          endpoint,
+          configuredBaseUrl: imageEditsBaseUrl || '',
+          useSameOrigin: !imageEditsBaseUrl,
+        });
       }
 
       const res = await API.post(
@@ -835,7 +1068,11 @@ const ImageGeneration = () => {
           {t('请求示例<带参考图>')} - edits
         </Title>
         <pre className='px-4 py-3 rounded-lg bg-[var(--semi-color-fill-0)] text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed'>
-          {`curl -X POST '${serverAddress}/v1/images/edits' \\
+          {`curl -X POST '${
+            imageEditsBaseUrl
+              ? buildImageEditsEndpoint(imageEditsBaseUrl)
+              : `${serverAddress}/v1/images/edits`
+          }' \\
   -H 'Authorization: Bearer YOUR_API_KEY' \\
   -F 'model=${IMAGE_MODEL}' \\
   -F 'prompt=a cinematic neon city in heavy rain' \\
@@ -1228,9 +1465,23 @@ const ImageGeneration = () => {
                               type='primary'
                               className='!bg-black/60 !border-0 hover:!bg-black/80 !rounded-full'
                               icon={<DownloadIcon />}
-                              onClick={(event) => {
+                              onClick={async (event) => {
                                 event.stopPropagation();
-                                downloadImage(src, index);
+                                try {
+                                  await downloadImage(item, index);
+                                } catch (error) {
+                                  console.error(
+                                    '[image download] failed',
+                                    error,
+                                  );
+                                  Toast.error({
+                                    content: getReadableError(
+                                      error,
+                                      t('下载失败'),
+                                    ),
+                                    duration: 0,
+                                  });
+                                }
                               }}
                             />
                           </Tooltip>

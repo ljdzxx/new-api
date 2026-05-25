@@ -288,13 +288,14 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse) (*
 		}
 
 		for _, toolCall := range choice.Message.ParseToolCalls() {
+			arguments, _ := common.Marshal(toolCall.Function.Arguments)
 			output = append(output, dto.ResponsesOutput{
 				Type:      "function_call",
 				ID:        toolCall.ID,
 				CallId:    toolCall.ID,
 				Status:    "completed",
 				Name:      toolCall.Function.Name,
-				Arguments: toolCall.Function.Arguments,
+				Arguments: json.RawMessage(arguments),
 			})
 		}
 	}

@@ -37,6 +37,12 @@ const defaultDrawingInputs = {
   'image_storage_setting.r2_secret': '',
   'image_storage_setting.r2_object_prefix': 'generated-images/',
   'image_storage_setting.r2_url_expire_hours': 24,
+  'image_storage_setting.image_edits_base_url': '',
+  'image_storage_setting.edit_reference_image_compression_enabled': true,
+  'image_storage_setting.edit_reference_image_compress_threshold_mb': 8,
+  'image_storage_setting.edit_reference_image_target_size_mb': 8,
+  'image_storage_setting.edit_reference_image_max_side': 2048,
+  'image_storage_setting.edit_reference_image_min_jpeg_quality': 65,
 };
 
 const DrawingSetting = () => {
@@ -50,7 +56,10 @@ const DrawingSetting = () => {
     if (success) {
       let newInputs = { ...defaultDrawingInputs };
       data.forEach((item) => {
-        if (item.key.endsWith('Enabled') || typeof inputs[item.key] === 'boolean') {
+        if (
+          item.key.endsWith('Enabled') ||
+          typeof inputs[item.key] === 'boolean'
+        ) {
           newInputs[item.key] = toBoolean(item.value);
         } else {
           newInputs[item.key] = item.value;

@@ -43,6 +43,7 @@ const defaultDrawingInputs = {
   'image_storage_setting.r2_secret': '',
   'image_storage_setting.r2_object_prefix': 'generated-images/',
   'image_storage_setting.r2_url_expire_hours': 24,
+  'image_storage_setting.image_edits_base_url': '',
   'image_storage_setting.edit_reference_image_compression_enabled': true,
   'image_storage_setting.edit_reference_image_compress_threshold_mb': 8,
   'image_storage_setting.edit_reference_image_target_size_mb': 8,
@@ -60,21 +61,26 @@ export default function SettingsDrawing(props) {
   function onSubmit() {
     const updateArray = compareObjects(inputs, inputsRow);
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
-    const requestQueue = updateArray.map((item) => {
-      if (item.key === 'image_storage_setting.r2_secret' && !inputs[item.key]) {
-        return null;
-      }
-      let value = '';
-      if (typeof inputs[item.key] === 'boolean') {
-        value = String(inputs[item.key]);
-      } else {
-        value = String(inputs[item.key] ?? '');
-      }
-      return API.put('/api/option/', {
-        key: item.key,
-        value,
-      });
-    }).filter(Boolean);
+    const requestQueue = updateArray
+      .map((item) => {
+        if (
+          item.key === 'image_storage_setting.r2_secret' &&
+          !inputs[item.key]
+        ) {
+          return null;
+        }
+        let value = '';
+        if (typeof inputs[item.key] === 'boolean') {
+          value = String(inputs[item.key]);
+        } else {
+          value = String(inputs[item.key] ?? '');
+        }
+        return API.put('/api/option/', {
+          key: item.key,
+          value,
+        });
+      })
+      .filter(Boolean);
     setLoading(true);
     Promise.all(requestQueue)
       .then((res) => {
@@ -230,6 +236,39 @@ export default function SettingsDrawing(props) {
             </Row>
           </Form.Section>
 
+          <Form.Section text={t('图片编辑直连域名')}>
+            <Banner
+              type='info'
+              description={t(
+                '用于图像生成页面的 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。',
+              )}
+              style={{ marginBottom: 16 }}
+            />
+            <Row gutter={16}>
+              <Col xs={24} sm={24} md={16} lg={16} xl={16}>
+                <Form.Input
+                  field={'image_storage_setting.image_edits_base_url'}
+                  label={t('edits 接口直连域名')}
+                  placeholder='https://image-api.example.com'
+                  extraText={t(
+                    '填写域名即可，系统会自动拼接 /v1/images/edits；留空使用同源 /v1/images/edits',
+                  )}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.image_edits_base_url': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row>
+              <Button size='default' onClick={onSubmit}>
+                {t('保存绘图设置')}
+              </Button>
+            </Row>
+          </Form.Section>
+
           <Form.Section text={t('图片编辑参考图压缩')}>
             <Banner
               type='info'
@@ -241,7 +280,9 @@ export default function SettingsDrawing(props) {
             <Row gutter={16}>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.Switch
-                  field={'image_storage_setting.edit_reference_image_compression_enabled'}
+                  field={
+                    'image_storage_setting.edit_reference_image_compression_enabled'
+                  }
                   label={t('启用参考图自动压缩')}
                   size='default'
                   checkedText='｜'
@@ -257,7 +298,9 @@ export default function SettingsDrawing(props) {
               </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.InputNumber
-                  field={'image_storage_setting.edit_reference_image_compress_threshold_mb'}
+                  field={
+                    'image_storage_setting.edit_reference_image_compress_threshold_mb'
+                  }
                   label={t('触发压缩阈值（MB）')}
                   min={1}
                   max={100}
@@ -273,7 +316,9 @@ export default function SettingsDrawing(props) {
               </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.InputNumber
-                  field={'image_storage_setting.edit_reference_image_target_size_mb'}
+                  field={
+                    'image_storage_setting.edit_reference_image_target_size_mb'
+                  }
                   label={t('目标大小（MB）')}
                   min={1}
                   max={100}
@@ -305,7 +350,9 @@ export default function SettingsDrawing(props) {
               </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.InputNumber
-                  field={'image_storage_setting.edit_reference_image_min_jpeg_quality'}
+                  field={
+                    'image_storage_setting.edit_reference_image_min_jpeg_quality'
+                  }
                   label={t('最低 JPEG 质量')}
                   min={1}
                   max={92}

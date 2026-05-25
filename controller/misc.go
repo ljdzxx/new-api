@@ -38,6 +38,24 @@ func TestStatus(c *gin.Context) {
 	return
 }
 
+func GetImageGenerationConfig(c *gin.Context) {
+	imageStorageSetting := image_storage_setting.GetImageStorageSetting()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data": gin.H{
+			"image_reference_compression": gin.H{
+				"enabled":          imageStorageSetting.EditReferenceImageCompressionEnabled,
+				"threshold_mb":     imageStorageSetting.EditReferenceImageCompressThresholdMB,
+				"target_size_mb":   imageStorageSetting.EditReferenceImageTargetSizeMB,
+				"max_side":         imageStorageSetting.EditReferenceImageMaxSideValue(),
+				"min_jpeg_quality": imageStorageSetting.EditReferenceImageMinJPEGQualityValue(),
+			},
+			"image_edits_base_url": strings.TrimSpace(imageStorageSetting.ImageEditsBaseURL),
+		},
+	})
+}
+
 func GetStatus(c *gin.Context) {
 
 	cs := console_setting.GetConsoleSetting()
@@ -46,7 +64,6 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
-	imageStorageSetting := image_storage_setting.GetImageStorageSetting()
 
 	data := gin.H{
 		"version":                     common.Version,
@@ -120,14 +137,7 @@ func GetStatus(c *gin.Context) {
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
-		"image_reference_compression": gin.H{
-			"enabled":          imageStorageSetting.EditReferenceImageCompressionEnabled,
-			"threshold_mb":     imageStorageSetting.EditReferenceImageCompressThresholdMB,
-			"target_size_mb":   imageStorageSetting.EditReferenceImageTargetSizeMB,
-			"max_side":         imageStorageSetting.EditReferenceImageMaxSideValue(),
-			"min_jpeg_quality": imageStorageSetting.EditReferenceImageMinJPEGQualityValue(),
-		},
-		"_qn": "new-api",
+		"_qn":                         "new-api",
 	}
 
 	// 根据启用状态注入可选内容

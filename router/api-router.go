@@ -21,6 +21,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
+		apiRouter.GET("/image/config", controller.GetImageGenerationConfig)
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
@@ -339,6 +340,7 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			imageRecordRoute.GET("/self", controller.GetUserImageRecords)
 			imageRecordRoute.GET("/:record_id", controller.GetUserImageRecord)
+			imageRecordRoute.GET("/:record_id/download", controller.DownloadUserImageRecordImage)
 			imageRecordRoute.DELETE("/:record_id", controller.DeleteUserImageRecord)
 		}
 
