@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
+	"github.com/QuantumNous/new-api/setting/image_storage_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
@@ -45,6 +46,7 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
+	imageStorageSetting := image_storage_setting.GetImageStorageSetting()
 
 	data := gin.H{
 		"version":                     common.Version,
@@ -118,7 +120,14 @@ func GetStatus(c *gin.Context) {
 		"user_agreement_enabled":      legalSetting.UserAgreement != "",
 		"privacy_policy_enabled":      legalSetting.PrivacyPolicy != "",
 		"checkin_enabled":             operation_setting.GetCheckinSetting().Enabled,
-		"_qn":                         "new-api",
+		"image_reference_compression": gin.H{
+			"enabled":          imageStorageSetting.EditReferenceImageCompressionEnabled,
+			"threshold_mb":     imageStorageSetting.EditReferenceImageCompressThresholdMB,
+			"target_size_mb":   imageStorageSetting.EditReferenceImageTargetSizeMB,
+			"max_side":         imageStorageSetting.EditReferenceImageMaxSideValue(),
+			"min_jpeg_quality": imageStorageSetting.EditReferenceImageMinJPEGQualityValue(),
+		},
+		"_qn": "new-api",
 	}
 
 	// 根据启用状态注入可选内容

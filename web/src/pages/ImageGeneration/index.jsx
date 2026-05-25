@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Banner,
@@ -46,12 +46,26 @@ import {
 } from 'lucide-react';
 import { API, showError } from '../../helpers';
 import { fetchTokenKey, getServerAddress } from '../../helpers/token';
+import { StatusContext } from '../../context/Status';
 
 const { Text, Title, Paragraph } = Typography;
 
 const IMAGE_MODEL = 'gpt-image-2';
 const DEFAULT_PROMPT = '';
 const FIXED_IMAGE_COUNT = 1;
+const REQUEST_ID_HEADER_NAMES = [
+  'x-oneapi-request-id',
+  'x-request-id',
+  'request-id',
+];
+const DEFAULT_REFERENCE_IMAGE_COMPRESSION = {
+  enabled: true,
+  thresholdMb: 8,
+  targetSizeMb: 8,
+  maxSide: 2048,
+  minJpegQuality: 65,
+};
+const MAX_JPEG_QUALITY = 0.92;
 
 const ZoomInIcon = () => (
   <svg
@@ -115,6 +129,193 @@ function fileToPreview(file) {
   };
 }
 
+function getCachedStatus() {
+  try {
+    return JSON.parse(localStorage.getItem('status') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function normalizePositiveNumber(value, fallback) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0
+    ? numericValue
+    : fallback;
+}
+
+function getReferenceImageCompressionConfig(status) {
+  const raw = status?.image_reference_compression || {};
+  const fallback = getCachedStatus()?.image_reference_compression || {};
+  const source = Object.keys(raw).length > 0 ? raw : fallback;
+  const minJpegQuality = normalizePositiveNumber(
+    source.min_jpeg_quality,
+    DEFAULT_REFERENCE_IMAGE_COMPRESSION.minJpegQuality,
+  );
+
+  return {
+    enabled:
+      source.enabled === undefined
+        ? DEFAULT_REFERENCE_IMAGE_COMPRESSION.enabled
+        : source.enabled === true,
+    thresholdMb: normalizePositiveNumber(
+      source.threshold_mb,
+      DEFAULT_REFERENCE_IMAGE_COMPRESSION.thresholdMb,
+    ),
+    targetSizeMb: normalizePositiveNumber(
+      source.target_size_mb,
+      DEFAULT_REFERENCE_IMAGE_COMPRESSION.targetSizeMb,
+    ),
+    maxSide: normalizePositiveNumber(
+      source.max_side,
+      DEFAULT_REFERENCE_IMAGE_COMPRESSION.maxSide,
+    ),
+    minJpegQuality: Math.min(92, Math.max(1, minJpegQuality)),
+  };
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getCompressedFileName(fileName) {
+  const cleanName = String(fileName || 'reference-image').replace(
+    /\.[^.]+$/,
+    '',
+  );
+  return `${cleanName || 'reference-image'}.jpg`;
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('图片压缩失败'));
+        }
+      },
+      'image/jpeg',
+      quality,
+    );
+  });
+}
+
+async function createBitmapFromFile(file) {
+  try {
+    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    return createImageBitmap(file);
+  }
+}
+
+async function compressReferenceImageFile(file, config) {
+  const thresholdBytes = config.thresholdMb * 1024 * 1024;
+  const targetBytes = config.targetSizeMb * 1024 * 1024;
+  if (!config.enabled || file.size <= thresholdBytes) {
+    return {
+      file,
+      compressed: false,
+      originalSize: file.size,
+      finalSize: file.size,
+    };
+  }
+
+  const bitmap = await createBitmapFromFile(file);
+  const scale = Math.min(
+    1,
+    config.maxSide / Math.max(bitmap.width, bitmap.height),
+  );
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close?.();
+
+  const minQuality = config.minJpegQuality / 100;
+  let low = minQuality;
+  let high = MAX_JPEG_QUALITY;
+  let bestBlob = await canvasToBlob(canvas, high);
+
+  if (bestBlob.size > targetBytes) {
+    bestBlob = null;
+    for (let i = 0; i < 7; i += 1) {
+      const mid = (low + high) / 2;
+      const blob = await canvasToBlob(canvas, mid);
+      if (blob.size <= targetBytes) {
+        bestBlob = blob;
+        low = mid;
+      } else {
+        high = mid;
+      }
+    }
+    if (!bestBlob) {
+      bestBlob = await canvasToBlob(canvas, minQuality);
+    }
+  }
+
+  if (bestBlob.size >= file.size) {
+    return {
+      file,
+      compressed: false,
+      originalSize: file.size,
+      finalSize: file.size,
+    };
+  }
+
+  const compressedFile = new File(
+    [bestBlob],
+    getCompressedFileName(file.name),
+    {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    },
+  );
+  return {
+    file: compressedFile,
+    compressed: true,
+    originalSize: file.size,
+    finalSize: compressedFile.size,
+  };
+}
+
+async function prepareReferenceImageFiles(items, shouldCompress, config) {
+  const effectiveConfig = {
+    ...config,
+    enabled: shouldCompress && config.enabled,
+  };
+  const results = [];
+  for (const item of items) {
+    try {
+      results.push(
+        await compressReferenceImageFile(item.file, effectiveConfig),
+      );
+    } catch (error) {
+      console.warn('[image compression] keep original reference image:', error);
+      results.push({
+        file: item.file,
+        compressed: false,
+        originalSize: item.file.size,
+        finalSize: item.file.size,
+      });
+    }
+  }
+  return {
+    files: results.map((item) => item.file),
+    compressedCount: results.filter((item) => item.compressed).length,
+    originalBytes: results.reduce((sum, item) => sum + item.originalSize, 0),
+    finalBytes: results.reduce((sum, item) => sum + item.finalSize, 0),
+  };
+}
+
 function buildImageUrl(item) {
   if (item?.b64_json) return `data:image/png;base64,${item.b64_json}`;
   return item?.url || '';
@@ -149,17 +350,90 @@ function attachRecordToImages(imageData, recordId) {
   }));
 }
 
-function getReadableError(error, fallback) {
+function parseMaybeJson(value) {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!text) return value;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return value;
+  }
+}
+
+function getResponseHeader(headers, name) {
+  if (!headers || !name) return '';
+  if (typeof headers.get === 'function') {
+    return headers.get(name) || headers.get(name.toLowerCase()) || '';
+  }
+  return headers[name] || headers[name.toLowerCase()] || '';
+}
+
+function extractRequestIdFromMessage(message) {
+  const match = String(message || '').match(/\(request id:\s*([^)]+)\)/i);
+  return match?.[1] || '';
+}
+
+function getRequestIdFromError(error, message) {
+  const data = parseMaybeJson(error?.response?.data);
+  const headers = error?.response?.headers;
+  const fromMessage = extractRequestIdFromMessage(message);
+  if (fromMessage) return fromMessage;
+  const fromBody =
+    data?.request_id ||
+    data?.requestId ||
+    data?.error?.request_id ||
+    data?.error?.requestId ||
+    '';
+  if (fromBody) return fromBody;
+  for (const headerName of REQUEST_ID_HEADER_NAMES) {
+    const value = getResponseHeader(headers, headerName);
+    if (value) return value;
+  }
+  return '';
+}
+
+function appendRequestId(message, requestId) {
+  if (!message || !requestId || extractRequestIdFromMessage(message)) {
+    return message;
+  }
+  return `${message} (request id: ${requestId})`;
+}
+
+function getBackendErrorMessage(error) {
+  const data = parseMaybeJson(error?.response?.data);
   return (
-    error?.response?.data?.error?.message ||
-    error?.response?.data?.message ||
-    error?.message ||
-    fallback
+    data?.error?.message ||
+    data?.message ||
+    data?.description ||
+    (typeof data?.error === 'string' ? data.error : '') ||
+    (typeof data === 'string' ? data : '') ||
+    ''
   );
+}
+
+function getReadableError(error, fallback) {
+  const rawMessage = getBackendErrorMessage(error);
+  const axiosMessage = error?.message || '';
+  const message =
+    rawMessage ||
+    (axiosMessage.startsWith('Request failed with status code')
+      ? ''
+      : axiosMessage) ||
+    fallback;
+  return appendRequestId(message, getRequestIdFromError(error, message));
+}
+
+function shouldSuggestImageRecordRefresh(error) {
+  const status = error?.response?.status;
+  if (getBackendErrorMessage(error) && status !== 524) return false;
+  if (!status) return true;
+  return status === 408 || status === 499 || status === 524;
 }
 
 const ImageGeneration = () => {
   const { t } = useTranslation();
+  const [statusState] = useContext(StatusContext);
   const [tokens, setTokens] = useState([]);
   const [tokensLoading, setTokensLoading] = useState(false);
   const [selectedTokenId, setSelectedTokenId] = useState('');
@@ -183,6 +457,10 @@ const ImageGeneration = () => {
   const referenceImagesRef = useRef([]);
 
   const serverAddress = useMemo(() => getServerAddress(), []);
+  const referenceImageCompressionConfig = useMemo(
+    () => getReferenceImageCompressionConfig(statusState?.status),
+    [statusState?.status],
+  );
   const usableTokens = useMemo(
     () => tokens.filter((token) => tokenSupportsModel(token, IMAGE_MODEL)),
     [tokens],
@@ -292,8 +570,13 @@ const ImageGeneration = () => {
     response_format: 'url',
   });
 
-  const buildFormPayload = () => {
+  const buildFormPayload = async () => {
     const formData = new FormData();
+    const compressionSummary = await prepareReferenceImageFiles(
+      referenceImages,
+      autoCompressReferenceImages,
+      referenceImageCompressionConfig,
+    );
     formData.append('model', IMAGE_MODEL);
     formData.append('prompt', prompt.trim());
     formData.append('size', size);
@@ -304,10 +587,10 @@ const ImageGeneration = () => {
       'auto_compress_reference_image',
       String(autoCompressReferenceImages),
     );
-    referenceImages.forEach((item) => {
-      formData.append('image[]', item.file);
+    compressionSummary.files.forEach((file) => {
+      formData.append('image[]', file);
     });
-    return formData;
+    return { formData, compressionSummary };
   };
 
   const handleGenerate = async () => {
@@ -323,17 +606,33 @@ const ImageGeneration = () => {
         ? '/v1/images/edits'
         : '/v1/images/generations';
       const payload = hasReferenceImages
-        ? buildFormPayload()
+        ? await buildFormPayload()
         : buildJsonPayload();
+      if (
+        hasReferenceImages &&
+        payload.compressionSummary?.compressedCount > 0
+      ) {
+        Toast.info(
+          t('已压缩 {{count}} 张参考图：{{before}} -> {{after}}', {
+            count: payload.compressionSummary.compressedCount,
+            before: formatFileSize(payload.compressionSummary.originalBytes),
+            after: formatFileSize(payload.compressionSummary.finalBytes),
+          }),
+        );
+      }
 
-      const res = await API.post(endpoint, payload, {
-        headers: {
-          Authorization: `Bearer sk-${rawKey}`,
-          'X-Newapi-Image-Record-Id': recordId,
+      const res = await API.post(
+        endpoint,
+        hasReferenceImages ? payload.formData : payload,
+        {
+          headers: {
+            Authorization: `Bearer sk-${rawKey}`,
+            'X-Newapi-Image-Record-Id': recordId,
+          },
+          //timeout: 120000,
+          skipErrorHandler: true,
         },
-        //timeout: 120000,
-        skipErrorHandler: true,
-      });
+      );
 
       const data = res.data || {};
       const imageData = Array.isArray(data.data) ? data.data : [];
@@ -357,8 +656,11 @@ const ImageGeneration = () => {
     } catch (error) {
       const message = getReadableError(error, t('生成失败'));
       setRecordStatus('IN_PROGRESS');
+      const refreshTip = shouldSuggestImageRecordRefresh(error)
+        ? `。${t('如果图片实际已生成，请稍后点击刷新结果查询生图记录。')}`
+        : '';
       Toast.error({
-        content: `${message}。${t('如果图片实际已生成，请稍后点击刷新结果查询生图记录。')}`,
+        content: `${message}${refreshTip}`,
         duration: 0,
       });
     } finally {
@@ -441,7 +743,9 @@ const ImageGeneration = () => {
     }
     Modal.confirm({
       title: t('确认删除'),
-      content: t('将永久删除这张图片、对应生图记录及其 R2 存储，删除后不可恢复。'),
+      content: t(
+        '将永久删除这张图片、对应生图记录及其 R2 存储，删除后不可恢复。',
+      ),
       okText: t('确认删除'),
       cancelText: t('取消'),
       okButtonProps: { type: 'danger' },
@@ -549,13 +853,13 @@ const ImageGeneration = () => {
           {t('注意事项')}
         </Title>
         <ul className='text-sm text-[var(--semi-color-text-2)] list-disc pl-4 flex flex-col gap-1'>
-          <li>{t('页面默认请求 URL 返回，后端可将 b64_json 结果转存为临时 URL。')}</li>
           <li>
-            {t('品质默认为 auto，由模型自行决定合适的生成质量。')}
+            {t('页面默认请求 URL 返回，后端可将 b64_json 结果转存为临时 URL。')}
           </li>
+          <li>{t('品质默认为 auto，由模型自行决定合适的生成质量。')}</li>
           <li>
             {t(
-              'edits 支持 auto_compress_reference_image 参数，默认为 true，用于自动压缩过大的参考图；该参数只在本项目后端生效，不会转发给上游。',
+              'edits 支持 auto_compress_reference_image 参数，默认为 true；页面会先按系统配置在浏览器内压缩参考图，后端也会兜底压缩，该参数不会转发给上游。',
             )}
           </li>
           <li>{t('同步生成可能耗时 10-60 秒，请耐心等待。')}</li>
@@ -715,12 +1019,32 @@ const ImageGeneration = () => {
                 </Text>
               </div>
               <div className='flex items-center justify-between gap-3 mb-3'>
-                <Text type='tertiary' size='small'>
-                  {t('自动压缩过大的参考图')}
-                </Text>
+                <div className='min-w-0'>
+                  <Text type='tertiary' size='small'>
+                    {t('自动压缩过大的参考图')}
+                  </Text>
+                  <div className='text-xs text-[var(--semi-color-text-2)] mt-1'>
+                    {referenceImageCompressionConfig.enabled
+                      ? t(
+                          '超过 {{threshold}}MB 时压缩到约 {{target}}MB，最长边 {{maxSide}}px',
+                          {
+                            threshold:
+                              referenceImageCompressionConfig.thresholdMb,
+                            target:
+                              referenceImageCompressionConfig.targetSizeMb,
+                            maxSide: referenceImageCompressionConfig.maxSide,
+                          },
+                        )
+                      : t('系统已关闭参考图自动压缩')}
+                  </div>
+                </div>
                 <Switch
                   size='small'
-                  checked={autoCompressReferenceImages}
+                  checked={
+                    referenceImageCompressionConfig.enabled &&
+                    autoCompressReferenceImages
+                  }
+                  disabled={!referenceImageCompressionConfig.enabled}
                   onChange={setAutoCompressReferenceImages}
                 />
               </div>
@@ -831,7 +1155,11 @@ const ImageGeneration = () => {
                       '如遇网络超时或 524，后端会继续处理已创建的生图记录，可稍后点击刷新结果查询。',
                     )}
                   </div>
-                  <div>{t('请勿生成违反法律法规及社会公序良俗的的内容，生图成功请即时保存，所有图片24小时后永久删除。')}</div>
+                  <div>
+                    {t(
+                      '请勿生成违反法律法规及社会公序良俗的的内容，生图成功请即时保存，所有图片24小时后永久删除。',
+                    )}
+                  </div>
                 </div>
               }
             />

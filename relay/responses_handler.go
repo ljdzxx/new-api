@@ -131,6 +131,14 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			}
 		}
 
+		jsonData, removed, err := relaycommon.SanitizeInvalidResponsesEncryptedContent(jsonData)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		if removed > 0 {
+			logger.LogWarn(c, fmt.Sprintf("responses request removed %d invalid encrypted_content field(s) before upstream relay", removed))
+		}
+
 		if common.DebugEnabled {
 			println("requestBody: ", string(jsonData))
 		}
