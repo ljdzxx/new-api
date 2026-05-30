@@ -87,3 +87,44 @@ func TestSanitizeInvalidResponsesEncryptedContentDoesNotRemoveNestedMetadata(t *
 		t.Fatalf("metadata encrypted_content = %v", got)
 	}
 }
+
+func TestSanitizeInvalidResponsesEncryptedContentRemovesNestedInvalidItem(t *testing.T) {
+	input := []byte(`{
+		"input":[
+			{
+				"role":"assistant",
+				"content":[
+					{
+						"type":"reasoning",
+						"encrypted_content":"**需要按步骤进行处理，然后按主题分组）。"
+					},
+					{"type":"output_text","text":"ok"}
+				]
+			},
+			{"role":"user","content":"继续"}
+		]
+	}`)
+
+	out, removed, err := SanitizeInvalidResponsesEncryptedContent(input)
+	if err != nil {
+		t.Fatalf("SanitizeInvalidResponsesEncryptedContent returned error: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+
+	var payload map[string]any
+	if err := basecommon.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	inputItems := payload["input"].([]any)
+	assistant := inputItems[0].(map[string]any)
+	content := assistant["content"].([]any)
+	if len(content) != 1 {
+		t.Fatalf("content length = %d, want 1", len(content))
+	}
+	text := content[0].(map[string]any)
+	if got := text["type"]; got != "output_text" {
+		t.Fatalf("remaining content type = %v, want output_text", got)
+	}
+}

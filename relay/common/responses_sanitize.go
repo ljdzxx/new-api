@@ -8,40 +8,23 @@ import (
 
 const minLikelyEncryptedContentLen = 32
 
-// SanitizeInvalidResponsesEncryptedContent removes plainly invalid reasoning
-// input items before forwarding Responses requests. Valid encrypted payloads
-// are opaque and should be long ASCII blobs; visible markdown/natural-language
-// text in encrypted_content causes OpenAI to reject the request. The whole
-// reasoning item is removed because encrypted_content is required for that
-// item type.
+// SanitizeInvalidResponsesEncryptedContent removes plainly invalid input items
+// before forwarding Responses requests. Valid encrypted payloads are opaque and
+// should be long ASCII blobs; visible markdown/natural-language text in
+// encrypted_content causes OpenAI to reject the request. The whole item is
+// removed because encrypted_content is required for reasoning items.
 func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, error) {
 	var data map[string]any
 	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
 		return jsonData, 0, err
 	}
 
-	input, ok := data["input"].([]any)
-	if !ok {
+	input, exists := data["input"]
+	if !exists {
 		return jsonData, 0, nil
 	}
 
-	sanitizedInput := make([]any, 0, len(input))
-	removed := 0
-	for _, item := range input {
-		itemMap, ok := item.(map[string]any)
-		if !ok || itemMap["type"] != "reasoning" {
-			sanitizedInput = append(sanitizedInput, item)
-			continue
-		}
-
-		text, ok := itemMap["encrypted_content"].(string)
-		if ok && isPlainlyInvalidEncryptedContent(text) {
-			removed++
-			continue
-		}
-		sanitizedInput = append(sanitizedInput, item)
-	}
-
+	sanitizedInput, removed := sanitizeInvalidEncryptedContentItems(input)
 	if removed == 0 {
 		return jsonData, 0, nil
 	}
@@ -52,6 +35,50 @@ func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, err
 		return jsonData, removed, err
 	}
 	return sanitized, removed, nil
+}
+
+func sanitizeInvalidEncryptedContentItems(value any) (any, int) {
+	switch typed := value.(type) {
+	case []any:
+		sanitized := make([]any, 0, len(typed))
+		removed := 0
+		changed := false
+		for _, child := range typed {
+			if childMap, ok := child.(map[string]any); ok && hasPlainlyInvalidEncryptedContent(childMap) {
+				removed++
+				changed = true
+				continue
+			}
+
+			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child)
+			if childRemoved > 0 {
+				changed = true
+			}
+			removed += childRemoved
+			sanitized = append(sanitized, sanitizedChild)
+		}
+		if !changed {
+			return value, 0
+		}
+		return sanitized, removed
+	case map[string]any:
+		removed := 0
+		for key, child := range typed {
+			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child)
+			if childRemoved > 0 {
+				typed[key] = sanitizedChild
+				removed += childRemoved
+			}
+		}
+		return typed, removed
+	default:
+		return value, 0
+	}
+}
+
+func hasPlainlyInvalidEncryptedContent(item map[string]any) bool {
+	text, ok := item["encrypted_content"].(string)
+	return ok && isPlainlyInvalidEncryptedContent(text)
 }
 
 func isPlainlyInvalidEncryptedContent(value string) bool {
