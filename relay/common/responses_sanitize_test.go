@@ -6,7 +6,7 @@ import (
 	basecommon "github.com/QuantumNous/new-api/common"
 )
 
-func TestSanitizeInvalidResponsesEncryptedContentRemovesVisibleText(t *testing.T) {
+func TestSanitizeInvalidResponsesEncryptedContentRemovesInvalidReasoningItem(t *testing.T) {
 	input := []byte(`{
 		"model":"gpt-5.5",
 		"input":[
@@ -32,12 +32,12 @@ func TestSanitizeInvalidResponsesEncryptedContentRemovesVisibleText(t *testing.T
 		t.Fatalf("unmarshal output: %v", err)
 	}
 	items := payload["input"].([]any)
-	reasoning := items[0].(map[string]any)
-	if _, exists := reasoning["encrypted_content"]; exists {
-		t.Fatalf("encrypted_content was not removed: %v", reasoning["encrypted_content"])
+	if len(items) != 1 {
+		t.Fatalf("input length = %d, want 1", len(items))
 	}
-	if _, exists := reasoning["summary"]; !exists {
-		t.Fatalf("summary should be preserved")
+	user := items[0].(map[string]any)
+	if got := user["role"]; got != "user" {
+		t.Fatalf("remaining item role = %v, want user", got)
 	}
 }
 
@@ -61,5 +61,29 @@ func TestSanitizeInvalidResponsesEncryptedContentPreservesLikelyBlob(t *testing.
 	reasoning := items[0].(map[string]any)
 	if got := reasoning["encrypted_content"]; got != blob {
 		t.Fatalf("encrypted_content = %v, want %s", got, blob)
+	}
+}
+
+func TestSanitizeInvalidResponsesEncryptedContentDoesNotRemoveNestedMetadata(t *testing.T) {
+	input := []byte(`{
+		"input":[{"role":"user","content":"hi"}],
+		"metadata":{"encrypted_content":"visible metadata is not a reasoning item"}
+	}`)
+
+	out, removed, err := SanitizeInvalidResponsesEncryptedContent(input)
+	if err != nil {
+		t.Fatalf("SanitizeInvalidResponsesEncryptedContent returned error: %v", err)
+	}
+	if removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+
+	var payload map[string]any
+	if err := basecommon.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	metadata := payload["metadata"].(map[string]any)
+	if got := metadata["encrypted_content"]; got != "visible metadata is not a reasoning item" {
+		t.Fatalf("metadata encrypted_content = %v", got)
 	}
 }

@@ -176,13 +176,24 @@ function getImageEditsBaseUrl(status) {
   return '';
 }
 
-function buildImageEditsEndpoint(baseUrl) {
+function buildImageEndpoint(baseUrl, path) {
   const cleanBaseUrl = String(baseUrl || '')
     .trim()
     .replace(/\/+$/, '');
-  if (!cleanBaseUrl) return '/v1/images/edits';
-  if (cleanBaseUrl.endsWith('/v1')) return `${cleanBaseUrl}/images/edits`;
-  return `${cleanBaseUrl}/v1/images/edits`;
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  if (!cleanBaseUrl) return `/${cleanPath}`;
+  if (cleanBaseUrl.endsWith('/v1') && cleanPath.startsWith('v1/')) {
+    return `${cleanBaseUrl}/${cleanPath.slice(3)}`;
+  }
+  return `${cleanBaseUrl}/${cleanPath}`;
+}
+
+function buildImageGenerationsEndpoint(baseUrl) {
+  return buildImageEndpoint(baseUrl, '/v1/images/generations');
+}
+
+function buildImageEditsEndpoint(baseUrl) {
+  return buildImageEndpoint(baseUrl, '/v1/images/edits');
 }
 
 function formatFileSize(bytes) {
@@ -630,6 +641,10 @@ const ImageGeneration = () => {
     () => buildImageEditsEndpoint(imageEditsBaseUrl),
     [imageEditsBaseUrl],
   );
+  const imageGenerationsEndpoint = useMemo(
+    () => buildImageGenerationsEndpoint(imageEditsBaseUrl),
+    [imageEditsBaseUrl],
+  );
   const usableTokens = useMemo(
     () => tokens.filter((token) => tokenSupportsModel(token, IMAGE_MODEL)),
     [tokens],
@@ -830,7 +845,7 @@ const ImageGeneration = () => {
       const rawKey = await fetchTokenKey(selectedTokenId);
       const endpoint = hasReferenceImages
         ? imageEditsEndpoint
-        : '/v1/images/generations';
+        : imageGenerationsEndpoint;
       const payload = hasReferenceImages
         ? await buildFormPayload()
         : buildJsonPayload();
@@ -846,13 +861,12 @@ const ImageGeneration = () => {
           }),
         );
       }
-      if (hasReferenceImages) {
-        console.info('[image edits] request endpoint', {
-          endpoint,
-          configuredBaseUrl: imageEditsBaseUrl || '',
-          useSameOrigin: !imageEditsBaseUrl,
-        });
-      }
+      console.info('[image generation] request endpoint', {
+        endpoint,
+        mode: hasReferenceImages ? 'edits' : 'generations',
+        configuredBaseUrl: imageEditsBaseUrl || '',
+        useSameOrigin: !imageEditsBaseUrl,
+      });
 
       const res = await API.post(
         endpoint,
@@ -1050,7 +1064,11 @@ const ImageGeneration = () => {
           {t('请求示例')} - generations
         </Title>
         <pre className='px-4 py-3 rounded-lg bg-[var(--semi-color-fill-0)] text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed'>
-          {`curl -X POST '${serverAddress}/v1/images/generations' \\
+          {`curl -X POST '${
+            imageEditsBaseUrl
+              ? buildImageGenerationsEndpoint(imageEditsBaseUrl)
+              : `${serverAddress}/v1/images/generations`
+          }' \\
   -H 'Authorization: Bearer YOUR_API_KEY' \\
   -H 'Content-Type: application/json' \\
   -d '{

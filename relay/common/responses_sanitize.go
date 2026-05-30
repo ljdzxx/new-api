@@ -8,52 +8,50 @@ import (
 
 const minLikelyEncryptedContentLen = 32
 
-// SanitizeInvalidResponsesEncryptedContent removes plainly invalid
-// reasoning.encrypted_content values before forwarding Responses requests.
-// Valid encrypted payloads are opaque and should be long ASCII blobs; visible
-// markdown/natural-language text here causes OpenAI to reject the request.
+// SanitizeInvalidResponsesEncryptedContent removes plainly invalid reasoning
+// input items before forwarding Responses requests. Valid encrypted payloads
+// are opaque and should be long ASCII blobs; visible markdown/natural-language
+// text in encrypted_content causes OpenAI to reject the request. The whole
+// reasoning item is removed because encrypted_content is required for that
+// item type.
 func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, error) {
-	var data any
+	var data map[string]any
 	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
 		return jsonData, 0, err
 	}
 
-	removed := sanitizeEncryptedContentValue(data)
+	input, ok := data["input"].([]any)
+	if !ok {
+		return jsonData, 0, nil
+	}
+
+	sanitizedInput := make([]any, 0, len(input))
+	removed := 0
+	for _, item := range input {
+		itemMap, ok := item.(map[string]any)
+		if !ok || itemMap["type"] != "reasoning" {
+			sanitizedInput = append(sanitizedInput, item)
+			continue
+		}
+
+		text, ok := itemMap["encrypted_content"].(string)
+		if ok && isPlainlyInvalidEncryptedContent(text) {
+			removed++
+			continue
+		}
+		sanitizedInput = append(sanitizedInput, item)
+	}
+
 	if removed == 0 {
 		return jsonData, 0, nil
 	}
+	data["input"] = sanitizedInput
 
 	sanitized, err := basecommon.Marshal(data)
 	if err != nil {
 		return jsonData, removed, err
 	}
 	return sanitized, removed, nil
-}
-
-func sanitizeEncryptedContentValue(value any) int {
-	switch typed := value.(type) {
-	case map[string]any:
-		removed := 0
-		for key, child := range typed {
-			if key == "encrypted_content" {
-				if text, ok := child.(string); ok && isPlainlyInvalidEncryptedContent(text) {
-					delete(typed, key)
-					removed++
-					continue
-				}
-			}
-			removed += sanitizeEncryptedContentValue(child)
-		}
-		return removed
-	case []any:
-		removed := 0
-		for _, child := range typed {
-			removed += sanitizeEncryptedContentValue(child)
-		}
-		return removed
-	default:
-		return 0
-	}
 }
 
 func isPlainlyInvalidEncryptedContent(value string) bool {

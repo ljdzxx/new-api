@@ -240,7 +240,7 @@ export default function SettingsDrawing(props) {
             <Banner
               type='info'
               description={t(
-                '用于图像生成页面的 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。',
+                '用于图像生成页面的 generations 和 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。',
               )}
               style={{ marginBottom: 16 }}
             />
@@ -248,10 +248,10 @@ export default function SettingsDrawing(props) {
               <Col xs={24} sm={24} md={16} lg={16} xl={16}>
                 <Form.Input
                   field={'image_storage_setting.image_edits_base_url'}
-                  label={t('edits 接口直连域名')}
+                  label={t('图片接口直连域名')}
                   placeholder='https://image-api.example.com'
                   extraText={t(
-                    '填写域名即可，系统会自动拼接 /v1/images/edits；留空使用同源 /v1/images/edits',
+                    '填写域名即可，系统会自动拼接 /v1/images/generations 或 /v1/images/edits；留空使用同源接口',
                   )}
                   onChange={(value) =>
                     setInputs({
