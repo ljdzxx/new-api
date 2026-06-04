@@ -8,11 +8,15 @@ import (
 
 const minLikelyEncryptedContentLen = 32
 
-// SanitizeInvalidResponsesEncryptedContent removes plainly invalid input items
-// before forwarding Responses requests. Valid encrypted payloads are opaque and
-// should be long ASCII blobs; visible markdown/natural-language text in
-// encrypted_content causes OpenAI to reject the request. The whole item is
-// removed because encrypted_content is required for reasoning items.
+// SanitizeInvalidResponsesEncryptedContent fixes plainly invalid encrypted_content
+// fields before forwarding Responses requests. Valid encrypted payloads are
+// opaque and should be long ASCII blobs; visible markdown/natural-language text
+// in encrypted_content causes OpenAI to reject the request.
+//
+// Codex compaction history may carry a plaintext summary in a compaction item's
+// encrypted_content field. Preserve that context by converting it to a regular
+// user message. Other invalid encrypted_content items are removed because the
+// field is required for those item types.
 func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, error) {
 	var data map[string]any
 	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
@@ -24,7 +28,7 @@ func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, err
 		return jsonData, 0, nil
 	}
 
-	sanitizedInput, removed := sanitizeInvalidEncryptedContentItems(input)
+	sanitizedInput, removed := sanitizeInvalidEncryptedContentItems(input, true)
 	if removed == 0 {
 		return jsonData, 0, nil
 	}
@@ -37,20 +41,25 @@ func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, err
 	return sanitized, removed, nil
 }
 
-func sanitizeInvalidEncryptedContentItems(value any) (any, int) {
+func sanitizeInvalidEncryptedContentItems(value any, allowCompactionMessageReplacement bool) (any, int) {
 	switch typed := value.(type) {
 	case []any:
 		sanitized := make([]any, 0, len(typed))
 		removed := 0
 		changed := false
 		for _, child := range typed {
-			if childMap, ok := child.(map[string]any); ok && hasPlainlyInvalidEncryptedContent(childMap) {
-				removed++
-				changed = true
-				continue
+			if childMap, ok := child.(map[string]any); ok {
+				if replacement, fixed := replacementForInvalidEncryptedContentItem(childMap, allowCompactionMessageReplacement); fixed {
+					removed++
+					changed = true
+					if replacement != nil {
+						sanitized = append(sanitized, replacement)
+					}
+					continue
+				}
 			}
 
-			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child)
+			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child, false)
 			if childRemoved > 0 {
 				changed = true
 			}
@@ -64,7 +73,7 @@ func sanitizeInvalidEncryptedContentItems(value any) (any, int) {
 	case map[string]any:
 		removed := 0
 		for key, child := range typed {
-			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child)
+			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child, false)
 			if childRemoved > 0 {
 				typed[key] = sanitizedChild
 				removed += childRemoved
@@ -76,9 +85,24 @@ func sanitizeInvalidEncryptedContentItems(value any) (any, int) {
 	}
 }
 
-func hasPlainlyInvalidEncryptedContent(item map[string]any) bool {
+func replacementForInvalidEncryptedContentItem(item map[string]any, allowCompactionMessageReplacement bool) (any, bool) {
 	text, ok := item["encrypted_content"].(string)
-	return ok && isPlainlyInvalidEncryptedContent(text)
+	if !ok || !isPlainlyInvalidEncryptedContent(text) {
+		return nil, false
+	}
+	if allowCompactionMessageReplacement && item["type"] == "compaction" {
+		return map[string]any{
+			"type": "message",
+			"role": "user",
+			"content": []any{
+				map[string]any{
+					"type": "input_text",
+					"text": text,
+				},
+			},
+		}, true
+	}
+	return nil, true
 }
 
 func isPlainlyInvalidEncryptedContent(value string) bool {

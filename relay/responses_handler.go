@@ -143,7 +143,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		}
 		if removed > 0 {
 			logger.LogError(c, fmt.Sprintf(
-				"[responses encrypted_content sanitize] removed=%d request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q before_bytes=%d after_bytes=%d before_body:\n%s\nafter_body:\n%s",
+				"[responses encrypted_content sanitize] fixed=%d request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q before_bytes=%d after_bytes=%d before_body:\n%s\nafter_body:\n%s",
 				removed,
 				c.Request.URL.Path,
 				info.RelayMode,
