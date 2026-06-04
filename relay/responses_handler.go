@@ -100,12 +100,17 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	}
 	adaptor.Init(info)
 	var requestBody io.Reader
+	var outboundRequestBody []byte
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 		}
-		requestBody = common.ReaderOnly(storage)
+		outboundRequestBody, err = storage.Bytes()
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+		}
+		requestBody = bytes.NewReader(outboundRequestBody)
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 		if err != nil {
@@ -131,17 +136,33 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			}
 		}
 
+		originalJSONData := append([]byte(nil), jsonData...)
 		jsonData, removed, err := relaycommon.SanitizeInvalidResponsesEncryptedContent(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		if removed > 0 {
-			logger.LogWarn(c, fmt.Sprintf("responses request removed %d invalid encrypted_content field(s) before upstream relay", removed))
+			logger.LogError(c, fmt.Sprintf(
+				"[responses encrypted_content sanitize] removed=%d request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q before_bytes=%d after_bytes=%d before_body:\n%s\nafter_body:\n%s",
+				removed,
+				c.Request.URL.Path,
+				info.RelayMode,
+				info.ChannelId,
+				info.ChannelType,
+				info.ApiType,
+				info.OriginModelName,
+				info.UpstreamModelName,
+				len(originalJSONData),
+				len(jsonData),
+				string(originalJSONData),
+				string(jsonData),
+			))
 		}
 
 		if common.DebugEnabled {
 			println("requestBody: ", string(jsonData))
 		}
+		outboundRequestBody = append([]byte(nil), jsonData...)
 		requestBody = bytes.NewBuffer(jsonData)
 	}
 
@@ -158,6 +179,22 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 		if httpResp.StatusCode != http.StatusOK {
 			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+			if isEncryptedContentRelayError(newAPIError) {
+				logger.LogError(c, fmt.Sprintf(
+					"[responses encrypted_content upstream_error] request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q status_code=%d error=%q request_body_bytes=%d request_body:\n%s",
+					c.Request.URL.Path,
+					info.RelayMode,
+					info.ChannelId,
+					info.ChannelType,
+					info.ApiType,
+					info.OriginModelName,
+					info.UpstreamModelName,
+					httpResp.StatusCode,
+					newAPIError.Error(),
+					len(outboundRequestBody),
+					string(outboundRequestBody),
+				))
+			}
 			// reset status code 重置状态码
 			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 			return newAPIError
@@ -195,4 +232,14 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		service.PostTextConsumeQuota(c, info, usageDto, nil)
 	}
 	return nil
+}
+
+func isEncryptedContentRelayError(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "encrypted_content") ||
+		strings.Contains(msg, "encrypted content") ||
+		strings.Contains(msg, "could not be decrypted")
 }
