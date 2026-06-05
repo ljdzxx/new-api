@@ -538,6 +538,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 				logXiaomiClaudeTrace(c, "FINAL upstream request body raw bytes=%d:\n%s", len(bodyBytes), string(bodyBytes))
 			}
 		}
+		info.UpstreamRequestBodySize = storage.Size()
 		requestBody = common.ReaderOnly(storage)
 	} else {
 		convertedRequest, err := adaptor.ConvertClaudeRequest(c, info, request)
