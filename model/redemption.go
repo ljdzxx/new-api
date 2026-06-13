@@ -24,6 +24,7 @@ type Redemption struct {
 	Name         string         `json:"name" gorm:"index"`
 	Quota        int            `json:"quota" gorm:"default:100"`
 	PlanId       int            `json:"plan_id" gorm:"type:int;default:0;index"`
+	PayMoney     float64        `json:"pay_money" gorm:"default:0;column:pay_money"`
 	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
 	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
 	Count        int            `json:"count" gorm:"-:all"` // only for api request
@@ -158,6 +159,9 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 		if rewardType == 0 {
 			rewardType = common.RedemptionRewardTypeQuota
 		}
+		if redemption.PayMoney < 0 {
+			return errors.New("兑换码实付金额无效")
+		}
 		result.RewardType = rewardType
 
 		switch rewardType {
@@ -171,16 +175,12 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 			}
 			result.Quota = redemption.Quota
 
-			money := 0.0
-			if common.QuotaPerUnit > 0 {
-				money = float64(redemption.Quota) / common.QuotaPerUnit
-			}
 			redeemedAt := common.GetTimestamp()
 			topup := TopUp{
 				UserId:        userId,
 				Amount:        int64(redemption.Quota),
-				Money:         money,
-				TradeNo:       "redeem-" + common.GetUUID(),
+				Money:         redemption.PayMoney,
+				TradeNo:       fmt.Sprintf("redeem-%d", redemption.Id),
 				PaymentMethod: "redemption",
 				CreateTime:    redeemedAt,
 				CompleteTime:  redeemedAt,
@@ -211,6 +211,21 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 			}
 			upgradedSubscriptionGroup = strings.TrimSpace(plan.UpgradeGroup)
 			result.PlanId = redemption.PlanId
+
+			redeemedAt := common.GetTimestamp()
+			topup := TopUp{
+				UserId:        userId,
+				Amount:        0,
+				Money:         redemption.PayMoney,
+				TradeNo:       fmt.Sprintf("redeem-%d", redemption.Id),
+				PaymentMethod: "redemption",
+				CreateTime:    redeemedAt,
+				CompleteTime:  redeemedAt,
+				Status:        common.TopUpStatusSuccess,
+			}
+			if err = tx.Create(&topup).Error; err != nil {
+				return err
+			}
 		default:
 			return errors.New("不支持的兑换码奖励类型")
 		}
@@ -267,7 +282,7 @@ func (redemption *Redemption) SelectUpdate() error {
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (redemption *Redemption) Update() error {
 	var err error
-	err = DB.Model(redemption).Select("name", "status", "reward_type", "quota", "plan_id", "redeemed_time", "expired_time").Updates(redemption).Error
+	err = DB.Model(redemption).Select("name", "status", "reward_type", "quota", "plan_id", "pay_money", "redeemed_time", "expired_time").Updates(redemption).Error
 	return err
 }
 

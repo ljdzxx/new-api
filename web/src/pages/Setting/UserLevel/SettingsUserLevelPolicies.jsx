@@ -38,7 +38,6 @@ const defaultPolicies = [
     channel: [],
     rate: 50,
     recharge: '0',
-    group_day_limit: '100',
   },
   {
     id: 2,
@@ -48,7 +47,6 @@ const defaultPolicies = [
     channel: [],
     rate: 100,
     recharge: '500',
-    group_day_limit: '0',
   },
   {
     id: 3,
@@ -58,7 +56,6 @@ const defaultPolicies = [
     channel: [],
     rate: 500,
     recharge: '2000',
-    group_day_limit: '0',
   },
   {
     id: 4,
@@ -68,7 +65,6 @@ const defaultPolicies = [
     channel: [],
     rate: 0,
     recharge: '10000',
-    group_day_limit: '0',
   },
 ];
 
@@ -171,7 +167,6 @@ export default function SettingsUserLevelPolicies(props) {
                       <li>{t('icon：等级图标路径，如 /t1.png')}</li>
                       <li>{t('channel：可用渠道数组，[] 表示不限渠道')}</li>
                       <li>{t('rate：每分钟请求次数，0 表示不限')}</li>
-                      <li>{t('group_day_limit：该等级组日消耗金额上限，0 表示不限')}</li>
                     </ul>
                   </div>
                 }

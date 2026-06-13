@@ -557,6 +557,7 @@ func ensureRedemptionsTableSQLite() error {
 	required := []sqliteRedemptionColumnDef{
 		{Name: "reward_type", DDL: "`reward_type` integer DEFAULT 1"},
 		{Name: "plan_id", DDL: "`plan_id` integer DEFAULT 0"},
+		{Name: "pay_money", DDL: "`pay_money` real DEFAULT 0"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {

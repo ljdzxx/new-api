@@ -66,6 +66,7 @@ const EditRedemptionModal = (props) => {
     reward_type: REDEMPTION_REWARD_TYPES.QUOTA,
     quota: 100000,
     plan_id: undefined,
+    pay_money: 0,
     count: 1,
     expired_time: null,
   });
@@ -142,6 +143,7 @@ const EditRedemptionModal = (props) => {
       parseInt(localInputs.reward_type, 10) || REDEMPTION_REWARD_TYPES.QUOTA;
     localInputs.quota = parseInt(localInputs.quota, 10) || 0;
     localInputs.plan_id = parseInt(localInputs.plan_id, 10) || 0;
+    localInputs.pay_money = Number(localInputs.pay_money || 0);
 
     if (!localInputs.expired_time) {
       localInputs.expired_time = 0;
@@ -163,6 +165,11 @@ const EditRedemptionModal = (props) => {
         return;
       }
       localInputs.quota = 0;
+    }
+
+    if (!Number.isFinite(localInputs.pay_money) || localInputs.pay_money < 0) {
+      showError(t('实付金额不能小于0'));
+      return;
     }
 
     if (!localInputs.name || localInputs.name.trim() === '') {
@@ -375,7 +382,7 @@ const EditRedemptionModal = (props) => {
 
                   <Row gutter={12}>
                     {values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA && (
-                      <Col span={12}>
+                      <Col span={isMobile ? 24 : !isEdit ? 8 : 12}>
                         <Form.AutoComplete
                           field='quota'
                           label={t('额度')}
@@ -408,12 +415,47 @@ const EditRedemptionModal = (props) => {
                         />
                       </Col>
                     )}
+                    <Col
+                      span={
+                        isMobile
+                          ? 24
+                          : values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA
+                          ? !isEdit
+                            ? 8
+                            : 12
+                          : !isEdit
+                            ? 12
+                            : 24
+                      }
+                    >
+                      <Form.InputNumber
+                        field='pay_money'
+                        label={t('实付金额')}
+                        min={0}
+                        precision={2}
+                        step={1}
+                        rules={[
+                          {
+                            validator: (rule, v) => {
+                              const num = Number(v || 0);
+                              return num >= 0
+                                ? Promise.resolve()
+                                : Promise.reject(t('实付金额不能小于0'));
+                            },
+                          },
+                        ]}
+                        style={{ width: '100%' }}
+                        showClear
+                      />
+                    </Col>
                     {!isEdit && (
                       <Col
                         span={
-                          values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA
-                            ? 12
-                            : 24
+                          isMobile
+                            ? 24
+                            : values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA
+                            ? 8
+                            : 12
                         }
                       >
                         <Form.InputNumber

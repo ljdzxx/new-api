@@ -131,6 +131,13 @@ export const getRedemptionsColumns = ({
       },
     },
     {
+      title: t('实付金额'),
+      dataIndex: 'pay_money',
+      render: (text) => {
+        return <div>{Number(text || 0).toFixed(2)}</div>;
+      },
+    },
+    {
       title: t('创建时间'),
       dataIndex: 'created_time',
       render: (text) => {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -154,8 +155,21 @@ func DownloadUserImageRecordImage(c *gin.Context) {
 	if contentType == "" {
 		contentType = imageContentTypeFromFormat(result.OutputFormat)
 	}
+	imageBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		imageRecordDownloadError(c, http.StatusBadGateway, fmt.Errorf("read image failed: %w", err))
+		return
+	}
+	if len(imageBytes) == 0 {
+		imageRecordDownloadError(c, http.StatusBadGateway, fmt.Errorf("download image failed: empty response"))
+		return
+	}
+	detectedContentType := http.DetectContentType(imageBytes)
+	if strings.HasPrefix(detectedContentType, "image/") {
+		contentType = detectedContentType
+	}
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-	c.DataFromReader(http.StatusOK, resp.ContentLength, contentType, resp.Body, nil)
+	c.Data(http.StatusOK, contentType, imageBytes)
 }
 
 func imageRecordDownloadError(c *gin.Context, status int, err error) {

@@ -442,11 +442,8 @@ Core backend changes indicate a separation of **user group** and **user level** 
   - `middleware/model-rate-limit.go` supports level-based rate limits.
   - `middleware/distributor.go` and `service/channel_select.go` enforce level-based channel allow-lists.
   - `relay/helper/price.go` applies level discount multiplier.
-  - `middleware/user-level-group-day-limit.go` enforces level group day limits.
-  - `model/log.go` adds daily consumed-money calculation for level/day-limit checks.
 - Routing/API additions:
   - `controller/user_level.go` + `router/api-router.go` add `/api/user/self/user-level`.
-  - `router/relay-router.go` and `router/video-router.go` wire `UserLevelGroupDayLimit` middleware.
 
 Frontend-related additions in the same working tree:
 
@@ -465,7 +462,7 @@ The session conclusion (based on code and prior test logs in this conversation) 
 
 Recorded test commands from this session context (not re-run in this specific turn):
 
-- `go test ./model -run "UserRegister_DefaultUserLevelIDIsOne|AutoUpgradeByRecharge|GetUserLevelGroupDailyConsumedMoney" -count=1 -v`
+- `go test ./model -run "UserRegister_DefaultUserLevelIDIsOne|AutoUpgradeByRecharge" -count=1 -v`
 - `go test ./setting -run UserLevel -count=1`
 - `go test ./controller ./middleware ./service ./relay/helper -run ^$ -count=1`
 

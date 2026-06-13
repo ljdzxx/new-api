@@ -78,8 +78,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	completed := false
 
-	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
+	scanResult := helper.StreamScannerHandlerWithOptions(c, resp, info, func(data string) bool {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
@@ -87,6 +88,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sendResponsesStreamData(c, streamResponse, data)
 			switch streamResponse.Type {
 			case "response.completed":
+				completed = true
 				if streamResponse.Response != nil {
 					if streamResponse.Response.Usage != nil {
 						if streamResponse.Response.Usage.InputTokens != 0 {
@@ -128,7 +130,22 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
 		}
 		return true
+	}, helper.StreamScannerOptions{
+		PingDataFunc: sendResponsesKeepAlive,
 	})
+
+	if !completed {
+		logger.LogError(c, fmt.Sprintf(
+			"responses stream ended before response.completed: reason=%s err=%v received_response_count=%d prompt_tokens=%d completion_tokens=%d total_tokens=%d output_text_bytes=%d",
+			scanResult.Reason,
+			scanResult.Err,
+			info.ReceivedResponseCount,
+			usage.PromptTokens,
+			usage.CompletionTokens,
+			usage.TotalTokens,
+			responseTextBuilder.Len(),
+		))
+	}
 
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
@@ -147,4 +164,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func sendResponsesKeepAlive(c *gin.Context) error {
+	event := dto.ResponsesStreamResponse{
+		Type: "response.keepalive",
+	}
+	data, err := common.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal responses keepalive failed: %w", err)
+	}
+	helper.ResponseChunkData(c, event, string(data))
+	return nil
 }

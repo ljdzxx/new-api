@@ -162,6 +162,7 @@ type RelayInfo struct {
 	// 最终请求到上游的格式。可由 adaptor 显式设置；
 	// 若为空，调用 GetFinalRequestRelayFormat 会回退到 RequestConversionChain 的最后一项或 RelayFormat。
 	FinalRequestRelayFormat types.RelayFormat
+	StreamStatus            *StreamStatus
 
 	ThinkingContentInfo
 	TokenCountMeta

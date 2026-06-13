@@ -183,6 +183,14 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	if key == "UserLevelPolicies" {
+		normalizedValue, err := setting.NormalizeUserLevelPoliciesJSONString(value)
+		if err != nil {
+			return err
+		}
+		value = normalizedValue
+	}
+
 	// Save to database first
 	option := Option{
 		Key: key,
@@ -436,6 +444,9 @@ func updateOptionMap(key string, value string) (err error) {
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
 	case "UserLevelPolicies":
 		err = setting.UpdateUserLevelPoliciesByJSONString(value)
+		if err == nil {
+			common.OptionMap[key] = setting.UserLevelPolicies2JSONString()
+		}
 	case "CompletionRatio":
 		err = ratio_setting.UpdateCompletionRatioByJSONString(value)
 	case "ModelPrice":

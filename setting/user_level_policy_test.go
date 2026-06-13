@@ -10,7 +10,7 @@ func TestUpdateUserLevelPoliciesAndGetters(t *testing.T) {
 		}
 	}()
 
-	input := `[{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50,"group_day_limit":"100"},{"id":2,"level":"Tier 2","recharge":500,"discount":"0.1","icon":"/t2.png","channel":["xxx-openai","xxl-gemini"],"rate":100,"group_day_limit":"0"}]`
+	input := `[{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},{"id":2,"level":"Tier 2","recharge":500,"discount":"0.1","icon":"/t2.png","channel":["xxx-openai","xxl-gemini"],"rate":100}]`
 	if err := UpdateUserLevelPoliciesByJSONString(input); err != nil {
 		t.Fatalf("update policies failed: %v", err)
 	}
@@ -38,13 +38,6 @@ func TestUpdateUserLevelPoliciesAndGetters(t *testing.T) {
 	if _, found := GetUserLevelRateLimit("Unknown"); found {
 		t.Fatalf("unknown level should not have rate limit")
 	}
-	if dayLimit, found := GetUserLevelGroupDayLimit("Tier 1"); !found || dayLimit != 100 {
-		t.Fatalf("unexpected day limit for tier 1, found=%v limit=%v", found, dayLimit)
-	}
-	if dayLimit, found := GetUserLevelGroupDayLimit("Tier 2"); !found || dayLimit != 0 {
-		t.Fatalf("unexpected day limit for tier 2, found=%v limit=%v", found, dayLimit)
-	}
-
 	if channels, found := GetUserLevelAllowedChannels("Tier 1"); !found || len(channels) != 0 {
 		t.Fatalf("tier 1 should allow all channels, found=%v channels=%v", found, channels)
 	}
@@ -100,14 +93,6 @@ func TestCheckUserLevelPoliciesValidation(t *testing.T) {
 		{
 			name:  "negative rate",
 			input: `[{"id":1,"level":"Tier 1","rate":-1}]`,
-		},
-		{
-			name:  "invalid group_day_limit type",
-			input: `[{"id":1,"level":"Tier 1","group_day_limit":"abc"}]`,
-		},
-		{
-			name:  "negative group_day_limit",
-			input: `[{"id":1,"level":"Tier 1","group_day_limit":-1}]`,
 		},
 	}
 

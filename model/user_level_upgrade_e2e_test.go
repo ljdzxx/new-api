@@ -17,7 +17,12 @@ var e2eTopUpSeq int64
 
 func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}))
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &UserSubscription{}, &UserSubscriptionDailyStat{}))
+	if common.UsingSQLite {
+		require.NoError(t, ensureSubscriptionPlanTableSQLite())
+	} else {
+		require.NoError(t, DB.AutoMigrate(&SubscriptionPlan{}))
+	}
 
 	originPolicies := setting.UserLevelPolicies2JSONString()
 	require.NoError(t, setting.UpdateUserLevelPoliciesByJSONString(policyJSON))
@@ -32,6 +37,9 @@ func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 
 	require.NoError(t, DB.Exec("DELETE FROM top_ups").Error)
 	require.NoError(t, DB.Exec("DELETE FROM redemptions").Error)
+	require.NoError(t, DB.Exec("DELETE FROM user_subscription_daily_stats").Error)
+	require.NoError(t, DB.Exec("DELETE FROM user_subscriptions").Error)
+	require.NoError(t, DB.Exec("DELETE FROM subscription_plans").Error)
 	require.NoError(t, DB.Exec("DELETE FROM users").Error)
 	require.NoError(t, DB.Exec("DELETE FROM logs").Error)
 }
@@ -129,7 +137,7 @@ func TestAutoUpgradeByRecharge_NoPolicyConfigured(t *testing.T) {
 func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
 {"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
-{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
+{"id":2,"level":"Tier 2","recharge":200,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
 ]`)
 	common.QuotaPerUnit = 100
 
@@ -140,7 +148,8 @@ func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 		Key:         redeemKey,
 		Status:      common.RedemptionCodeStatusEnabled,
 		Name:        "e2e_redeem",
-		Quota:       12000, // 12000 / 100 = 120
+		Quota:       12000,
+		PayMoney:    240,
 		CreatedTime: now,
 		ExpiredTime: 0,
 	}
@@ -159,38 +168,56 @@ func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 
 	var topup TopUp
 	require.NoError(t, DB.Where("user_id = ? AND payment_method = ?", user.Id, "redemption").First(&topup).Error)
-	assert.InDelta(t, 120.0, topup.Money, 0.0001)
+	assert.InDelta(t, 240.0, topup.Money, 0.0001)
 	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
 }
 
-func TestGetUserLevelGroupDailyConsumedMoney_WithRefund(t *testing.T) {
+func TestAutoUpgradeByRecharge_SubscriptionRedemptionAlsoEffective(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
-{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50,"group_day_limit":"100"}
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":200,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
 ]`)
-	common.QuotaPerUnit = 100
 
-	user := createRegisteredUser(t, "group_daily_limit")
-	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("group", "Tier 1").Error)
+	user := createRegisteredUser(t, "subscription_redeem_effective")
+	plan := &SubscriptionPlan{
+		Title:         "redeem plan",
+		PriceAmount:   199,
+		Currency:      "USD",
+		DurationUnit:  "month",
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   1000,
+	}
+	require.NoError(t, DB.Create(plan).Error)
 
 	now := common.GetTimestamp()
-	require.NoError(t, LOG_DB.Create(&Log{
-		UserId:    user.Id,
-		Username:  user.Username,
-		CreatedAt: now,
-		Type:      LogTypeConsume,
-		Quota:     15000, // 150
-		Group:     "Tier 1",
-	}).Error)
-	require.NoError(t, LOG_DB.Create(&Log{
-		UserId:    user.Id,
-		Username:  user.Username,
-		CreatedAt: now,
-		Type:      LogTypeRefund,
-		Quota:     2000, // -20
-		Group:     "Tier 1",
-	}).Error)
+	redeemKey := fmt.Sprintf("S%031d", time.Now().UnixNano()%1_000_000_000_000_000_000)
+	redemption := &Redemption{
+		Key:         redeemKey,
+		Status:      common.RedemptionCodeStatusEnabled,
+		RewardType:  common.RedemptionRewardTypeSubscription,
+		Name:        "e2e_subscription_redeem",
+		PlanId:      plan.Id,
+		PayMoney:    240,
+		CreatedTime: now,
+		ExpiredTime: 0,
+	}
+	require.NoError(t, redemption.Insert())
 
-	money, err := GetUserLevelGroupDailyConsumedMoney("Tier 1")
+	redeemResult, err := Redeem(redeemKey, user.Id)
 	require.NoError(t, err)
-	assert.InDelta(t, 130.0, money, 0.0001)
+	require.NotNil(t, redeemResult)
+	assert.Equal(t, common.RedemptionRewardTypeSubscription, redeemResult.RewardType)
+	assert.Equal(t, plan.Id, redeemResult.PlanId)
+
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, "default", reloaded.Group)
+	assert.Equal(t, 2, reloaded.UserLevelId)
+
+	var topup TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ?", user.Id, "redemption").First(&topup).Error)
+	assert.Equal(t, int64(0), topup.Amount)
+	assert.InDelta(t, 240.0, topup.Money, 0.0001)
+	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
 }

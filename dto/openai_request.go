@@ -422,6 +422,13 @@ type MessageVideoUrl struct {
 	Url string `json:"url"`
 }
 
+func (m *Message) GetReasoningContent() string {
+	if m.ReasoningContent != "" {
+		return m.ReasoningContent
+	}
+	return m.Reasoning
+}
+
 const (
 	ContentTypeText       = "text"
 	ContentTypeImageURL   = "image_url"

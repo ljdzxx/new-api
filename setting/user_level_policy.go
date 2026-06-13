@@ -11,17 +11,16 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-const defaultUserLevelPoliciesJSON = `[{"id":1,"level":"Tier 1","icon":"/t1.png","discount":"0","channel":[],"rate":50,"recharge":"0","group_day_limit":"100"},{"id":2,"level":"Tier 2","icon":"/t2.png","discount":"0.1","channel":[],"rate":100,"recharge":"500","group_day_limit":"0"},{"id":3,"level":"Tier 3","icon":"/t3.png","discount":"0.2","channel":[],"rate":500,"recharge":"2000","group_day_limit":"0"},{"id":4,"level":"Tier 4","icon":"/t4.png","discount":"0.4","channel":[],"rate":0,"recharge":"10000","group_day_limit":"0"}]`
+const defaultUserLevelPoliciesJSON = `[{"id":1,"level":"Tier 1","icon":"/t1.png","discount":"0","channel":[],"rate":50,"recharge":"0"},{"id":2,"level":"Tier 2","icon":"/t2.png","discount":"0.1","channel":[],"rate":100,"recharge":"500"},{"id":3,"level":"Tier 3","icon":"/t3.png","discount":"0.2","channel":[],"rate":500,"recharge":"2000"},{"id":4,"level":"Tier 4","icon":"/t4.png","discount":"0.4","channel":[],"rate":0,"recharge":"10000"}]`
 
 type UserLevelPolicy struct {
-	ID            int      `json:"id"`
-	Level         string   `json:"level"`
-	Recharge      float64  `json:"recharge"`
-	Discount      string   `json:"discount"`
-	Icon          string   `json:"icon"`
-	Channel       []string `json:"channel"`
-	Rate          int      `json:"rate"`
-	GroupDayLimit string   `json:"group_day_limit"`
+	ID       int      `json:"id"`
+	Level    string   `json:"level"`
+	Recharge float64  `json:"recharge"`
+	Discount string   `json:"discount"`
+	Icon     string   `json:"icon"`
+	Channel  []string `json:"channel"`
+	Rate     int      `json:"rate"`
 }
 
 var (
@@ -47,6 +46,18 @@ func UserLevelPolicies2JSONString() string {
 		return "[]"
 	}
 	return string(data)
+}
+
+func NormalizeUserLevelPoliciesJSONString(jsonStr string) (string, error) {
+	policies, err := parseAndNormalizeUserLevelPolicies(jsonStr)
+	if err != nil {
+		return "", err
+	}
+	data, err := common.Marshal(policies)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func ListUserLevelPolicies() []UserLevelPolicy {
@@ -208,31 +219,6 @@ func GetUserLevelRateLimitByID(id int) (int, bool) {
 	return GetUserLevelRateLimit(level)
 }
 
-func GetUserLevelGroupDayLimit(level string) (float64, bool) {
-	userLevelPoliciesMutex.RLock()
-	policy, ok := userLevelPolicyMap[level]
-	userLevelPoliciesMutex.RUnlock()
-	if !ok {
-		return 0, false
-	}
-	limit, err := strconv.ParseFloat(strings.TrimSpace(policy.GroupDayLimit), 64)
-	if err != nil {
-		return 0, false
-	}
-	if limit < 0 {
-		return 0, false
-	}
-	return limit, true
-}
-
-func GetUserLevelGroupDayLimitByID(id int) (float64, bool) {
-	level, ok := GetUserLevelPolicyLevelByID(id)
-	if !ok {
-		return 0, false
-	}
-	return GetUserLevelGroupDayLimit(level)
-}
-
 func parseAndNormalizeUserLevelPolicies(jsonStr string) ([]UserLevelPolicy, error) {
 	raw := strings.TrimSpace(jsonStr)
 	if raw == "" {
@@ -299,25 +285,16 @@ func parseAndNormalizeUserLevelPolicies(jsonStr string) ([]UserLevelPolicy, erro
 			return nil, fmt.Errorf("user level %s rate must be greater than or equal to 0", level)
 		}
 
-		groupDayLimitValue, err := parseGroupDayLimit(item["group_day_limit"])
-		if err != nil {
-			return nil, fmt.Errorf("user level %s group_day_limit invalid: %w", level, err)
-		}
-		if groupDayLimitValue < 0 {
-			return nil, fmt.Errorf("user level %s group_day_limit must be greater than or equal to 0", level)
-		}
-
 		icon := strings.TrimSpace(common.Interface2String(item["icon"]))
 
 		policies = append(policies, UserLevelPolicy{
-			ID:            id,
-			Level:         level,
-			Recharge:      recharge,
-			Discount:      strconv.FormatFloat(discountValue, 'f', -1, 64),
-			Icon:          icon,
-			Channel:       channels,
-			Rate:          rate,
-			GroupDayLimit: strconv.FormatFloat(groupDayLimitValue, 'f', -1, 64),
+			ID:       id,
+			Level:    level,
+			Recharge: recharge,
+			Discount: strconv.FormatFloat(discountValue, 'f', -1, 64),
+			Icon:     icon,
+			Channel:  channels,
+			Rate:     rate,
 		})
 	}
 
@@ -404,23 +381,6 @@ func parseRate(v any) (int, error) {
 		return strconv.Atoi(trimmed)
 	default:
 		return 0, fmt.Errorf("unsupported rate type: %T", v)
-	}
-}
-
-func parseGroupDayLimit(v any) (float64, error) {
-	switch value := v.(type) {
-	case nil:
-		return 0, nil
-	case float64:
-		return value, nil
-	case string:
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			return 0, nil
-		}
-		return strconv.ParseFloat(trimmed, 64)
-	default:
-		return 0, fmt.Errorf("unsupported group_day_limit type: %T", v)
 	}
 }
 

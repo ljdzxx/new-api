@@ -19,6 +19,9 @@ func normalizeAndValidateRedemptionReward(c *gin.Context, redemption *model.Rede
 	if redemption.RewardType == 0 {
 		redemption.RewardType = common.RedemptionRewardTypeQuota
 	}
+	if redemption.PayMoney < 0 {
+		return false, "实付金额不能小于 0"
+	}
 
 	switch redemption.RewardType {
 	case common.RedemptionRewardTypeQuota:
@@ -129,6 +132,7 @@ func AddRedemption(c *gin.Context) {
 			RewardType:  redemption.RewardType,
 			Quota:       redemption.Quota,
 			PlanId:      redemption.PlanId,
+			PayMoney:    redemption.PayMoney,
 			ExpiredTime: redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()
@@ -192,6 +196,7 @@ func UpdateRedemption(c *gin.Context) {
 		cleanRedemption.RewardType = redemption.RewardType
 		cleanRedemption.Quota = redemption.Quota
 		cleanRedemption.PlanId = redemption.PlanId
+		cleanRedemption.PayMoney = redemption.PayMoney
 		cleanRedemption.ExpiredTime = redemption.ExpiredTime
 	}
 	if statusOnly != "" {

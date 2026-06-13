@@ -202,6 +202,11 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function normalizeDownloadPercent(percent) {
+  if (!Number.isFinite(percent)) return 0;
+  return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
 function getCompressedFileName(fileName) {
   const cleanName = String(fileName || 'reference-image').replace(
     /\.[^.]+$/,
@@ -462,6 +467,13 @@ function createImageRecordId() {
   return `img_${String(random).replace(/[^a-zA-Z0-9_-]/g, '')}`;
 }
 
+function getImageDownloadKey(item, index) {
+  if (item?._record_id) {
+    return `${item._record_id}-${item._record_index ?? index}`;
+  }
+  return `${index}-${buildImageUrl(item).slice(0, 64)}`;
+}
+
 function triggerBrowserDownload(blobOrUrl, filename) {
   const link = document.createElement('a');
   const objectUrl =
@@ -476,34 +488,96 @@ function triggerBrowserDownload(blobOrUrl, filename) {
   }
 }
 
-async function downloadImage(item, index) {
-  const src = buildImageUrl(item);
-  if (!src) return;
-  const filename = getImageFilename(index);
-  if (item?._record_id) {
-    const res = await API.get(
-      `/api/image_records/${item._record_id}/download`,
-      {
-        params: { index: item._record_index || 0 },
-        responseType: 'blob',
-        skipErrorHandler: true,
-        disableDuplicate: true,
-      },
-    );
-    triggerBrowserDownload(res.data, filename);
-    return;
+async function readBlobError(blob) {
+  if (!(blob instanceof Blob)) return 'download failed';
+  try {
+    const text = await blob.text();
+    if (!text) return 'download failed';
+    try {
+      const data = JSON.parse(text);
+      return data?.message || data?.error?.message || text;
+    } catch {
+      return text;
+    }
+  } catch {
+    return 'download failed';
   }
+}
 
-  if (src.startsWith('data:')) {
-    triggerBrowserDownload(src, filename);
-    return;
+async function fetchImageRecordBlob(item, onProgress) {
+  const res = await API.get(`/api/image_records/${item._record_id}/download`, {
+    params: { index: item._record_index ?? 0 },
+    responseType: 'blob',
+    skipErrorHandler: true,
+    disableDuplicate: true,
+    onDownloadProgress: (progressEvent) => {
+      const total = progressEvent.total || 0;
+      if (total > 0) {
+        onProgress?.((progressEvent.loaded / total) * 100);
+      } else if (progressEvent.loaded > 0) {
+        onProgress?.(5);
+      }
+    },
+  });
+  const blob = res.data;
+  if (!(blob instanceof Blob) || blob.size === 0) {
+    throw new Error('download failed: empty image');
   }
+  const type = String(blob.type || '').toLowerCase();
+  if (type.includes('application/json') || type.startsWith('text/')) {
+    throw new Error(await readBlobError(blob));
+  }
+  return blob;
+}
 
+async function fetchImageBlobWithProgress(src, onProgress) {
   const response = await fetch(src);
   if (!response.ok) {
     throw new Error(`download failed: ${response.status}`);
   }
-  const blob = await response.blob();
+
+  const total = Number(response.headers.get('content-length')) || 0;
+  if (!response.body || total <= 0) {
+    onProgress?.(5);
+    return await response.blob();
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let loaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    onProgress?.((loaded / total) * 100);
+  }
+
+  return new Blob(chunks, {
+    type: response.headers.get('content-type') || 'image/png',
+  });
+}
+
+async function downloadImage(item, index, onProgress) {
+  const src = buildImageUrl(item);
+  if (!src) return;
+  const filename = getImageFilename(index);
+  if (item?._record_id) {
+    const blob = await fetchImageRecordBlob(item, onProgress);
+    onProgress?.(100);
+    triggerBrowserDownload(blob, filename);
+    return;
+  }
+
+  if (src.startsWith('data:')) {
+    onProgress?.(100);
+    triggerBrowserDownload(src, filename);
+    return;
+  }
+
+  const blob = await fetchImageBlobWithProgress(src, onProgress);
+  onProgress?.(100);
   triggerBrowserDownload(blob, filename);
 }
 
@@ -616,11 +690,16 @@ const ImageGeneration = () => {
   const [recordLoading, setRecordLoading] = useState(false);
   const [recordDeleting, setRecordDeleting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [downloadProgressMap, setDownloadProgressMap] = useState({});
   const [docVisible, setDocVisible] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewSrc, setPreviewSrc] = useState('');
+  const [previewIndex, setPreviewIndex] = useState(0);
   const fileInputRef = useRef(null);
   const referenceImagesRef = useRef([]);
+  const previewObjectUrlRef = useRef('');
+  const previewRequestRef = useRef(0);
+  const activeDownloadsRef = useRef(new Set());
 
   const serverAddress = useMemo(() => getServerAddress(), []);
   const referenceImageCompressionConfig = useMemo(() => {
@@ -762,6 +841,15 @@ const ImageGeneration = () => {
       referenceImagesRef.current.forEach((item) =>
         URL.revokeObjectURL(item.url),
       );
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = '';
+      }
     };
   }, []);
 
@@ -1026,9 +1114,103 @@ const ImageGeneration = () => {
     });
   };
 
-  const openPreview = (src) => {
+  const revokePreviewObjectUrl = () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = '';
+    }
+  };
+
+  const openPreview = async (item, index) => {
+    const src = buildImageUrl(item);
+    if (!src) return;
+    const requestId = previewRequestRef.current + 1;
+    previewRequestRef.current = requestId;
+    revokePreviewObjectUrl();
     setPreviewSrc(src);
+    setPreviewIndex(index);
     setPreviewVisible(true);
+
+    if (!item?._record_id) return;
+    try {
+      const blob = await fetchImageRecordBlob(item);
+      const objectUrl = URL.createObjectURL(blob);
+      if (previewRequestRef.current !== requestId) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+      revokePreviewObjectUrl();
+      previewObjectUrlRef.current = objectUrl;
+      setPreviewSrc(objectUrl);
+    } catch (error) {
+      console.error('[image preview] prepare download blob failed', error);
+    }
+  };
+
+  const handlePreviewVisibleChange = (visible) => {
+    setPreviewVisible(visible);
+    if (!visible) {
+      previewRequestRef.current += 1;
+      revokePreviewObjectUrl();
+    }
+  };
+
+  const handlePreviewDownloadError = async () => {
+    const item = results[previewIndex];
+    if (!item) return;
+    try {
+      await downloadImage(item, previewIndex);
+    } catch (error) {
+      console.error('[image preview download fallback] failed', error);
+      Toast.error({
+        content: getReadableError(error, t('下载失败')),
+        duration: 0,
+      });
+    }
+  };
+
+  const handleThumbnailDownload = async (item, index) => {
+    const downloadKey = getImageDownloadKey(item, index);
+    if (
+      activeDownloadsRef.current.has(downloadKey) ||
+      downloadProgressMap[downloadKey] !== undefined
+    ) {
+      return;
+    }
+
+    const updateDownloadProgress = (percent) => {
+      setDownloadProgressMap((current) => ({
+        ...current,
+        [downloadKey]: normalizeDownloadPercent(percent),
+      }));
+    };
+
+    activeDownloadsRef.current.add(downloadKey);
+    updateDownloadProgress(0);
+    try {
+      await downloadImage(item, index, updateDownloadProgress);
+      updateDownloadProgress(100);
+      window.setTimeout(() => {
+        setDownloadProgressMap((current) => {
+          const next = { ...current };
+          delete next[downloadKey];
+          return next;
+        });
+        activeDownloadsRef.current.delete(downloadKey);
+      }, 500);
+    } catch (error) {
+      activeDownloadsRef.current.delete(downloadKey);
+      setDownloadProgressMap((current) => {
+        const next = { ...current };
+        delete next[downloadKey];
+        return next;
+      });
+      console.error('[image download] failed', error);
+      Toast.error({
+        content: getReadableError(error, t('下载失败')),
+        duration: 0,
+      });
+    }
   };
 
   const renderDocs = () => (
@@ -1124,9 +1306,9 @@ const ImageGeneration = () => {
   );
 
   return (
-    <div className='mt-[60px] h-[calc(100vh-84px)] min-h-[620px] overflow-hidden'>
-      <div className='h-full flex flex-col lg:flex-row gap-4'>
-        <aside className='lg:w-[360px] xl:w-[400px] shrink-0 h-full overflow-y-auto rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-1)]'>
+    <div className='mt-[60px] min-h-[calc(100vh-84px)] pb-4 lg:h-[calc(100vh-84px)] lg:min-h-[620px] lg:overflow-hidden'>
+      <div className='flex flex-col gap-4 lg:h-full lg:flex-row'>
+        <aside className='shrink-0 overflow-y-auto rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-1)] lg:h-full lg:w-[360px] xl:w-[400px]'>
           <div className='px-4 py-3 border-b border-[var(--semi-color-border)] flex items-center justify-between'>
             <div className='min-w-0'>
               <Title heading={5} className='!mb-0'>
@@ -1196,7 +1378,7 @@ const ImageGeneration = () => {
               />
             </div>
 
-            <div className='grid grid-cols-2 gap-3'>
+            <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
               <div className='flex flex-col gap-2 min-w-0'>
                 <Text strong>{t('模型')}</Text>
                 <Select
@@ -1304,7 +1486,7 @@ const ImageGeneration = () => {
                 />
               </div>
 
-              <div className='grid grid-cols-4 gap-2'>
+              <div className='grid grid-cols-3 gap-2 sm:grid-cols-4'>
                 <button
                   type='button'
                   className='aspect-[3/4] rounded-lg border-2 border-dashed border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] flex items-center justify-center hover:border-[var(--semi-color-primary)] transition-colors'
@@ -1370,7 +1552,7 @@ const ImageGeneration = () => {
           </div>
         </aside>
 
-        <main className='flex-1 min-w-0 h-full rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-1)] overflow-hidden flex flex-col'>
+        <main className='flex min-h-[520px] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-1)] lg:h-full'>
           <div className='px-5 py-3 border-b border-[var(--semi-color-border)] flex items-center justify-between gap-3'>
             <div>
               <Title heading={5} className='!mb-0'>
@@ -1436,7 +1618,7 @@ const ImageGeneration = () => {
           <Spin
             spinning={generating}
             tip={t('正在等待图像生成结果...')}
-            wrapperClassName='flex-1 min-h-0'
+            wrapperClassName='flex-1 min-h-[420px] lg:min-h-0'
           >
             <div className='h-full overflow-y-auto p-4'>
               {results.length === 0 ? (
@@ -1453,18 +1635,21 @@ const ImageGeneration = () => {
                 <div className='columns-1 md:columns-2 xl:columns-3 2xl:columns-4 gap-3'>
                   {results.map((item, index) => {
                     const src = buildImageUrl(item);
+                    const downloadKey = getImageDownloadKey(item, index);
+                    const downloadProgress = downloadProgressMap[downloadKey];
+                    const isDownloading = downloadProgress !== undefined;
                     return (
                       <div
                         key={`${src.slice(0, 48)}-${index}`}
                         className='break-inside-avoid mb-3 group relative rounded-xl overflow-hidden bg-[var(--semi-color-bg-2)] border border-[var(--semi-color-border)] cursor-zoom-in'
-                        onClick={() => openPreview(src)}
+                        onClick={() => openPreview(item, index)}
                       >
                         <img
                           src={src}
                           alt={item.revised_prompt || prompt}
                           className='w-full block transition-transform duration-300 group-hover:scale-[1.03]'
                         />
-                        <div className='absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity'>
+                        <div className='absolute right-2 top-2 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100'>
                           <Tooltip content={t('放大')}>
                             <Button
                               size='small'
@@ -1473,7 +1658,7 @@ const ImageGeneration = () => {
                               icon={<ZoomInIcon />}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                openPreview(src);
+                                openPreview(item, index);
                               }}
                             />
                           </Tooltip>
@@ -1485,21 +1670,7 @@ const ImageGeneration = () => {
                               icon={<DownloadIcon />}
                               onClick={async (event) => {
                                 event.stopPropagation();
-                                try {
-                                  await downloadImage(item, index);
-                                } catch (error) {
-                                  console.error(
-                                    '[image download] failed',
-                                    error,
-                                  );
-                                  Toast.error({
-                                    content: getReadableError(
-                                      error,
-                                      t('下载失败'),
-                                    ),
-                                    duration: 0,
-                                  });
-                                }
+                                await handleThumbnailDownload(item, index);
                               }}
                             />
                           </Tooltip>
@@ -1520,10 +1691,35 @@ const ImageGeneration = () => {
                           )}
                         </div>
                         {item.revised_prompt && (
-                          <div className='absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/75 to-transparent opacity-0 group-hover:opacity-100 transition-opacity'>
+                          <div className='absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/75 to-transparent p-3 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100'>
                             <p className='text-xs text-white/90 leading-relaxed line-clamp-4'>
                               {item.revised_prompt}
                             </p>
+                          </div>
+                        )}
+                        {isDownloading && (
+                          <div
+                            className='absolute inset-0 z-[9999] flex items-center justify-center bg-black/55 px-6 cursor-progress'
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                          >
+                            <div className='w-full max-w-[220px] rounded-lg bg-black/45 p-3 shadow-lg'>
+                              <div className='mb-2 text-center text-sm font-medium text-white'>
+                                {t('下载')} {downloadProgress}%
+                              </div>
+                              <div className='h-2 overflow-hidden rounded-full bg-white/25'>
+                                <div
+                                  className='h-full rounded-full bg-emerald-500 transition-[width] duration-150 ease-out'
+                                  style={{ width: `${downloadProgress}%` }}
+                                />
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1565,7 +1761,9 @@ const ImageGeneration = () => {
       <ImagePreview
         src={previewSrc}
         visible={previewVisible}
-        onVisibleChange={setPreviewVisible}
+        onVisibleChange={handlePreviewVisibleChange}
+        onDownloadError={handlePreviewDownloadError}
+        setDownloadName={() => getImageFilename(previewIndex)}
       />
     </div>
   );
