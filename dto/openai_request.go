@@ -279,8 +279,8 @@ type Message struct {
 	Content          any             `json:"content"`
 	Name             *string         `json:"name,omitempty"`
 	Prefix           *bool           `json:"prefix,omitempty"`
-	ReasoningContent string          `json:"reasoning_content,omitempty"`
-	Reasoning        string          `json:"reasoning,omitempty"`
+	ReasoningContent *string         `json:"reasoning_content,omitempty"`
+	Reasoning        *string         `json:"reasoning,omitempty"`
 	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 	ToolCallId       string          `json:"tool_call_id,omitempty"`
 	parsedContent    []MediaContent
@@ -399,7 +399,7 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 
 type MessageImageUrl struct {
 	Url      string `json:"url"`
-	Detail   string `json:"detail"`
+	Detail   string `json:"detail,omitempty"`
 	MimeType string
 }
 
@@ -423,10 +423,13 @@ type MessageVideoUrl struct {
 }
 
 func (m *Message) GetReasoningContent() string {
-	if m.ReasoningContent != "" {
-		return m.ReasoningContent
+	if m.ReasoningContent == nil && m.Reasoning == nil {
+		return ""
 	}
-	return m.Reasoning
+	if m.ReasoningContent != nil {
+		return *m.ReasoningContent
+	}
+	return *m.Reasoning
 }
 
 const (

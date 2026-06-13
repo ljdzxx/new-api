@@ -281,10 +281,8 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse) (*
 	for _, choice := range resp.Choices {
 		if text := choice.Message.StringContent(); text != "" {
 			textBuilder.WriteString(text)
-		} else if choice.Message.ReasoningContent != "" {
-			textBuilder.WriteString(choice.Message.ReasoningContent)
-		} else if choice.Message.Reasoning != "" {
-			textBuilder.WriteString(choice.Message.Reasoning)
+		} else if reasoning := choice.Message.GetReasoningContent(); reasoning != "" {
+			textBuilder.WriteString(reasoning)
 		}
 
 		for _, toolCall := range choice.Message.ParseToolCalls() {
