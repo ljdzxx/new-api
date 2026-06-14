@@ -1,6 +1,9 @@
 package claude
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,6 +11,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -950,6 +955,12 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 }
 
 func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	// 透传渠道：原生 Claude 流式按字节保真转发，绕开共享扫描器的协议重建。
+	// 触发条件与请求侧（claude_handler.go）完全一致，语义「开了透传就两头都透传」。
+	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+		return ClaudeStreamPassThroughHandler(c, resp, info)
+	}
+
 	claudeInfo := &ClaudeResponseInfo{
 		ResponseId:   helper.GetResponseID(c),
 		Created:      common.GetTimestamp(),
@@ -971,6 +982,221 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
 	return claudeInfo.Usage, nil
+}
+
+// claudeStreamPassThroughHopByHopHeaders 列出在响应头透传时必须跳过的 hop-by-hop 头，
+// 这些头由 new-api 自身的 chunked SSE 输出管理，原样复制会与之冲突。
+var claudeStreamPassThroughHopByHopHeaders = map[string]struct{}{
+	"content-length":    {},
+	"content-encoding":  {},
+	"transfer-encoding": {},
+	"connection":        {},
+	"keep-alive":        {},
+}
+
+// copyClaudeStreamPassThroughHeaders 在首次写入前，将上游（Anthropic）的响应头按白名单复制到客户端。
+// 仅透传 Anthropic 指纹相关头（request-id、Anthropic-*、x-should-retry 等），跳过 hop-by-hop 头。
+// 必须在 helper.SetEventStreamHeaders 之前调用，确保 Content-Type 等 SSE 头最终生效。
+func copyClaudeStreamPassThroughHeaders(c *gin.Context, resp *http.Response) {
+	if c == nil || c.Writer == nil || resp == nil {
+		return
+	}
+	for k, vs := range resp.Header {
+		if len(vs) == 0 {
+			continue
+		}
+		lower := strings.ToLower(k)
+		if _, skip := claudeStreamPassThroughHopByHopHeaders[lower]; skip {
+			continue
+		}
+		// 仅透传 Anthropic 指纹相关响应头，避免把上游的 Date/Server 等覆盖 new-api 自身的头。
+		if lower == "request-id" || lower == "x-should-retry" || strings.HasPrefix(lower, strings.ToLower("Anthropic-")) {
+			for i, v := range vs {
+				if i == 0 {
+					c.Writer.Header().Set(k, v)
+				} else {
+					c.Writer.Header().Add(k, v)
+				}
+			}
+		}
+	}
+}
+
+// updateClaudePassThroughUsage 旁路解析一行 SSE 数据用于计费，绝不修改已写回客户端的字节。
+// 解析失败（如分片/非 JSON）时静默忽略，不中断流。
+func updateClaudePassThroughUsage(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, line []byte) {
+	trimmed := bytes.TrimSpace(line)
+	if len(trimmed) == 0 {
+		return
+	}
+	if !bytes.HasPrefix(trimmed, []byte("data:")) {
+		return
+	}
+	payload := bytes.TrimSpace(trimmed[len("data:"):])
+	if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+		return
+	}
+	var claudeResponse dto.ClaudeResponse
+	if err := common.UnmarshalJsonStr(string(payload), &claudeResponse); err != nil {
+		// 透传场景下字节已转发，旁路解析失败仅影响计费估算，记录后继续。
+		if common.DebugEnabled {
+			common.SysLog("claude passthrough usage parse skip: " + err.Error())
+		}
+		return
+	}
+	if claudeResponse.StopReason != "" {
+		maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+	}
+	if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
+		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
+	}
+	FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
+	if claudeResponse.Type == "message_start" && claudeResponse.Message != nil {
+		info.UpstreamModelName = claudeResponse.Message.Model
+	}
+}
+
+// ClaudeStreamPassThroughHandler 以字节级保真的方式转发上游 Anthropic 的 SSE 流。
+// 与共享扫描器不同，它逐行原样写回（保留 event:/ping/空行/签名/帧顺序），
+// 仅旁路解析 usage 用于计费，绝不重建协议。仅用于原生 RelayFormatClaude 的透传渠道。
+func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	if resp == nil || resp.Body == nil {
+		return nil, types.NewError(fmt.Errorf("claude passthrough: nil upstream response"), types.ErrorCodeBadResponseBody)
+	}
+
+	claudeInfo := &ClaudeResponseInfo{
+		ResponseId:   helper.GetResponseID(c),
+		Created:      common.GetTimestamp(),
+		Model:        info.UpstreamModelName,
+		ResponseText: strings.Builder{},
+		Usage:        &dto.Usage{},
+	}
+
+	// 每次运行重建 StreamStatus，与共享扫描器保持一致的结局记录方式。
+	info.StreamStatus = relaycommon.NewStreamStatus()
+
+	// 首次写入前透传上游响应头，再设置 SSE 头（Set 语义保证 Content-Type 最终生效）。
+	copyClaudeStreamPassThroughHeaders(c, resp)
+	helper.SetEventStreamHeaders(c)
+
+	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
+	if streamingTimeout <= 0 {
+		streamingTimeout = 30 * time.Second
+	}
+
+	var (
+		stopChan = make(chan bool, 3)
+		lineChan = make(chan []byte, 16)
+		ticker   = time.NewTicker(streamingTimeout)
+		wg       sync.WaitGroup
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer func() {
+		common.SafeSendBool(stopChan, true)
+		// 关闭 body 以唤醒阻塞在 ReadBytes 的 reader goroutine。
+		_ = resp.Body.Close()
+		ticker.Stop()
+		cancel()
+
+		done := make(chan struct{})
+		common.RelayCtxGo(context.Background(), func() {
+			wg.Wait()
+			close(done)
+		})
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			logger.LogError(c, "claude passthrough: timeout waiting for reader goroutine")
+		}
+	}()
+
+	// reader goroutine：逐行读取上游字节并送入 lineChan，保留行尾换行；
+	// 自带 panic 恢复，结束时关闭 lineChan 以通知主循环 EOF。
+	wg.Add(1)
+	common.RelayCtxGo(ctx, func() {
+		defer func() {
+			wg.Done()
+			if r := recover(); r != nil {
+				logger.LogError(c, fmt.Sprintf("claude passthrough reader panic: %v", r))
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("reader panic: %v", r))
+			}
+			close(lineChan)
+			common.SafeSendBool(stopChan, true)
+		}()
+
+		reader := bufio.NewReaderSize(resp.Body, helper.InitialScannerBufferSize)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopChan:
+				return
+			default:
+			}
+
+			line, err := reader.ReadBytes('\n')
+			if len(line) > 0 {
+				// 复制一份，避免 reader 复用底层缓冲导致数据竞争。
+				buf := make([]byte, len(line))
+				copy(buf, line)
+				select {
+				case lineChan <- buf:
+				case <-ctx.Done():
+					return
+				case <-stopChan:
+					return
+				}
+			}
+			if err != nil {
+				if err == io.EOF {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+				} else {
+					logger.LogError(c, "claude passthrough read error: "+err.Error())
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+				}
+				return
+			}
+		}
+	})
+
+	firstByteSeen := false
+	for {
+		select {
+		case <-ticker.C:
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, nil)
+			HandleStreamFinalResponse(c, info, claudeInfo)
+			return claudeInfo.Usage, nil
+		case <-c.Request.Context().Done():
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
+			HandleStreamFinalResponse(c, info, claudeInfo)
+			return claudeInfo.Usage, nil
+		case line, ok := <-lineChan:
+			if !ok {
+				// 上游 EOF，正常结束。
+				HandleStreamFinalResponse(c, info, claudeInfo)
+				return claudeInfo.Usage, nil
+			}
+			ticker.Reset(streamingTimeout)
+			if !firstByteSeen {
+				firstByteSeen = true
+				info.SetFirstResponseTime()
+			}
+			info.ReceivedResponseCount++
+			// 原样写回，绝不经 CustomEvent/ClaudeChunkData，杜绝二次格式化。
+			if _, werr := c.Writer.Write(line); werr != nil {
+				// 写回失败（客户端断开等）：字节已部分发送，无法返错，记录后结束。
+				logger.LogError(c, "claude passthrough write error: "+werr.Error())
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, werr)
+				HandleStreamFinalResponse(c, info, claudeInfo)
+				return claudeInfo.Usage, nil
+			}
+			_ = helper.FlushWriter(c)
+			// 旁路解析用于计费，不影响已写回的字节。
+			updateClaudePassThroughUsage(c, info, claudeInfo, line)
+		}
+	}
 }
 
 func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo, httpResp *http.Response, data []byte) *types.NewAPIError {
