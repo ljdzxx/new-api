@@ -29,7 +29,7 @@ func TestCleanupOldLogFiles_KeepMaxAndDeleteOldest(t *testing.T) {
 	// Non-log files should not be touched.
 	mustWriteFile(t, filepath.Join(dir, "keep-me.txt"))
 
-	cleanupOldLogFiles(dir, 7)
+	cleanupOldLogFiles(dir, logFilePrefix, 7)
 
 	got := listFilesByPrefixSuffix(t, dir, logFilePrefix, logFileSuffix)
 	want := []string{
@@ -65,7 +65,7 @@ func TestCleanupOldLogFiles_PreferFilenameTimeOverModTime(t *testing.T) {
 	mustSetFileTime(t, f2, now.Add(1*time.Hour))
 	mustSetFileTime(t, f3, now.Add(-1*time.Hour))
 
-	cleanupOldLogFiles(dir, 2)
+	cleanupOldLogFiles(dir, logFilePrefix, 2)
 
 	got := listFilesByPrefixSuffix(t, dir, logFilePrefix, logFileSuffix)
 	want := []string{

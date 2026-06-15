@@ -71,6 +71,7 @@ var EmailLoginAuthServerList = []string{
 
 var DebugEnabled bool
 var DebugTraceEnabled bool
+var ClaudeRelayDebugLogEnabled bool
 var MemoryCacheEnabled bool
 
 var LogConsumeEnabled = true

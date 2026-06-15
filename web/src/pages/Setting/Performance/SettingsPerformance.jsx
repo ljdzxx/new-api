@@ -66,6 +66,7 @@ export default function SettingsPerformance(props) {
     'performance_setting.disk_cache_max_size_mb': 1024,
     'performance_setting.disk_cache_path': '',
     'performance_setting.debug_trace_enabled': false,
+    'performance_setting.claude_relay_debug_log_enabled': false,
     'performance_setting.monitor_enabled': false,
     'performance_setting.monitor_cpu_threshold': 90,
     'performance_setting.monitor_memory_threshold': 90,
@@ -302,6 +303,21 @@ export default function SettingsPerformance(props) {
                   uncheckedText='〇'
                   onChange={handleFieldChange(
                     'performance_setting.debug_trace_enabled',
+                  )}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'performance_setting.claude_relay_debug_log_enabled'}
+                  label={t('启用 Claude 中转排查日志')}
+                  extraText={t(
+                    '/v1/messages 的请求体、应答、上下游头部与流式原始数据另存为 oneapi-claude-YYYYMMDD.log',
+                  )}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={handleFieldChange(
+                    'performance_setting.claude_relay_debug_log_enabled',
                   )}
                 />
               </Col>

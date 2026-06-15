@@ -1056,6 +1056,15 @@ func updateClaudePassThroughUsage(c *gin.Context, info *relaycommon.RelayInfo, c
 	}
 }
 
+// logClaudePassThroughDetail 在「Claude 中转排查日志」开关开启时，把透传流的原始
+// 字节写入独立的 oneapi-claude-YYYYMMDD.log。开关关闭时零开销。
+func logClaudePassThroughDetail(c *gin.Context, format string, args ...any) {
+	if !common.ClaudeRelayDebugLogEnabled {
+		return
+	}
+	logger.LogClaudeRelay(c, fmt.Sprintf(format, args...))
+}
+
 // ClaudeStreamPassThroughHandler 以字节级保真的方式转发上游 Anthropic 的 SSE 流。
 // 与共享扫描器不同，它逐行原样写回（保留 event:/ping/空行/签名/帧顺序），
 // 仅旁路解析 usage 用于计费，绝不重建协议。仅用于原生 RelayFormatClaude 的透传渠道。
@@ -1078,6 +1087,8 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 	// 首次写入前透传上游响应头，再设置 SSE 头（Set 语义保证 Content-Type 最终生效）。
 	copyClaudeStreamPassThroughHeaders(c, resp)
 	helper.SetEventStreamHeaders(c)
+
+	logClaudePassThroughDetail(c, "---------- pass-through stream BEGIN (status=%d) ----------", resp.StatusCode)
 
 	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
 	if streamingTimeout <= 0 {
@@ -1193,6 +1204,8 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 				return claudeInfo.Usage, nil
 			}
 			_ = helper.FlushWriter(c)
+			// 排查日志：逐行记录上游原始字节（开关关闭时零开销）。
+			logClaudePassThroughDetail(c, "upstream sse line bytes=%d: %s", len(line), strings.TrimRight(string(line), "\r\n"))
 			// 旁路解析用于计费，不影响已写回的字节。
 			updateClaudePassThroughUsage(c, info, claudeInfo, line)
 		}

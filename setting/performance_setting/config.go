@@ -16,6 +16,9 @@ type PerformanceSetting struct {
 	// DiskCachePath 磁盘缓存目录
 	DiskCachePath     string `json:"disk_cache_path"`
 	DebugTraceEnabled bool   `json:"debug_trace_enabled"`
+	// ClaudeRelayDebugLogEnabled 是否开启 /v1/messages（Claude 中转）详细排查日志，
+	// 独立写入 oneapi-claude-YYYYMMDD.log
+	ClaudeRelayDebugLogEnabled bool `json:"claude_relay_debug_log_enabled"`
 
 	// MonitorEnabled 是否启用性能监控
 	MonitorEnabled bool `json:"monitor_enabled"`
@@ -64,6 +67,7 @@ func syncToCommon() {
 		DiskThreshold:   performanceSetting.MonitorDiskThreshold,
 	})
 	common.DebugTraceEnabled = performanceSetting.DebugTraceEnabled
+	common.ClaudeRelayDebugLogEnabled = performanceSetting.ClaudeRelayDebugLogEnabled
 }
 
 // GetPerformanceSetting 获取性能设置

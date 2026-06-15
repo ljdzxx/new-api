@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,6 +27,69 @@ func logClaudeMessagesDebug(c *gin.Context, format string, args ...any) {
 		return
 	}
 	logger.LogInfo(c, "[claude messages] "+fmt.Sprintf(format, args...))
+}
+
+// logClaudeRelayDetail 在「Claude 中转排查日志」开关开启时，把 /v1/messages 的
+// 详细数据写入独立的 oneapi-claude-YYYYMMDD.log 文件。开关关闭时零开销。
+func logClaudeRelayDetail(c *gin.Context, format string, args ...any) {
+	if !common.ClaudeRelayDebugLogEnabled {
+		return
+	}
+	logger.LogClaudeRelay(c, fmt.Sprintf(format, args...))
+}
+
+// claudeRelayHeaderSecretKeys 在排查日志中需要脱敏的请求头（避免泄漏密钥）。
+var claudeRelayHeaderSecretKeys = map[string]struct{}{
+	"x-api-key":     {},
+	"authorization": {},
+	"api-key":       {},
+	"cookie":        {},
+}
+
+// dumpClaudeRelayHeaders 将 HTTP 头序列化为单行字符串，密钥类头部以长度+前缀脱敏。
+func dumpClaudeRelayHeaders(h http.Header) string {
+	if len(h) == 0 {
+		return "<empty>"
+	}
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var sb strings.Builder
+	for _, k := range keys {
+		if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		value := strings.Join(h.Values(k), ",")
+		if _, secret := claudeRelayHeaderSecretKeys[strings.ToLower(k)]; secret {
+			masked := ""
+			if len(value) > 6 {
+				masked = value[:6]
+			}
+			sb.WriteString(fmt.Sprintf("%s=<len=%d prefix=%q>", k, len(value), masked))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s=%q", k, value))
+		}
+	}
+	return sb.String()
+}
+
+// readClaudeInboundBodyForLog 读取入站请求体用于排查日志，读取后 seek 回起点，
+// 不影响后续解析/透传对 body 的再次读取。
+func readClaudeInboundBodyForLog(c *gin.Context) ([]byte, error) {
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
+		return nil, err
+	}
+	data, err := storage.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {
+		return data, seekErr
+	}
+	return data, nil
 }
 
 func logXiaomiClaudeTrace(c *gin.Context, format string, args ...any) {
@@ -389,6 +453,19 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 	logClaudeMessagesDebug(c, "request received: %s %s %s", summarizeClaudeRequestForLog(claudeReq), summarizeClaudeChannelForLog(info), summarizeClaudeClientHeadersForLog(c))
 
+	if common.ClaudeRelayDebugLogEnabled {
+		logClaudeRelayDetail(c, "========== /v1/messages BEGIN ==========")
+		logClaudeRelayDetail(c, "channel: id=%d type=%d base_url=%q origin_model=%q upstream_model=%q stream=%t pass_through_global=%t pass_through_channel=%t",
+			info.ChannelId, info.ChannelType, info.ChannelBaseUrl, info.OriginModelName, info.UpstreamModelName, info.IsStream,
+			model_setting.GetGlobalSettings().PassThroughRequestEnabled, info.ChannelSetting.PassThroughBodyEnabled)
+		logClaudeRelayDetail(c, "inbound client headers: %s", dumpClaudeRelayHeaders(c.Request.Header))
+		if rawInbound, rawErr := readClaudeInboundBodyForLog(c); rawErr != nil {
+			logClaudeRelayDetail(c, "inbound request body read failed: %s", rawErr.Error())
+		} else {
+			logClaudeRelayDetail(c, "inbound request body bytes=%d:\n%s", len(rawInbound), string(rawInbound))
+		}
+	}
+
 	request, err := common.DeepCopy(claudeReq)
 	if err != nil {
 		logClaudeMessagesError(c, "deep copy request failed: %s %s", err.Error(), summarizeClaudeChannelForLog(info))
@@ -540,6 +617,16 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		info.UpstreamRequestBodySize = storage.Size()
 		requestBody = common.ReaderOnly(storage)
+		if common.ClaudeRelayDebugLogEnabled {
+			if bodyBytes, bodyErr := storage.Bytes(); bodyErr != nil {
+				logClaudeRelayDetail(c, "outbound upstream request body (pass-through) read failed: %s", bodyErr.Error())
+			} else {
+				logClaudeRelayDetail(c, "outbound upstream request body (pass-through) bytes=%d:\n%s", len(bodyBytes), string(bodyBytes))
+			}
+			if _, seekErr := storage.Seek(0, io.SeekStart); seekErr != nil {
+				logClaudeRelayDetail(c, "outbound upstream request body (pass-through) seek-back failed: %s", seekErr.Error())
+			}
+		}
 	} else {
 		convertedRequest, err := adaptor.ConvertClaudeRequest(c, info, request)
 		if err != nil {
@@ -580,6 +667,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			logXiaomiClaudeTrace(c, "FINAL upstream request body source=converted %s details=%s", summarizeClaudeJSONBodyForLog(jsonData), summarizeClaudeJSONBodyDetailsForLog(jsonData))
 			logXiaomiClaudeTrace(c, "FINAL upstream request body raw bytes=%d:\n%s", len(jsonData), string(jsonData))
 		}
+		logClaudeRelayDetail(c, "outbound upstream request body (converted) bytes=%d:\n%s", len(jsonData), string(jsonData))
 		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -616,6 +704,11 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		logClaudeMessagesDebug(c, "upstream response received: status=%d content_type=%q request_id=%q stream=%t %s", httpResp.StatusCode, httpResp.Header.Get("Content-Type"), httpResp.Header.Get("request-id"), info.IsStream, summarizeClaudeChannelForLog(info))
+		if common.ClaudeRelayDebugLogEnabled {
+			// 上游响应状态+全部头部是判断「原生 Claude vs 被包装的 Claude」的关键证据。
+			logClaudeRelayDetail(c, "upstream response: status=%d stream=%t", httpResp.StatusCode, info.IsStream)
+			logClaudeRelayDetail(c, "upstream response headers: %s", dumpClaudeRelayHeaders(httpResp.Header))
+		}
 		if httpResp.StatusCode != http.StatusOK {
 			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 			// reset status code 重置状态码

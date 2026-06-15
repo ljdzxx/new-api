@@ -25,18 +25,24 @@ const (
 )
 
 const (
-	logFilePrefix = "oneapi-"
-	logFileSuffix = ".log"
-	logDateFormat = "20060102"
+	logFilePrefix       = "oneapi-"
+	claudeLogFilePrefix = "oneapi-claude-"
+	logFileSuffix       = ".log"
+	logDateFormat       = "20060102"
 )
 
 type dailyLogFileManager struct {
 	mu          sync.Mutex
 	logDir      string
+	filePrefix  string
 	maxFileKeep int
 	currentDate string
 	fd          *os.File
 }
+
+// claudeRelayManager 专用于 /v1/messages 详细排查日志，独立成文件
+// （oneapi-claude-YYYYMMDD.log），不与主日志混写。nil 表示未启用文件日志。
+var claudeRelayManager *dailyLogFileManager
 
 type logWriter struct {
 	manager *dailyLogFileManager
@@ -57,6 +63,7 @@ func SetupLogger() {
 	}
 	manager := &dailyLogFileManager{
 		logDir:      *common.LogDir,
+		filePrefix:  logFilePrefix,
 		maxFileKeep: common.LogMaxFileCount,
 	}
 	if err := manager.ensureLogFileLocked(time.Now()); err != nil {
@@ -69,6 +76,14 @@ func SetupLogger() {
 	gin.DefaultErrorWriter = &logWriter{
 		manager: manager,
 		console: os.Stderr,
+	}
+
+	// 独立的 /v1/messages 排查日志文件（oneapi-claude-YYYYMMDD.log），
+	// 与主日志分离，便于单独抓取 Claude 中转的请求/应答原始数据。
+	claudeRelayManager = &dailyLogFileManager{
+		logDir:      *common.LogDir,
+		filePrefix:  claudeLogFilePrefix,
+		maxFileKeep: common.LogMaxFileCount,
 	}
 }
 
@@ -92,7 +107,11 @@ func (m *dailyLogFileManager) ensureLogFileLocked(now time.Time) error {
 		m.fd = nil
 	}
 
-	logPath := filepath.Join(m.logDir, fmt.Sprintf("%s%s%s", logFilePrefix, currentDate, logFileSuffix))
+	prefix := m.filePrefix
+	if prefix == "" {
+		prefix = logFilePrefix
+	}
+	logPath := filepath.Join(m.logDir, fmt.Sprintf("%s%s%s", prefix, currentDate, logFileSuffix))
 	fd, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -101,7 +120,7 @@ func (m *dailyLogFileManager) ensureLogFileLocked(now time.Time) error {
 	m.currentDate = currentDate
 
 	if m.maxFileKeep > 0 {
-		cleanupOldLogFiles(m.logDir, m.maxFileKeep)
+		cleanupOldLogFiles(m.logDir, prefix, m.maxFileKeep)
 	}
 	return nil
 }
@@ -113,7 +132,13 @@ type logFileInfo struct {
 	hasTime   bool
 }
 
-func cleanupOldLogFiles(logDir string, maxFileKeep int) {
+func cleanupOldLogFiles(logDir string, prefix string, maxFileKeep int) {
+	if prefix == "" {
+		prefix = logFilePrefix
+	}
+	// 当 prefix 为主日志前缀时，需排除 oneapi-claude- 这类更具体的前缀，
+	// 避免把独立的 Claude 排查日志计入主日志的保留配额而误删。
+	isMainPrefix := prefix == logFilePrefix
 	entries, err := os.ReadDir(logDir)
 	if err != nil {
 		return
@@ -124,14 +149,17 @@ func cleanupOldLogFiles(logDir string, maxFileKeep int) {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, logFilePrefix) || !strings.HasSuffix(name, logFileSuffix) {
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, logFileSuffix) {
+			continue
+		}
+		if isMainPrefix && strings.HasPrefix(name, claudeLogFilePrefix) {
 			continue
 		}
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-		parsedTime, hasTime := parseLogFileTime(name)
+		parsedTime, hasTime := parseLogFileTime(name, prefix)
 		files = append(files, logFileInfo{
 			name:      name,
 			modTime:   info.ModTime(),
@@ -163,8 +191,11 @@ func cleanupOldLogFiles(logDir string, maxFileKeep int) {
 	}
 }
 
-func parseLogFileTime(name string) (time.Time, bool) {
-	datePart := strings.TrimSuffix(strings.TrimPrefix(name, logFilePrefix), logFileSuffix)
+func parseLogFileTime(name string, prefix string) (time.Time, bool) {
+	if prefix == "" {
+		prefix = logFilePrefix
+	}
+	datePart := strings.TrimSuffix(strings.TrimPrefix(name, prefix), logFileSuffix)
 	if t, err := time.Parse("20060102", datePart); err == nil {
 		return t, true
 	}
@@ -206,6 +237,28 @@ func logHelper(ctx context.Context, level string, msg string) {
 	}
 	now := time.Now()
 	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", level, now.Format("2006/01/02 - 15:04:05"), id, msg)
+}
+
+// LogClaudeRelay 将 /v1/messages 中转的详细排查信息写入独立的
+// oneapi-claude-YYYYMMDD.log 文件（不与主日志混写，也不输出到控制台）。
+// 若未配置日志目录（claudeRelayManager 为 nil），则回退到主日志的 INFO 通道，
+// 保证开启开关后即使没有 LogDir 也能在控制台看到数据。
+func LogClaudeRelay(ctx context.Context, msg string) {
+	id := ctx.Value(common.RequestIdKey)
+	if id == nil {
+		id = "SYSTEM"
+	}
+	now := time.Now()
+	line := fmt.Sprintf("[CLAUDE] %v | %s | %s \n", now.Format("2006/01/02 - 15:04:05"), id, msg)
+	if claudeRelayManager == nil {
+		// 未启用文件日志，回退到主日志 INFO 通道。
+		_, _ = fmt.Fprint(gin.DefaultWriter, line)
+		return
+	}
+	if err := claudeRelayManager.writeToDailyFile([]byte(line)); err != nil {
+		// 文件写入失败时退回主日志，避免排查数据彻底丢失。
+		_, _ = fmt.Fprintf(gin.DefaultErrorWriter, "[CLAUDE] write claude relay log failed: %s | %s", err.Error(), line)
+	}
 }
 
 func LogQuota(quota int) string {
