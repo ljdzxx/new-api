@@ -1059,7 +1059,7 @@ func updateClaudePassThroughUsage(c *gin.Context, info *relaycommon.RelayInfo, c
 // logClaudePassThroughDetail 在「Claude 中转排查日志」开关开启时，把透传流的原始
 // 字节写入独立的 oneapi-claude-YYYYMMDD.log。开关关闭时零开销。
 func logClaudePassThroughDetail(c *gin.Context, format string, args ...any) {
-	if !common.ClaudeRelayDebugLogEnabled {
+	if !common.ClaudeRelayDebugLogEnabled || !common.GetContextKeyBool(c, constant.ContextKeyClaudeRelayDetailLog) {
 		return
 	}
 	logger.LogClaudeRelay(c, fmt.Sprintf(format, args...))

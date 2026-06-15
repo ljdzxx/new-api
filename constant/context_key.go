@@ -64,6 +64,12 @@ const (
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 	ContextKeyXiaomiClaudeDebug    ContextKey = "xiaomi_claude_debug"
 
+	// ContextKeyClaudeRelayDetailLog 标记当前 /v1/messages 请求是否应写入详细排查日志。
+	// 仅当上游为「原生 Claude 渠道」（ChannelTypeAnthropic / APITypeAnthropic）时为 true，
+	// 用于把 OpenAI 兼容渠道（请求被转换为 Chat Completions）的流量排除在
+	// oneapi-Claude-YYYYMMDD.log 之外。在 ClaudeHelper 的 InitChannelMeta 之后确定。
+	ContextKeyClaudeRelayDetailLog ContextKey = "claude_relay_detail_log"
+
 	// ContextKeyFileSourcesToCleanup stores file sources that need cleanup when request ends
 	ContextKeyFileSourcesToCleanup ContextKey = "file_sources_to_cleanup"
 

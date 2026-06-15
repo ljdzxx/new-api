@@ -29,10 +29,19 @@ func logClaudeMessagesDebug(c *gin.Context, format string, args ...any) {
 	logger.LogInfo(c, "[claude messages] "+fmt.Sprintf(format, args...))
 }
 
-// logClaudeRelayDetail 在「Claude 中转排查日志」开关开启时，把 /v1/messages 的
-// 详细数据写入独立的 oneapi-claude-YYYYMMDD.log 文件。开关关闭时零开销。
-func logClaudeRelayDetail(c *gin.Context, format string, args ...any) {
+// claudeRelayDetailLogEnabled 判定当前请求是否应写入 /v1/messages 详细排查日志。
+// 需同时满足：全局开关开启，且本次请求命中「原生 Claude 上游」（在 ClaudeHelper
+// 的 InitChannelMeta 之后写入 ContextKeyClaudeRelayDetailLog）。OpenAI 兼容渠道
+// （请求被转换为 Chat Completions）不会命中，因此被排除在排查日志之外。
+func claudeRelayDetailLogEnabled(c *gin.Context) bool {
 	if !common.ClaudeRelayDebugLogEnabled {
+		return false
+	}
+	return common.GetContextKeyBool(c, constant.ContextKeyClaudeRelayDetailLog)
+}
+
+func logClaudeRelayDetail(c *gin.Context, format string, args ...any) {
+	if !claudeRelayDetailLogEnabled(c) {
 		return
 	}
 	logger.LogClaudeRelay(c, fmt.Sprintf(format, args...))
@@ -445,6 +454,13 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		logXiaomiClaudeTrace(c, "trace enabled immediately after InitChannelMeta: %s", summarizeClaudeChannelForLog(info))
 	}
 
+	// 仅当上游为「原生 Claude 渠道」（直连 Claude Messages API，APITypeAnthropic）时，
+	// 才把本次 /v1/messages 写入详细排查日志。OpenAI 兼容渠道（请求被转换为
+	// Chat Completions，例如示例中的 type=1 OpenAI 渠道）不写入，从源头排除噪声。
+	if common.ClaudeRelayDebugLogEnabled && info.ApiType == constant.APITypeAnthropic {
+		common.SetContextKey(c, constant.ContextKeyClaudeRelayDetailLog, true)
+	}
+
 	claudeReq, ok := info.Request.(*dto.ClaudeRequest)
 
 	if !ok {
@@ -453,7 +469,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 	logClaudeMessagesDebug(c, "request received: %s %s %s", summarizeClaudeRequestForLog(claudeReq), summarizeClaudeChannelForLog(info), summarizeClaudeClientHeadersForLog(c))
 
-	if common.ClaudeRelayDebugLogEnabled {
+	if claudeRelayDetailLogEnabled(c) {
 		logClaudeRelayDetail(c, "========== /v1/messages BEGIN ==========")
 		logClaudeRelayDetail(c, "channel: id=%d type=%d base_url=%q origin_model=%q upstream_model=%q stream=%t pass_through_global=%t pass_through_channel=%t",
 			info.ChannelId, info.ChannelType, info.ChannelBaseUrl, info.OriginModelName, info.UpstreamModelName, info.IsStream,
@@ -617,7 +633,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 		info.UpstreamRequestBodySize = storage.Size()
 		requestBody = common.ReaderOnly(storage)
-		if common.ClaudeRelayDebugLogEnabled {
+		if claudeRelayDetailLogEnabled(c) {
 			if bodyBytes, bodyErr := storage.Bytes(); bodyErr != nil {
 				logClaudeRelayDetail(c, "outbound upstream request body (pass-through) read failed: %s", bodyErr.Error())
 			} else {
@@ -704,7 +720,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		logClaudeMessagesDebug(c, "upstream response received: status=%d content_type=%q request_id=%q stream=%t %s", httpResp.StatusCode, httpResp.Header.Get("Content-Type"), httpResp.Header.Get("request-id"), info.IsStream, summarizeClaudeChannelForLog(info))
-		if common.ClaudeRelayDebugLogEnabled {
+		if claudeRelayDetailLogEnabled(c) {
 			// 上游响应状态+全部头部是判断「原生 Claude vs 被包装的 Claude」的关键证据。
 			logClaudeRelayDetail(c, "upstream response: status=%d stream=%t", httpResp.StatusCode, info.IsStream)
 			logClaudeRelayDetail(c, "upstream response headers: %s", dumpClaudeRelayHeaders(httpResp.Header))
