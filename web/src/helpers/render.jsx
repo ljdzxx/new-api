@@ -66,6 +66,7 @@ import {
   CalendarClock,
   Crown,
   ReceiptText,
+  PartyPopper,
 } from 'lucide-react';
 import {
   SiAtlassian,
@@ -127,6 +128,9 @@ export function getLucideIcon(key, selected = false) {
       return <CreditCard {...commonProps} color={iconColor} />;
     case 'level':
       return <Crown {...commonProps} color={iconColor} />;
+    case 'lottery':
+    case 'lottery_admin':
+      return <PartyPopper {...commonProps} color={iconColor} />;
     case 'channel':
       return <Layers {...commonProps} color={iconColor} />;
     case 'redemption':

@@ -119,6 +119,10 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 	if bc := task.PrivateData.BillingContext; bc != nil {
 		other["model_price"] = bc.ModelPrice
 		other["group_ratio"] = bc.GroupRatio
+		other["system_global_model_ratio"] = bc.SystemGlobalModelRatio
+		other["user_global_model_ratio"] = bc.UserGlobalModelRatio
+		other["channel_model_ratio"] = bc.ChannelModelRatio
+		other["global_model_ratio"] = bc.GlobalModelRatio
 		if len(bc.OtherRatios) > 0 {
 			for k, v := range bc.OtherRatios {
 				other[k] = v
@@ -279,20 +283,35 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	}
 
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * globalModelRatio
-	globalModelRatio := ratio_setting.GetGlobalModelRatio()
-	userGlobalModelRatio, err := model.GetUserGlobalModelRatio(task.UserId, false)
-	if err == nil {
-		globalModelRatio *= userGlobalModelRatio
+	systemGlobalModelRatio := ratio_setting.GetGlobalModelRatio()
+	userGlobalModelRatio := ratio_setting.DefaultGlobalModelRatio
+	channelModelRatio := ratio_setting.DefaultGlobalModelRatio
+	globalModelRatio := systemGlobalModelRatio
+	if bc := task.PrivateData.BillingContext; bc != nil && (bc.SystemGlobalModelRatio != 0 || bc.UserGlobalModelRatio != 0 || bc.ChannelModelRatio != 0 || bc.GlobalModelRatio != 0) {
+		systemGlobalModelRatio = bc.SystemGlobalModelRatio
+		userGlobalModelRatio = bc.UserGlobalModelRatio
+		channelModelRatio = bc.ChannelModelRatio
+		globalModelRatio = bc.GlobalModelRatio
+	} else {
+		userRatio, err := model.GetUserGlobalModelRatio(task.UserId, false)
+		if err == nil {
+			userGlobalModelRatio = userRatio
+			globalModelRatio *= userGlobalModelRatio
+		}
+		if channel, err := model.GetChannelById(task.ChannelId, false); err == nil {
+			channelModelRatio = channel.GetModelRatio()
+			globalModelRatio *= channelModelRatio
+		}
 	}
 	scaledTotalTokens := relayhelper.ScaleTokensByGlobalModelRatio(totalTokens, globalModelRatio)
 	actualQuota := int(float64(scaledTotalTokens) * modelRatio * finalGroupRatio)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
-	if globalModelRatio > 1 {
+	if globalModelRatio != 1 || common.DebugTraceEnabled {
 		logger.LogInfo(ctx, fmt.Sprintf(
-			"global model ratio task token scaling billing: task_id=%s user_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens=%d scaled_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
+			"global model ratio task token scaling billing: task_id=%s user_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens=%d scaled_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
 			task.TaskID, task.UserId, modelName,
-			ratio_setting.GetGlobalModelRatio(), userGlobalModelRatio, globalModelRatio,
+			systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio,
 			totalTokens, scaledTotalTokens,
 			totalTokens, modelRatio, finalGroupRatio, float64(totalTokens)*modelRatio*finalGroupRatio,
 			scaledTotalTokens, modelRatio, finalGroupRatio, actualQuota,

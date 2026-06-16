@@ -30,6 +30,27 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
 		apiRouter.GET("/docs", controller.GetDocs)
+		lotteryRoute := apiRouter.Group("/lottery")
+		{
+			lotteryRoute.GET("/periods", controller.ListLotteryPeriods)
+			lotteryRoute.GET("/periods/:id", middleware.TryUserAuth(), controller.GetLotteryPeriod)
+			lotteryRoute.POST("/periods/:id/join", middleware.UserAuth(), controller.JoinLotteryPeriod)
+			lotteryRoute.POST("/periods/:id/scratch", middleware.UserAuth(), controller.ScratchLotteryWinnerCode)
+		}
+		lotteryAdminRoute := apiRouter.Group("/lottery/admin")
+		lotteryAdminRoute.Use(middleware.AdminAuth())
+		{
+			lotteryAdminRoute.GET("/periods", controller.AdminListLotteryPeriods)
+			lotteryAdminRoute.POST("/periods", controller.AdminCreateLotteryPeriod)
+			lotteryAdminRoute.GET("/periods/:id", controller.AdminGetLotteryPeriod)
+			lotteryAdminRoute.PUT("/periods/:id", controller.AdminUpdateLotteryPeriod)
+			lotteryAdminRoute.DELETE("/periods/:id", controller.AdminDeleteLotteryPeriod)
+			lotteryAdminRoute.POST("/periods/:id/draw", controller.AdminDrawLotteryPeriod)
+			lotteryAdminRoute.POST("/periods/:id/prizes", controller.AdminCreateLotteryPrize)
+			lotteryAdminRoute.PUT("/periods/:id/prizes/:prize_id", controller.AdminUpdateLotteryPrize)
+			lotteryAdminRoute.DELETE("/periods/:id/prizes/:prize_id", controller.AdminDeleteLotteryPrize)
+			lotteryAdminRoute.POST("/periods/:id/prizes/:prize_id/codes", controller.AdminImportLotteryPrizeCodes)
+		}
 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
 		apiRouter.GET("/pricing", middleware.TryUserAuth(), controller.GetPricing)

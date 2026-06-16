@@ -145,15 +145,15 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
-	if relayInfo.PriceData.GlobalModelRatio > 1 {
+	if relayInfo.PriceData.GlobalModelRatio != 1 || common.DebugTraceEnabled {
 		channelID := 0
 		if relayInfo.ChannelMeta != nil {
 			channelID = relayInfo.ChannelMeta.ChannelId
 		}
 		logger.LogInfo(ctx, fmt.Sprintf(
-			"global model ratio realtime token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} scaled_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} raw_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f scaled_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f, quota=%d",
+			"global model ratio realtime token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} scaled_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} raw_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f scaled_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f, quota=%d",
 			relayInfo.UserId, channelID, relayInfo.TokenId, modelName,
-			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, relayInfo.PriceData.GlobalModelRatio,
+			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, relayInfo.PriceData.ChannelModelRatio, relayInfo.PriceData.GlobalModelRatio,
 			textInputTokens, audioInputTokens, textOutTokens, audioOutTokens,
 			relayhelper.ScaleTokensByGlobalModelRatio(textInputTokens, relayInfo.PriceData.GlobalModelRatio),
 			relayhelper.ScaleTokensByGlobalModelRatio(audioInputTokens, relayInfo.PriceData.GlobalModelRatio),
@@ -320,15 +320,15 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
-	if globalModelRatio > 1 {
+	if globalModelRatio != 1 || common.DebugTraceEnabled {
 		channelID := 0
 		if relayInfo.ChannelMeta != nil {
 			channelID = relayInfo.ChannelMeta.ChannelId
 		}
 		logger.LogInfo(ctx, fmt.Sprintf(
-			"global model ratio audio token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} scaled_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} raw_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f scaled_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f, quota=%d",
+			"global model ratio audio token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} scaled_tokens={text_input:%d audio_input:%d text_output:%d audio_output:%d} raw_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f scaled_formula=(text_input %d + audio_input %d*%.6f + text_output %d*%.6f + audio_output %d*%.6f*%.6f) * model_ratio %.6f * group_ratio %.6f, quota=%d",
 			relayInfo.UserId, channelID, relayInfo.TokenId, relayInfo.OriginModelName,
-			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, globalModelRatio,
+			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, relayInfo.PriceData.ChannelModelRatio, globalModelRatio,
 			textInputTokens, audioInputTokens, textOutTokens, audioOutTokens,
 			relayhelper.ScaleTokensByGlobalModelRatio(textInputTokens, globalModelRatio),
 			relayhelper.ScaleTokensByGlobalModelRatio(audioInputTokens, globalModelRatio),

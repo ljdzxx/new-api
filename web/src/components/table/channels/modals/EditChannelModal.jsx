@@ -240,6 +240,9 @@ const EditChannelModal = (props) => {
     groups: ['default'],
     priority: 0,
     weight: 0,
+    model_ratio: 1,
+    allow_subscription: true,
+    allow_wallet: true,
     tag: '',
     multi_key_mode: 'random',
     // 渠道额外设置的默认值
@@ -893,6 +896,12 @@ const EditChannelModal = (props) => {
       } else {
         data.groups = data.group.split(',');
       }
+      data.model_ratio =
+        data.model_ratio === undefined || data.model_ratio === null
+          ? 1
+          : Number(data.model_ratio);
+      data.allow_subscription = data.allow_subscription !== false;
+      data.allow_wallet = data.allow_wallet !== false;
       if (data.model_mapping !== '') {
         data.model_mapping = JSON.stringify(
           JSON.parse(data.model_mapping),
@@ -1741,6 +1750,18 @@ const EditChannelModal = (props) => {
       (!localInputs.base_url || localInputs.base_url.trim() === '')
     ) {
       showInfo(t('请输入API地址！'));
+      return;
+    }
+    const channelModelRatio = Number(localInputs.model_ratio);
+    if (!Number.isFinite(channelModelRatio) || channelModelRatio < 0) {
+      showInfo(t('渠道模型倍率不能小于 0'));
+      return;
+    }
+    localInputs.model_ratio = channelModelRatio;
+    localInputs.allow_subscription = localInputs.allow_subscription !== false;
+    localInputs.allow_wallet = localInputs.allow_wallet !== false;
+    if (!localInputs.allow_subscription && !localInputs.allow_wallet) {
+      showInfo(t('订阅支付和余额支付不能同时关闭'));
       return;
     }
     const hasModelMapping =
@@ -3674,6 +3695,57 @@ const EditChannelModal = (props) => {
                           }
                           style={{ width: '100%' }}
                         />
+                      </Col>
+                    </Row>
+
+                    <Row gutter={12}>
+                      <Col span={12}>
+                        <Form.InputNumber
+                          field='model_ratio'
+                          label={t('渠道模型倍率')}
+                          placeholder={t('渠道模型倍率')}
+                          min={0}
+                          precision={6}
+                          onNumberChange={(value) =>
+                            handleInputChange('model_ratio', value)
+                          }
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+                      <Col span={12}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: 16,
+                            alignItems: 'center',
+                            minHeight: 56,
+                          }}
+                        >
+                          <Form.Checkbox
+                            field='allow_subscription'
+                            noLabel
+                            onChange={(e) =>
+                              handleInputChange(
+                                'allow_subscription',
+                                e?.target?.checked ?? e,
+                              )
+                            }
+                          >
+                            {t('订阅支付')}
+                          </Form.Checkbox>
+                          <Form.Checkbox
+                            field='allow_wallet'
+                            noLabel
+                            onChange={(e) =>
+                              handleInputChange(
+                                'allow_wallet',
+                                e?.target?.checked ?? e,
+                              )
+                            }
+                          >
+                            {t('余额支付')}
+                          </Form.Checkbox>
+                        </div>
                       </Col>
                     </Row>
 

@@ -272,9 +272,27 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	}
 
 	pref := common.NormalizeBillingPreference(relayInfo.UserSetting.BillingPreference)
+	allowSubscription := true
+	allowWallet := true
+	if relayInfo.ChannelMeta != nil {
+		allowSubscription = relayInfo.ChannelMeta.AllowSubscription
+		allowWallet = relayInfo.ChannelMeta.AllowWallet
+	}
+	if !allowSubscription && !allowWallet {
+		return nil, types.NewErrorWithStatusCode(
+			fmt.Errorf("当前渠道未启用任何支付方式"),
+			types.ErrorCodeInvalidRequest, http.StatusBadRequest,
+			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+	}
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {
+		if !allowWallet {
+			return nil, types.NewErrorWithStatusCode(
+				fmt.Errorf("当前渠道不支持余额支付"),
+				types.ErrorCodeInvalidRequest, http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
 		userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
@@ -304,6 +322,12 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	}
 
 	trySubscription := func() (*BillingSession, *types.NewAPIError) {
+		if !allowSubscription {
+			return nil, types.NewErrorWithStatusCode(
+				fmt.Errorf("当前渠道不支持订阅支付"),
+				types.ErrorCodeInvalidRequest, http.StatusBadRequest,
+				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+		}
 		subConsume := int64(preConsumedQuota)
 		if subConsume <= 0 {
 			subConsume = 1
@@ -338,6 +362,9 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	case "wallet_only":
 		return tryWallet()
 	case "wallet_first":
+		if !allowWallet {
+			return trySubscription()
+		}
 		session, err := tryWallet()
 		if err != nil {
 			if err.GetErrorCode() == types.ErrorCodeInsufficientUserQuota {
@@ -349,6 +376,9 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 	case "subscription_first":
 		fallthrough
 	default:
+		if !allowSubscription {
+			return tryWallet()
+		}
 		hasSub, subCheckErr := model.HasActiveUserSubscription(relayInfo.UserId)
 		if subCheckErr != nil {
 			return nil, types.NewError(subCheckErr, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())

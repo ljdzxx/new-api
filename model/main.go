@@ -260,8 +260,7 @@ func migrateDB() error {
 		}
 	}
 
-	err := DB.AutoMigrate(
-		&Channel{},
+	autoMigrateModels := []interface{}{
 		&Token{},
 		&ChannelDailyMark{},
 		&PasskeyCredential{},
@@ -287,7 +286,16 @@ func migrateDB() error {
 		&SubscriptionPreConsumeRecord{},
 		&CustomOAuthProvider{},
 		&UserOAuthBinding{},
-	)
+		&LotteryPeriod{},
+		&LotteryPrize{},
+		&LotteryPrizeCode{},
+		&LotteryEntry{},
+		&LotteryWinner{},
+	}
+	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
+		autoMigrateModels = append([]interface{}{&Channel{}}, autoMigrateModels...)
+	}
+	err := DB.AutoMigrate(autoMigrateModels...)
 	if err != nil {
 		return err
 	}
@@ -314,7 +322,6 @@ func migrateDBFast() error {
 		model interface{}
 		name  string
 	}{
-		{&Channel{}, "Channel"},
 		{&Token{}, "Token"},
 		{&ChannelDailyMark{}, "ChannelDailyMark"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
@@ -340,6 +347,17 @@ func migrateDBFast() error {
 		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
+		{&LotteryPeriod{}, "LotteryPeriod"},
+		{&LotteryPrize{}, "LotteryPrize"},
+		{&LotteryPrizeCode{}, "LotteryPrizeCode"},
+		{&LotteryEntry{}, "LotteryEntry"},
+		{&LotteryWinner{}, "LotteryWinner"},
+	}
+	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
+		migrations = append([]struct {
+			model interface{}
+			name  string
+		}{{&Channel{}, "Channel"}}, migrations...)
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

@@ -484,6 +484,9 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelAutoBan, channel.GetAutoBan())
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
+	common.SetContextKey(c, constant.ContextKeyChannelModelRatio, channel.GetModelRatio())
+	common.SetContextKey(c, constant.ContextKeyChannelAllowSubscription, channel.IsSubscriptionAllowed())
+	common.SetContextKey(c, constant.ContextKeyChannelAllowWallet, channel.IsWalletAllowed())
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {

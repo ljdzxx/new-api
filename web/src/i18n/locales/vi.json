@@ -3840,6 +3840,13 @@
     "补全倍率 {{completionRatio}}": "Tỷ lệ hoàn thành {{completionRatio}}",
     "输出价格 {{symbol}}{{price}} / 1M tokens": "Giá đầu ra {{symbol}}{{price}} / 1M tokens",
     "输出价格：{{symbol}}{{price}} / 1M tokens": "Giá đầu ra: {{symbol}}{{price}} / 1M tokens",
-    "输出价格：{{symbol}}{{total}} / 1M tokens": "Giá đầu ra: {{symbol}}{{total}} / 1M tokens"
+    "输出价格：{{symbol}}{{total}} / 1M tokens": "Giá đầu ra: {{symbol}}{{total}} / 1M tokens",
+    "渠道模型倍率": "Ty le mo hinh kenh",
+    "订阅支付": "Thanh toan bang dang ky",
+    "余额支付": "Thanh toan bang so du",
+    "渠道模型倍率不能小于 0": "Ty le mo hinh kenh khong duoc nho hon 0",
+    "订阅支付和余额支付不能同时关闭": "Khong the tat dong thoi thanh toan bang dang ky va thanh toan bang so du",
+    "新用户使用邀请码奖励订阅套餐": "Goi dang ky thuong cho nguoi dung moi dung ma moi",
+    "未选择": "Chua chon"
   }
 }

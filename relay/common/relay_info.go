@@ -72,6 +72,9 @@ type ChannelMeta struct {
 	HeadersOverride      map[string]interface{}
 	ChannelSetting       dto.ChannelSettings
 	ChannelOtherSettings dto.ChannelOtherSettings
+	ChannelModelRatio    float64
+	AllowSubscription    bool
+	AllowWallet          bool
 	UpstreamModelName    string
 	IsModelMapped        bool
 	SupportStreamOptions bool // 是否支持流式选项
@@ -198,9 +201,23 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		ChannelCreateTime:    c.GetInt64("channel_create_time"),
 		ParamOverride:        paramOverride,
 		HeadersOverride:      headerOverride,
+		AllowSubscription:    common.GetContextKeyBool(c, constant.ContextKeyChannelAllowSubscription),
+		AllowWallet:          common.GetContextKeyBool(c, constant.ContextKeyChannelAllowWallet),
 		UpstreamModelName:    common.GetContextKeyString(c, constant.ContextKeyOriginalModel),
 		IsModelMapped:        false,
 		SupportStreamOptions: false,
+	}
+	if channelMeta.ChannelModelRatio == 0 {
+		channelMeta.ChannelModelRatio = 1
+	}
+	if channelRatio, ok := common.GetContextKeyType[float64](c, constant.ContextKeyChannelModelRatio); ok {
+		channelMeta.ChannelModelRatio = channelRatio
+	}
+	if _, ok := common.GetContextKey(c, constant.ContextKeyChannelAllowSubscription); !ok {
+		channelMeta.AllowSubscription = true
+	}
+	if _, ok := common.GetContextKey(c, constant.ContextKeyChannelAllowWallet); !ok {
+		channelMeta.AllowWallet = true
 	}
 
 	if channelType == constant.ChannelTypeAzure {

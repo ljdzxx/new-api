@@ -117,9 +117,10 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 
 	// 聊天区域 - 所有用户都可以访问
 	defaultConfig["chat"] = map[string]interface{}{
-		"enabled":    true,
-		"playground": true,
-		"chat":       true,
+		"enabled":          true,
+		"playground":       true,
+		"image_generation": true,
+		"chat":             true,
 	}
 
 	// 控制台区域 - 所有用户都可以访问
@@ -137,6 +138,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 		"enabled":  true,
 		"topup":    true,
 		"level":    true,
+		"lottery":  true,
 		"personal": true,
 	}
 
@@ -144,22 +146,32 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 	if userRole == common.RoleAdminUser {
 		// 管理员可以访问管理员区域，但不能访问系统设置
 		defaultConfig["admin"] = map[string]interface{}{
-			"enabled":    true,
-			"channel":    true,
-			"models":     true,
-			"redemption": true,
-			"user":       true,
-			"setting":    false, // 管理员不能访问系统设置
+			"enabled":           true,
+			"channel":           true,
+			"models":            true,
+			"deployment":        true,
+			"order":             true,
+			"redemption":        true,
+			"lottery_admin":     true,
+			"user":              true,
+			"subscription_rank": true,
+			"subscription":      true,
+			"setting":           false, // 管理员不能访问系统设置
 		}
 	} else if userRole == common.RoleRootUser {
 		// 超级管理员可以访问所有功能
 		defaultConfig["admin"] = map[string]interface{}{
-			"enabled":    true,
-			"channel":    true,
-			"models":     true,
-			"redemption": true,
-			"user":       true,
-			"setting":    true,
+			"enabled":           true,
+			"channel":           true,
+			"models":            true,
+			"deployment":        true,
+			"order":             true,
+			"redemption":        true,
+			"lottery_admin":     true,
+			"user":              true,
+			"subscription_rank": true,
+			"subscription":      true,
+			"setting":           true,
 		}
 	}
 	// 普通用户不包含admin区域
@@ -438,6 +450,30 @@ func inviteUser(inviterId int) (err error) {
 	return DB.Save(user).Error
 }
 
+func grantInviteeSubscription(userId int) {
+	planId := common.InviteeSubscriptionPlanId
+	if userId <= 0 || planId <= 0 {
+		return
+	}
+	plan, err := GetSubscriptionPlanById(planId)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to grant invitee subscription plan #%d to user #%d: %s", planId, userId, err.Error()))
+		return
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		_, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "invitee")
+		return err
+	})
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to grant invitee subscription plan #%d to user #%d: %s", planId, userId, err.Error()))
+		return
+	}
+	if strings.TrimSpace(plan.UpgradeGroup) != "" {
+		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
+	}
+	RecordLog(userId, LogTypeSystem, fmt.Sprintf("使用邀请码赠送订阅套餐 %s (#%d)", plan.Title, plan.Id))
+}
+
 func (user *User) TransferAffQuotaToQuota(quota int) error {
 	// 检查quota是否小于最小额度
 	if float64(quota) < common.QuotaPerUnit {
@@ -525,6 +561,7 @@ func (user *User) Insert(inviterId int) error {
 			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
+		grantInviteeSubscription(user.Id)
 		if common.QuotaForInviter > 0 {
 			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
@@ -589,6 +626,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
+		grantInviteeSubscription(user.Id)
 		if common.QuotaForInviter > 0 {
 			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
 			_ = inviteUser(inviterId)

@@ -26,12 +26,16 @@ export const useNavigation = (t, headerNavModules) => {
       home: true,
       console: true,
       pricing: true,
+      lottery: true,
       docs: true,
       about: true,
     };
 
     // 使用传入的配置或默认配置
-    const modules = headerNavModules || defaultModules;
+    const modules = {
+      ...defaultModules,
+      ...(headerNavModules || {}),
+    };
 
     const allLinks = [
       {
@@ -48,6 +52,12 @@ export const useNavigation = (t, headerNavModules) => {
         text: t('模型广场'),
         itemKey: 'pricing',
         to: '/pricing',
+      },
+      {
+        text: t('抽奖'),
+        itemKey: 'lottery',
+        to: '/lottery',
+        accent: true,
       },
       {
         text: t('\u6587\u6863'),

@@ -107,6 +107,8 @@ func main() {
 	service.StartSubscriptionQuotaResetTask()
 	// Channel daily mark cleanup task (quota-insufficient daily mark expiration)
 	service.StartChannelDailyMarkCleanupTask()
+	// Lottery draw task (deadline-based drawing)
+	service.StartLotteryDrawTask()
 
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {

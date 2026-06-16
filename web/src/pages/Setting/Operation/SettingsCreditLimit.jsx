@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Col, Form, Row, Spin } from '@douyinfe/semi-ui';
+import { Button, Col, Form, Row, Select, Spin } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import {
   compareObjects,
@@ -36,8 +36,11 @@ export default function SettingsCreditLimit(props) {
     PreConsumedQuota: '',
     QuotaForInviter: '',
     QuotaForInvitee: '',
+    InviteeSubscriptionPlanId: '0',
     'quota_setting.enable_free_model_pre_consume': true,
   });
+  const [subscriptionPlans, setSubscriptionPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(false);
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
 
@@ -83,10 +86,28 @@ export default function SettingsCreditLimit(props) {
         currentInputs[key] = props.options[key];
       }
     }
+    if (currentInputs.InviteeSubscriptionPlanId === undefined) {
+      currentInputs.InviteeSubscriptionPlanId = '0';
+    }
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
     refForm.current.setValues(currentInputs);
   }, [props.options]);
+
+  useEffect(() => {
+    setPlansLoading(true);
+    API.get('/api/subscription/admin/plans')
+      .then((res) => {
+        if (res.data?.success) {
+          setSubscriptionPlans(res.data?.data || []);
+        } else {
+          setSubscriptionPlans([]);
+        }
+      })
+      .catch(() => setSubscriptionPlans([]))
+      .finally(() => setPlansLoading(false));
+  }, []);
+
   return (
     <>
       <Spin spinning={loading}>
@@ -149,7 +170,7 @@ export default function SettingsCreditLimit(props) {
               </Col>
             </Row>
             <Row>
-              <Col xs={24} sm={12} md={8} lg={8} xl={6}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.InputNumber
                   label={t('新用户使用邀请码奖励额度')}
                   field={'QuotaForInvitee'}
@@ -165,6 +186,32 @@ export default function SettingsCreditLimit(props) {
                     })
                   }
                 />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Select
+                  label={t('新用户使用邀请码奖励订阅套餐')}
+                  field={'InviteeSubscriptionPlanId'}
+                  loading={plansLoading}
+                  placeholder={t('未选择')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      InviteeSubscriptionPlanId: String(value || '0'),
+                    })
+                  }
+                >
+                  <Select.Option value='0'>{t('未选择')}</Select.Option>
+                  {(subscriptionPlans || []).map((item) => {
+                    const plan = item?.plan || {};
+                    return (
+                      <Select.Option key={plan.id} value={String(plan.id)}>
+                        {plan.enabled === false
+                          ? `${plan.title || `#${plan.id}`} (${t('已禁用')})`
+                          : plan.title || `#${plan.id}`}
+                      </Select.Option>
+                    );
+                  })}
+                </Form.Select>
               </Col>
             </Row>
             <Row>

@@ -58,6 +58,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       enabled: true,
       topup: true,
       level: true,
+      lottery: true,
       personal: true,
     },
     admin: {
@@ -67,6 +68,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       deployment: true,
       order: true,
       redemption: true,
+      lottery_admin: true,
       user: true,
       subscription_rank: true,
       subscription: true,
@@ -123,6 +125,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         enabled: true,
         topup: true,
         level: true,
+        lottery: true,
         personal: true,
       },
       admin: {
@@ -132,6 +135,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         deployment: true,
         order: true,
         redemption: true,
+        lottery_admin: true,
         user: true,
         subscription_rank: true,
         subscription: true,
@@ -207,7 +211,13 @@ export default function SettingsSidebarModulesAdmin(props) {
             midjourney: true,
             task: true,
           },
-          personal: { enabled: true, topup: true, level: true, personal: true },
+          personal: {
+            enabled: true,
+            topup: true,
+            level: true,
+            lottery: true,
+            personal: true,
+          },
           admin: {
             enabled: true,
             channel: true,
@@ -215,6 +225,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             deployment: true,
             order: true,
             redemption: true,
+            lottery_admin: true,
             user: true,
             subscription_rank: true,
             subscription: true,
@@ -274,6 +285,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           description: t('查看当前等级与升级权益'),
         },
         {
+          key: 'lottery',
+          title: t('抽奖'),
+          description: t('参与抽奖和查看中奖结果'),
+        },
+        {
           key: 'personal',
           title: t('个人设置'),
           description: t('个人信息设置'),
@@ -311,6 +327,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'redemption',
           title: t('兑换码管理'),
           description: t('兑换码生成管理'),
+        },
+        {
+          key: 'lottery_admin',
+          title: t('抽奖管理'),
+          description: t('配置抽奖期数、奖品和开奖'),
         },
         { key: 'user', title: t('用户管理'), description: t('用户账户管理') },
         {

@@ -44,6 +44,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     enabled: true,
     topup: true,
     level: true,
+    lottery: true,
     personal: true,
   },
   admin: {
@@ -53,6 +54,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     deployment: true,
     order: true,
     redemption: true,
+    lottery_admin: true,
     user: true,
     subscription_rank: true,
     subscription: true,

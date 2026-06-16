@@ -297,7 +297,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.Quota = 1
 	}
 
-	if summary.GlobalModelRatio > 1 {
+	if summary.GlobalModelRatio != 1 || common.DebugTraceEnabled {
 		channelID := 0
 		if relayInfo.ChannelMeta != nil {
 			channelID = relayInfo.ChannelMeta.ChannelId
@@ -339,9 +339,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		rawQuotaBeforeRound := rawBillableTokens * summary.ModelRatio * summary.GroupRatio
 		scaledQuotaBeforeRound := scaledBillableTokens * summary.ModelRatio * summary.GroupRatio
 		logger.LogInfo(ctx, fmt.Sprintf(
-			"global model ratio token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={input:%d base:%d cache:%d cache_creation:%d cache_creation_5m:%d cache_creation_1h:%d output:%d image:%d audio:%d} scaled_tokens={input:%d base:%d cache:%d cache_creation:%d cache_creation_5m:%d cache_creation_1h:%d output:%d image:%d audio:%d} raw_formula=(base %d + cache %d*%.6f + cache_creation_remaining %d*%.6f + cache_creation_5m %d*%.6f + cache_creation_1h %d*%.6f + image %d*%.6f + output %d*%.6f) * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=(base %d + cache %d*%.6f + cache_creation_remaining %d*%.6f + cache_creation_5m %d*%.6f + cache_creation_1h %d*%.6f + image %d*%.6f + output %d*%.6f) * model_ratio %.6f * group_ratio %.6f = quota %.6f rounded_quota=%d",
+			"global model ratio token scaling billing: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens={input:%d base:%d cache:%d cache_creation:%d cache_creation_5m:%d cache_creation_1h:%d output:%d image:%d audio:%d} scaled_tokens={input:%d base:%d cache:%d cache_creation:%d cache_creation_5m:%d cache_creation_1h:%d output:%d image:%d audio:%d} raw_formula=(base %d + cache %d*%.6f + cache_creation_remaining %d*%.6f + cache_creation_5m %d*%.6f + cache_creation_1h %d*%.6f + image %d*%.6f + output %d*%.6f) * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=(base %d + cache %d*%.6f + cache_creation_remaining %d*%.6f + cache_creation_5m %d*%.6f + cache_creation_1h %d*%.6f + image %d*%.6f + output %d*%.6f) * model_ratio %.6f * group_ratio %.6f = quota %.6f rounded_quota=%d",
 			relayInfo.UserId, channelID, relayInfo.TokenId, summary.ModelName,
-			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, summary.GlobalModelRatio,
+			relayInfo.PriceData.SystemGlobalModelRatio, relayInfo.PriceData.UserGlobalModelRatio, relayInfo.PriceData.ChannelModelRatio, summary.GlobalModelRatio,
 			rawPromptTokens, rawBaseTokens, rawCacheTokens, rawCacheCreationTokens, rawCacheCreationTokens5m, rawCacheCreationTokens1h, rawCompletionTokens, rawImageTokens, rawAudioTokens,
 			summary.PromptTokens, scaledBaseTokens, summary.CacheTokens, summary.CacheCreationTokens, summary.CacheCreationTokens5m, summary.CacheCreationTokens1h, summary.CompletionTokens, summary.ImageTokens, summary.AudioTokens,
 			rawBaseTokens, rawCacheTokens, summary.CacheRatio, rawCacheCreationRemaining, summary.CacheCreationRatio, rawCacheCreationTokens5m, summary.CacheCreationRatio5m, rawCacheCreationTokens1h, summary.CacheCreationRatio1h, rawImageTokens, summary.ImageRatio, rawCompletionTokens, summary.CompletionRatio, summary.ModelRatio, summary.GroupRatio, rawQuotaBeforeRound,

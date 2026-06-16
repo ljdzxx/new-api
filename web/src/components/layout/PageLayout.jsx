@@ -53,6 +53,8 @@ const PageLayout = () => {
     '/console/channel',
     '/console/log',
     '/console/redemption',
+    '/console/lottery',
+    '/console/lottery-admin',
     '/console/order',
     '/console/user',
     '/console/token',

@@ -3326,6 +3326,14 @@
     "输入价格：{{symbol}}{{price}} / 1M tokens": "Input Price: {{symbol}}{{price}} / 1M tokens",
     "输出价格 {{symbol}}{{price}} / 1M tokens": "Output Price {{symbol}}{{price}} / 1M tokens",
     "输出价格：{{symbol}}{{price}} / 1M tokens": "Output Price: {{symbol}}{{price}} / 1M tokens",
-    "输出价格：{{symbol}}{{total}} / 1M tokens": "Output Price: {{symbol}}{{total}} / 1M tokens"
+    "输出价格：{{symbol}}{{total}} / 1M tokens": "Output Price: {{symbol}}{{total}} / 1M tokens",
+    "渠道模型倍率": "Channel model ratio",
+    "订阅支付": "Subscription payment",
+    "余额支付": "Balance payment",
+    "渠道模型倍率不能小于 0": "Channel model ratio cannot be less than 0",
+    "订阅支付和余额支付不能同时关闭": "Subscription payment and balance payment cannot both be disabled",
+    "计费": "Billing",
+    "新用户使用邀请码奖励订阅套餐": "Subscription plan reward for new users using an invite code",
+    "未选择": "Not selected"
   }
 }

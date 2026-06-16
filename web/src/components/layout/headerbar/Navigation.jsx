@@ -38,6 +38,9 @@ const Navigation = ({
 
     return mainNavLinks.map((link) => {
       const linkContent = <span>{link.text}</span>;
+      const linkClasses = link.accent
+        ? `${commonLinkClasses} border border-amber-300/70 bg-amber-100/80 text-rose-700 shadow-sm hover:bg-amber-200/80 dark:border-amber-300/30 dark:bg-amber-300/15 dark:text-amber-100`
+        : commonLinkClasses;
 
       if (link.isExternal) {
         return (
@@ -46,7 +49,7 @@ const Navigation = ({
             href={link.externalLink}
             target='_blank'
             rel='noopener noreferrer'
-            className={commonLinkClasses}
+            className={linkClasses}
           >
             {linkContent}
           </a>
@@ -62,7 +65,7 @@ const Navigation = ({
       }
 
       return (
-        <Link key={link.itemKey} to={targetPath} className={commonLinkClasses}>
+        <Link key={link.itemKey} to={targetPath} className={linkClasses}>
           {linkContent}
         </Link>
       );

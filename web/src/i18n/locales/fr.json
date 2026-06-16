@@ -3289,6 +3289,14 @@
     "输入价格：{{symbol}}{{price}} / 1M tokens": "Prix d'entrée : {{symbol}}{{price}} / 1M tokens",
     "输出价格 {{symbol}}{{price}} / 1M tokens": "Prix de sortie {{symbol}}{{price}} / 1M tokens",
     "输出价格：{{symbol}}{{price}} / 1M tokens": "Prix de sortie : {{symbol}}{{price}} / 1M tokens",
-    "输出价格：{{symbol}}{{total}} / 1M tokens": "Prix de sortie : {{symbol}}{{total}} / 1M tokens"
+    "输出价格：{{symbol}}{{total}} / 1M tokens": "Prix de sortie : {{symbol}}{{total}} / 1M tokens",
+    "渠道模型倍率": "Ratio de modele du canal",
+    "订阅支付": "Paiement par abonnement",
+    "余额支付": "Paiement par solde",
+    "渠道模型倍率不能小于 0": "Le ratio de modele du canal ne peut pas etre inferieur a 0",
+    "订阅支付和余额支付不能同时关闭": "Le paiement par abonnement et le paiement par solde ne peuvent pas etre desactives en meme temps",
+    "计费": "Facturation",
+    "新用户使用邀请码奖励订阅套餐": "Abonnement offert aux nouveaux utilisateurs avec code d'invitation",
+    "未选择": "Non selectionne"
   }
 }

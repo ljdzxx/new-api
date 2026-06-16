@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"testing"
 
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,4 +41,21 @@ func TestLocalQuotaErrorsUseBadRequestStatus(t *testing.T) {
 		http.StatusBadRequest,
 		types.ErrOptionWithSkipRetry(),
 	).StatusCode)
+}
+
+func TestNewBillingSessionRejectsChannelWithoutPaymentMethods(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(nil)
+
+	session, apiErr := NewBillingSession(ctx, &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			AllowSubscription: false,
+			AllowWallet:       false,
+		},
+	}, 1)
+
+	require.Nil(t, session)
+	require.NotNil(t, apiErr)
+	require.Equal(t, types.ErrorCodeInvalidRequest, apiErr.GetErrorCode())
+	require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 }

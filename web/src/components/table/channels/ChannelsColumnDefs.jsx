@@ -568,6 +568,37 @@ export const getChannelsColumns = ({
       },
     },
     {
+      key: COLUMN_KEYS.BILLING,
+      title: t('计费'),
+      dataIndex: 'model_ratio',
+      render: (text, record) => {
+        if (record.children !== undefined) {
+          return null;
+        }
+        const ratio =
+          record.model_ratio === undefined || record.model_ratio === null
+            ? 1
+            : Number(record.model_ratio);
+        const allowSubscription = record.allow_subscription !== false;
+        const allowWallet = record.allow_wallet !== false;
+        return (
+          <Space spacing={4} wrap>
+            <Tooltip content={t('渠道模型倍率')}>
+              <Tag color='blue' size='small'>
+                {Number.isFinite(ratio) ? ratio : 1}x
+              </Tag>
+            </Tooltip>
+            <Tag color={allowSubscription ? 'green' : 'grey'} size='small'>
+              {t('订阅')}
+            </Tag>
+            <Tag color={allowWallet ? 'green' : 'grey'} size='small'>
+              {t('余额')}
+            </Tag>
+          </Space>
+        );
+      },
+    },
+    {
       key: COLUMN_KEYS.PRIORITY,
       title: t('优先级'),
       dataIndex: 'priority',

@@ -37,6 +37,9 @@ const (
 	ContextKeyChannelIsMultiKey        ContextKey = "channel_is_multi_key"
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
+	ContextKeyChannelModelRatio        ContextKey = "channel_model_ratio"
+	ContextKeyChannelAllowSubscription ContextKey = "channel_allow_subscription"
+	ContextKeyChannelAllowWallet       ContextKey = "channel_allow_wallet"
 	ContextKeyChannelForwardedApplied  ContextKey = "forwarded_channel_applied"
 	ContextKeyChannelForwardLockedId   ContextKey = "forward_locked_channel_id"
 

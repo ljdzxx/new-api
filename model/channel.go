@@ -39,15 +39,18 @@ type Channel struct {
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
-	OtherInfo         string  `json:"other_info"`
-	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	StatusCodeMapping *string  `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority          *int64   `json:"priority" gorm:"bigint;default:0"`
+	AutoBan           *int     `json:"auto_ban" gorm:"default:1"`
+	ModelRatio        *float64 `json:"model_ratio" gorm:"type:decimal(12,6);default:1;column:model_ratio"`
+	AllowSubscription *bool    `json:"allow_subscription" gorm:"default:true;column:allow_subscription"`
+	AllowWallet       *bool    `json:"allow_wallet" gorm:"default:true;column:allow_wallet"`
+	OtherInfo         string   `json:"other_info"`
+	Tag               *string  `json:"tag" gorm:"index"`
+	Setting           *string  `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride     *string  `json:"param_override" gorm:"type:text"`
+	HeaderOverride    *string  `json:"header_override" gorm:"type:text"`
+	Remark            *string  `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -193,6 +196,45 @@ func (channel *Channel) SaveChannelInfo() error {
 	return DB.Model(channel).Update("channel_info", channel.ChannelInfo).Error
 }
 
+func (channel *Channel) NormalizeBillingSettings() {
+	if channel == nil {
+		return
+	}
+	if channel.ModelRatio == nil {
+		modelRatio := 1.0
+		channel.ModelRatio = &modelRatio
+	}
+	if channel.AllowSubscription == nil {
+		allow := true
+		channel.AllowSubscription = &allow
+	}
+	if channel.AllowWallet == nil {
+		allow := true
+		channel.AllowWallet = &allow
+	}
+}
+
+func (channel *Channel) GetModelRatio() float64 {
+	if channel == nil || channel.ModelRatio == nil {
+		return 1
+	}
+	return *channel.ModelRatio
+}
+
+func (channel *Channel) IsSubscriptionAllowed() bool {
+	if channel == nil || channel.AllowSubscription == nil {
+		return true
+	}
+	return *channel.AllowSubscription
+}
+
+func (channel *Channel) IsWalletAllowed() bool {
+	if channel == nil || channel.AllowWallet == nil {
+		return true
+	}
+	return *channel.AllowWallet
+}
+
 func (channel *Channel) GetModels() []string {
 	if channel.Models == "" {
 		return []string{}
@@ -223,7 +265,7 @@ func (channel *Channel) GetOtherInfo() map[string]interface{} {
 }
 
 func (channel *Channel) SetOtherInfo(otherInfo map[string]interface{}) {
-	otherInfoBytes, err := json.Marshal(otherInfo)
+	otherInfoBytes, err := common.Marshal(otherInfo)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to marshal other info: channel_id=%d, tag=%s, name=%s, error=%v", channel.Id, channel.GetTag(), channel.Name, err))
 		return
@@ -359,6 +401,9 @@ func BatchInsertChannels(channels []Channel) error {
 	if len(channels) == 0 {
 		return nil
 	}
+	for i := range channels {
+		channels[i].NormalizeBillingSettings()
+	}
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return tx.Error
@@ -446,6 +491,7 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
+	channel.NormalizeBillingSettings()
 	var err error
 	err = DB.Create(channel).Error
 	if err != nil {

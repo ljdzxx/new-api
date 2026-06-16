@@ -53,6 +53,8 @@ import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
 import UserLevelPage from './pages/UserLevel';
 import SubscriptionUsageRank from './pages/SubscriptionUsageRank';
+import Lottery from './pages/Lottery';
+import LotteryAdmin from './pages/LotteryAdmin';
 
 const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -173,6 +175,14 @@ function App() {
           element={
             <AdminRoute>
               <Redemption />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path='/console/lottery-admin'
+          element={
+            <AdminRoute>
+              <LotteryAdmin />
             </AdminRoute>
           }
         />
@@ -316,6 +326,24 @@ function App() {
                 <UserLevelPage />
               </Suspense>
             </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/lottery'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                <Lottery />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/lottery'
+          element={
+            <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+              <Lottery />
+            </Suspense>
           }
         />
         <Route

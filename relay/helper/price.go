@@ -33,11 +33,17 @@ func ScaleTokensByGlobalModelRatio(tokens int, globalModelRatio float64) int {
 	return int(float64(tokens) * globalModelRatio)
 }
 
-func getEffectiveGlobalModelRatio(userID int) (float64, float64, float64) {
+func getEffectiveGlobalModelRatio(userID int, channelRatio float64) (float64, float64, float64, float64) {
 	systemRatio := ratio_setting.GetGlobalModelRatio()
 	userRatio := ratio_setting.DefaultGlobalModelRatio
+	if math.IsNaN(channelRatio) || math.IsInf(channelRatio, 0) {
+		channelRatio = ratio_setting.DefaultGlobalModelRatio
+	}
+	if channelRatio < 0 {
+		channelRatio = 0
+	}
 	if userID <= 0 {
-		return systemRatio, userRatio, systemRatio * userRatio
+		return systemRatio, userRatio, channelRatio, systemRatio * userRatio * channelRatio
 	}
 	var err error
 	userRatio, err = model.GetUserGlobalModelRatio(userID, false)
@@ -45,7 +51,14 @@ func getEffectiveGlobalModelRatio(userID int) (float64, float64, float64) {
 		common.SysError(fmt.Sprintf("failed to get user global model ratio, user_id=%d: %s", userID, err.Error()))
 		userRatio = ratio_setting.DefaultGlobalModelRatio
 	}
-	return systemRatio, userRatio, systemRatio * userRatio
+	return systemRatio, userRatio, channelRatio, systemRatio * userRatio * channelRatio
+}
+
+func getChannelModelRatio(info *relaycommon.RelayInfo) float64 {
+	if info == nil || info.ChannelMeta == nil {
+		return ratio_setting.DefaultGlobalModelRatio
+	}
+	return info.ChannelMeta.ChannelModelRatio
 }
 
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
@@ -81,7 +94,7 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
-	systemGlobalModelRatio, userGlobalModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
+	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -125,15 +138,15 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		scaledPreConsumedTokens := ScaleTokensByGlobalModelRatio(preConsumedTokens, globalModelRatio)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		preConsumedQuota = int(float64(scaledPreConsumedTokens) * ratio)
-		if globalModelRatio > 1 {
+		if globalModelRatio != 1 || common.DebugTraceEnabled {
 			channelID := 0
 			if info.ChannelMeta != nil {
 				channelID = info.ChannelMeta.ChannelId
 			}
 			logger.LogInfo(c, fmt.Sprintf(
-				"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f effective_global_model_ratio=%.6f raw_preconsume_tokens=%d scaled_preconsume_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
+				"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_preconsume_tokens=%d scaled_preconsume_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
 				info.UserId, channelID, info.TokenId, info.OriginModelName,
-				systemGlobalModelRatio, userGlobalModelRatio, globalModelRatio,
+				systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio,
 				preConsumedTokens, scaledPreConsumedTokens,
 				preConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, float64(preConsumedTokens)*modelRatio*groupRatioInfo.GroupRatio,
 				scaledPreConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, preConsumedQuota,
@@ -171,6 +184,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		ModelRatio:             modelRatio,
 		SystemGlobalModelRatio: systemGlobalModelRatio,
 		UserGlobalModelRatio:   userGlobalModelRatio,
+		ChannelModelRatio:      channelModelRatio,
 		GlobalModelRatio:       globalModelRatio,
 		CompletionRatio:        completionRatio,
 		GroupRatioInfo:         groupRatioInfo,
@@ -195,7 +209,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
-	systemGlobalModelRatio, userGlobalModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId)
+	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	// 如果没有配置价格，检查模型倍率配置
@@ -236,6 +250,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		ModelPrice:             modelPrice,
 		SystemGlobalModelRatio: systemGlobalModelRatio,
 		UserGlobalModelRatio:   userGlobalModelRatio,
+		ChannelModelRatio:      channelModelRatio,
 		GlobalModelRatio:       globalModelRatio,
 		Quota:                  quota,
 		GroupRatioInfo:         groupRatioInfo,

@@ -53,6 +53,7 @@ const routerMap = {
   image_generation: '/console/image-generation',
   personal: '/console/personal',
   level: '/console/level',
+  lottery_admin: '/console/lottery-admin',
 };
 
 const SiderBar = ({ onNavigate = () => {} }) => {
@@ -190,6 +191,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('兑换码管理'),
         itemKey: 'redemption',
         to: '/redemption',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('抽奖管理'),
+        itemKey: 'lottery_admin',
+        to: '/lottery-admin',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

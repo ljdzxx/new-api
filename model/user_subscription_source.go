@@ -26,6 +26,8 @@ func normalizeSubscriptionSourceLabel(source string) string {
 	switch strings.TrimSpace(source) {
 	case "admin":
 		return "admin"
+	case "invitee":
+		return "invitee"
 	case "redemption":
 		return "redemption"
 	case "order":
@@ -41,6 +43,8 @@ func buildSubscriptionSourceDetail(source string, sub *UserSubscription) string 
 	}
 	switch normalizeSubscriptionSourceLabel(source) {
 	case "admin":
+		return ""
+	case "invitee":
 		return ""
 	case "redemption":
 		if sub.RedemptionId > 0 {

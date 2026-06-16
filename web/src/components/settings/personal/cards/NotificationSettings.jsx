@@ -82,6 +82,7 @@ const NotificationSettings = ({
       enabled: true,
       topup: true,
       level: true,
+      lottery: true,
       personal: true,
     },
     admin: {
@@ -92,6 +93,7 @@ const NotificationSettings = ({
       subscription_rank: true,
       subscription: true,
       redemption: true,
+      lottery_admin: true,
       user: true,
       setting: true,
     },
@@ -173,7 +175,13 @@ const NotificationSettings = ({
         midjourney: true,
         task: true,
       },
-      personal: { enabled: true, topup: true, level: true, personal: true },
+      personal: {
+        enabled: true,
+        topup: true,
+        level: true,
+        lottery: true,
+        personal: true,
+      },
       admin: {
         enabled: true,
         channel: true,
@@ -182,6 +190,7 @@ const NotificationSettings = ({
         subscription_rank: true,
         subscription: true,
         redemption: true,
+        lottery_admin: true,
         user: true,
         setting: true,
       },
@@ -299,6 +308,11 @@ const NotificationSettings = ({
           description: t('用户等级与权益页面'),
         },
         {
+          key: 'lottery',
+          title: t('抽奖'),
+          description: t('参与抽奖和查看中奖结果'),
+        },
+        {
           key: 'personal',
           title: t('个人设置'),
           description: t('个人信息设置'),
@@ -332,6 +346,11 @@ const NotificationSettings = ({
           key: 'redemption',
           title: t('兑换码管理'),
           description: t('兑换码生成管理'),
+        },
+        {
+          key: 'lottery_admin',
+          title: t('抽奖管理'),
+          description: t('配置抽奖期数、奖品和开奖'),
         },
         { key: 'user', title: t('用户管理'), description: t('用户账户管理') },
         {
