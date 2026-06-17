@@ -3847,6 +3847,7 @@
     "渠道模型倍率不能小于 0": "Ty le mo hinh kenh khong duoc nho hon 0",
     "订阅支付和余额支付不能同时关闭": "Khong the tat dong thoi thanh toan bang dang ky va thanh toan bang so du",
     "新用户使用邀请码奖励订阅套餐": "Goi dang ky thuong cho nguoi dung moi dung ma moi",
-    "未选择": "Chua chon"
+    "未选择": "Chua chon",
+    "允许注册的邮箱域名": "Ten mien email duoc phep dang ky"
   }
 }

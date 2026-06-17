@@ -3297,6 +3297,7 @@
     "订阅支付和余额支付不能同时关闭": "Le paiement par abonnement et le paiement par solde ne peuvent pas etre desactives en meme temps",
     "计费": "Facturation",
     "新用户使用邀请码奖励订阅套餐": "Abonnement offert aux nouveaux utilisateurs avec code d'invitation",
-    "未选择": "Non selectionne"
+    "未选择": "Non selectionne",
+    "允许注册的邮箱域名": "Domaines e-mail autorises pour l'inscription"
   }
 }

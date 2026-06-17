@@ -56,6 +56,18 @@ func GetImageGenerationConfig(c *gin.Context) {
 	})
 }
 
+func publicEmailDomainWhitelist(domains []string) []string {
+	whitelist := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		domain = strings.TrimSpace(domain)
+		if domain == "" {
+			continue
+		}
+		whitelist = append(whitelist, domain)
+	}
+	return whitelist
+}
+
 func GetStatus(c *gin.Context) {
 
 	cs := console_setting.GetConsoleSetting()
@@ -66,29 +78,31 @@ func GetStatus(c *gin.Context) {
 	legalSetting := system_setting.GetLegalSettings()
 
 	data := gin.H{
-		"version":                     common.Version,
-		"start_time":                  common.StartTime,
-		"email_verification":          common.EmailVerificationEnabled,
-		"github_oauth":                common.GitHubOAuthEnabled,
-		"github_client_id":            common.GitHubClientId,
-		"discord_oauth":               system_setting.GetDiscordSettings().Enabled,
-		"discord_client_id":           system_setting.GetDiscordSettings().ClientId,
-		"linuxdo_oauth":               common.LinuxDOOAuthEnabled,
-		"linuxdo_client_id":           common.LinuxDOClientId,
-		"linuxdo_minimum_trust_level": common.LinuxDOMinimumTrustLevel,
-		"telegram_oauth":              common.TelegramOAuthEnabled,
-		"telegram_bot_name":           common.TelegramBotName,
-		"system_name":                 common.SystemName,
-		"logo":                        common.Logo,
-		"footer_html":                 common.Footer,
-		"wechat_qrcode":               common.WeChatAccountQRCodeImageURL,
-		"wechat_login":                common.WeChatAuthEnabled,
-		"server_address":              system_setting.ServerAddress,
-		"turnstile_check":             common.TurnstileCheckEnabled,
-		"turnstile_site_key":          common.TurnstileSiteKey,
-		"top_up_link":                 common.TopUpLink,
-		"docs_link":                   operation_setting.GetGeneralSetting().DocsLink,
-		"quota_per_unit":              common.QuotaPerUnit,
+		"version":                          common.Version,
+		"start_time":                       common.StartTime,
+		"email_verification":               common.EmailVerificationEnabled,
+		"email_domain_restriction_enabled": common.EmailDomainRestrictionEnabled,
+		"email_domain_whitelist":           publicEmailDomainWhitelist(common.EmailDomainWhitelist),
+		"github_oauth":                     common.GitHubOAuthEnabled,
+		"github_client_id":                 common.GitHubClientId,
+		"discord_oauth":                    system_setting.GetDiscordSettings().Enabled,
+		"discord_client_id":                system_setting.GetDiscordSettings().ClientId,
+		"linuxdo_oauth":                    common.LinuxDOOAuthEnabled,
+		"linuxdo_client_id":                common.LinuxDOClientId,
+		"linuxdo_minimum_trust_level":      common.LinuxDOMinimumTrustLevel,
+		"telegram_oauth":                   common.TelegramOAuthEnabled,
+		"telegram_bot_name":                common.TelegramBotName,
+		"system_name":                      common.SystemName,
+		"logo":                             common.Logo,
+		"footer_html":                      common.Footer,
+		"wechat_qrcode":                    common.WeChatAccountQRCodeImageURL,
+		"wechat_login":                     common.WeChatAuthEnabled,
+		"server_address":                   system_setting.ServerAddress,
+		"turnstile_check":                  common.TurnstileCheckEnabled,
+		"turnstile_site_key":               common.TurnstileSiteKey,
+		"top_up_link":                      common.TopUpLink,
+		"docs_link":                        operation_setting.GetGeneralSetting().DocsLink,
+		"quota_per_unit":                   common.QuotaPerUnit,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type
 		"display_in_currency":                    operation_setting.IsCurrencyDisplay(),
 		"quota_display_type":                     operation_setting.GetQuotaDisplayType(),

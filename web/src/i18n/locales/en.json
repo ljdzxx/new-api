@@ -3334,6 +3334,7 @@
     "订阅支付和余额支付不能同时关闭": "Subscription payment and balance payment cannot both be disabled",
     "计费": "Billing",
     "新用户使用邀请码奖励订阅套餐": "Subscription plan reward for new users using an invite code",
-    "未选择": "Not selected"
+    "未选择": "Not selected",
+    "允许注册的邮箱域名": "Allowed email domains for registration"
   }
 }

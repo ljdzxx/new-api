@@ -133,13 +133,24 @@ const RegisterForm = () => {
     (status.custom_oauth_providers || []).length > 0;
   const hasOAuthRegisterOptions = Boolean(
     status.github_oauth ||
-      status.discord_oauth ||
-      status.oidc_enabled ||
-      status.wechat_login ||
-      status.linuxdo_oauth ||
-      status.telegram_oauth ||
-      hasCustomOAuthProviders,
+    status.discord_oauth ||
+    status.oidc_enabled ||
+    status.wechat_login ||
+    status.linuxdo_oauth ||
+    status.telegram_oauth ||
+    hasCustomOAuthProviders,
   );
+  const emailDomainWhitelist = useMemo(() => {
+    if (!Array.isArray(status.email_domain_whitelist)) {
+      return [];
+    }
+    return status.email_domain_whitelist
+      .map((domain) => String(domain).trim())
+      .filter(Boolean);
+  }, [status.email_domain_whitelist]);
+  const showEmailDomainWhitelist =
+    Boolean(status.email_domain_restriction_enabled) &&
+    emailDomainWhitelist.length > 0;
 
   const [showEmailVerification, setShowEmailVerification] = useState(false);
 
@@ -612,6 +623,18 @@ const RegisterForm = () => {
                       type='email'
                       onChange={(value) => handleChange('email', value)}
                       prefix={<IconMail />}
+                      extraText={
+                        showEmailDomainWhitelist ? (
+                          <div className='mt-2 text-xs leading-5 text-gray-500'>
+                            <div className='mb-1 font-medium text-gray-600'>
+                              {t('允许注册的邮箱域名')}
+                            </div>
+                            <div className='whitespace-pre-line font-mono'>
+                              {emailDomainWhitelist.join('\n')}
+                            </div>
+                          </div>
+                        ) : null
+                      }
                       suffix={
                         <Button
                           onClick={sendVerificationCode}
@@ -781,8 +804,7 @@ const RegisterForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailRegister ||
-        !hasOAuthRegisterOptions
+        {showEmailRegister || !hasOAuthRegisterOptions
           ? renderEmailRegisterForm()
           : renderOAuthOptions()}
         {renderWeChatLoginModal()}
