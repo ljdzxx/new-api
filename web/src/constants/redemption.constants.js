@@ -50,3 +50,19 @@ export const REDEMPTION_REWARD_TYPES = {
   QUOTA: 1,
   SUBSCRIPTION: 2,
 };
+
+export const REDEMPTION_CODE_TYPES = {
+  NORMAL: 1,
+  WELFARE: 2,
+};
+
+export const REDEMPTION_CODE_TYPE_MAP = {
+  [REDEMPTION_CODE_TYPES.NORMAL]: {
+    color: 'blue',
+    text: '普通兑换码',
+  },
+  [REDEMPTION_CODE_TYPES.WELFARE]: {
+    color: 'violet',
+    text: '福利兑换码',
+  },
+};

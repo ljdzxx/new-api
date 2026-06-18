@@ -35,6 +35,10 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 	logger.LogError(c.Request.Context(), fmt.Sprintf("user %d | %s", userId, message))
 }
 
+func abortWithSystemRateLimit(c *gin.Context, message string) {
+	abortWithOpenAiMessage(c, http.StatusTooManyRequests, message, types.ErrorCodeSystemRateLimit)
+}
+
 func abortWithMidjourneyMessage(c *gin.Context, statusCode int, code int, description string) {
 	c.JSON(statusCode, gin.H{
 		"description": description,

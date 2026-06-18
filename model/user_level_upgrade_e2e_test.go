@@ -17,7 +17,7 @@ var e2eTopUpSeq int64
 
 func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &UserSubscription{}, &UserSubscriptionDailyStat{}))
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &RedemptionUsage{}, &UserSubscription{}, &UserSubscriptionDailyStat{}))
 	if common.UsingSQLite {
 		require.NoError(t, ensureSubscriptionPlanTableSQLite())
 	} else {
@@ -36,6 +36,7 @@ func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	})
 
 	require.NoError(t, DB.Exec("DELETE FROM top_ups").Error)
+	require.NoError(t, DB.Exec("DELETE FROM redemption_usages").Error)
 	require.NoError(t, DB.Exec("DELETE FROM redemptions").Error)
 	require.NoError(t, DB.Exec("DELETE FROM user_subscription_daily_stats").Error)
 	require.NoError(t, DB.Exec("DELETE FROM user_subscriptions").Error)
@@ -220,4 +221,79 @@ func TestAutoUpgradeByRecharge_SubscriptionRedemptionAlsoEffective(t *testing.T)
 	assert.Equal(t, int64(0), topup.Amount)
 	assert.InDelta(t, 240.0, topup.Money, 0.0001)
 	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
+}
+
+func TestRedeem_WelfareCodeCanBeUsedOncePerUser(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+
+	userA := createRegisteredUser(t, "welfare_a")
+	userB := createRegisteredUser(t, "welfare_b")
+	now := common.GetTimestamp()
+	redeemKey := fmt.Sprintf("W%031d", time.Now().UnixNano()%1_000_000_000_000_000_000)
+	redemption := &Redemption{
+		Key:         redeemKey,
+		Status:      common.RedemptionCodeStatusEnabled,
+		CodeType:    common.RedemptionCodeTypeWelfare,
+		Name:        "welfare_redeem",
+		Quota:       5000,
+		PayMoney:    0,
+		CreatedTime: now,
+		ExpiredTime: 0,
+	}
+	require.NoError(t, redemption.Insert())
+
+	firstResult, err := Redeem(redeemKey, userA.Id)
+	require.NoError(t, err)
+	require.NotNil(t, firstResult)
+	assert.Equal(t, common.RedemptionRewardTypeQuota, firstResult.RewardType)
+	assert.Equal(t, 5000, firstResult.Quota)
+
+	secondResult, err := Redeem(redeemKey, userB.Id)
+	require.NoError(t, err)
+	require.NotNil(t, secondResult)
+	assert.Equal(t, 5000, secondResult.Quota)
+
+	duplicateResult, err := Redeem(redeemKey, userA.Id)
+	require.Error(t, err)
+	assert.Nil(t, duplicateResult)
+	assert.Equal(t, "已兑换", err.Error())
+
+	reloadedCode, err := GetRedemptionById(redemption.Id)
+	require.NoError(t, err)
+	assert.Equal(t, common.RedemptionCodeStatusEnabled, reloadedCode.Status)
+	assert.Equal(t, 0, reloadedCode.UsedUserId)
+
+	var usageCount int64
+	require.NoError(t, DB.Model(&RedemptionUsage{}).Where("redemption_id = ?", redemption.Id).Count(&usageCount).Error)
+	assert.Equal(t, int64(2), usageCount)
+
+	reloadedA, err := GetUserById(userA.Id, true)
+	require.NoError(t, err)
+	reloadedB, err := GetUserById(userB.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 5000, reloadedA.Quota)
+	assert.Equal(t, 5000, reloadedB.Quota)
+}
+
+func TestRedeem_ExpiredCodeReturnsSpecificError(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+
+	user := createRegisteredUser(t, "expired_redeem")
+	redeemKey := fmt.Sprintf("E%031d", time.Now().UnixNano()%1_000_000_000_000_000_000)
+	redemption := &Redemption{
+		Key:         redeemKey,
+		Status:      common.RedemptionCodeStatusEnabled,
+		CodeType:    common.RedemptionCodeTypeWelfare,
+		Name:        "expired_redeem",
+		Quota:       5000,
+		CreatedTime: common.GetTimestamp() - 3600,
+		ExpiredTime: common.GetTimestamp() - 1,
+	}
+	require.NoError(t, redemption.Insert())
+
+	result, err := Redeem(redeemKey, user.Id)
+	require.Error(t, err)
+	assert.Nil(t, result)
+	assert.Equal(t, "兑换码已过期", err.Error())
 }

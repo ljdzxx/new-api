@@ -85,6 +85,7 @@ const Order = () => {
     appendText('keyword');
     appendText('user_id');
     appendText('username');
+    appendText('status');
 
     if (Array.isArray(values.dateRange) && values.dateRange.length === 2) {
       const startTimestamp = Math.floor(Date.parse(values.dateRange[0]) / 1000);
@@ -283,7 +284,7 @@ const Order = () => {
           autoComplete='off'
           layout='vertical'
         >
-          <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-2'>
+          <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-2'>
             <Form.Input
               field='keyword'
               prefix={<IconSearch />}
@@ -307,6 +308,18 @@ const Order = () => {
               showClear
               pure
               size='small'
+            />
+            <Form.Select
+              field='status'
+              placeholder={t('状态')}
+              showClear
+              pure
+              size='small'
+              optionList={[
+                { label: t('成功'), value: 'success' },
+                { label: t('待支付'), value: 'pending' },
+                { label: t('已过期'), value: 'expired' },
+              ]}
             />
             <div className='md:col-span-2 xl:col-span-2'>
               <Form.DatePicker

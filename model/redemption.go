@@ -15,11 +15,22 @@ import (
 // ErrRedeemFailed is returned when redemption fails due to database error
 var ErrRedeemFailed = errors.New("redeem.failed")
 
+var (
+	ErrRedemptionAlreadyRedeemed = errors.New("已兑换")
+	ErrRedemptionExpired         = errors.New("兑换码已过期")
+)
+
+func isRedemptionBusinessError(err error) bool {
+	return errors.Is(err, ErrRedemptionAlreadyRedeemed) ||
+		errors.Is(err, ErrRedemptionExpired)
+}
+
 type Redemption struct {
 	Id           int            `json:"id"`
 	UserId       int            `json:"user_id"`
 	Key          string         `json:"key" gorm:"type:char(32);uniqueIndex"`
 	Status       int            `json:"status" gorm:"default:1"`
+	CodeType     int            `json:"code_type" gorm:"type:int;default:1;index"`
 	RewardType   int            `json:"reward_type" gorm:"type:int;default:1"`
 	Name         string         `json:"name" gorm:"index"`
 	Quota        int            `json:"quota" gorm:"default:100"`
@@ -31,6 +42,18 @@ type Redemption struct {
 	UsedUserId   int            `json:"used_user_id"`
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
 	ExpiredTime  int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+}
+
+type RedemptionUsage struct {
+	Id             int    `json:"id"`
+	RedemptionId   int    `json:"redemption_id" gorm:"not null;uniqueIndex:idx_redemption_usage_user;index"`
+	UserId         int    `json:"user_id" gorm:"not null;uniqueIndex:idx_redemption_usage_user;index"`
+	Key            string `json:"key" gorm:"type:char(32);index"`
+	RedeemedTime   int64  `json:"redeemed_time" gorm:"bigint;index"`
+	RewardType     int    `json:"reward_type" gorm:"type:int;default:1"`
+	PlanId         int    `json:"plan_id" gorm:"type:int;default:0;index"`
+	Quota          int    `json:"quota" gorm:"default:0"`
+	SubscriptionId int    `json:"subscription_id" gorm:"type:int;default:0;index"`
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
@@ -120,9 +143,111 @@ func GetRedemptionById(id int) (*Redemption, error) {
 }
 
 type RedeemResult struct {
-	RewardType int `json:"reward_type"`
-	Quota      int `json:"quota"`
-	PlanId     int `json:"plan_id"`
+	RewardType int    `json:"reward_type"`
+	Quota      int    `json:"quota"`
+	PlanId     int    `json:"plan_id"`
+	PlanTitle  string `json:"plan_title"`
+}
+
+type redemptionRewardApplyResult struct {
+	levelChanged              bool
+	upgradedGroup             string
+	upgradedLevelID           int
+	upgradedSubscriptionGroup string
+	subscriptionId            int
+}
+
+func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, result *RedeemResult, tradeNo string) (*redemptionRewardApplyResult, error) {
+	applyResult := &redemptionRewardApplyResult{}
+	rewardType := redemption.RewardType
+	if rewardType == 0 {
+		rewardType = common.RedemptionRewardTypeQuota
+	}
+	if redemption.PayMoney < 0 {
+		return nil, errors.New("兑换码实付金额无效")
+	}
+	result.RewardType = rewardType
+
+	redeemedAt := common.GetTimestamp()
+	switch rewardType {
+	case common.RedemptionRewardTypeQuota:
+		if redemption.Quota <= 0 {
+			return nil, errors.New("兑换码额度无效")
+		}
+		if err := tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota)).Error; err != nil {
+			return nil, err
+		}
+		result.Quota = redemption.Quota
+
+		topup := TopUp{
+			UserId:        userId,
+			Amount:        int64(redemption.Quota),
+			Money:         redemption.PayMoney,
+			TradeNo:       tradeNo,
+			PaymentMethod: "redemption",
+			CreateTime:    redeemedAt,
+			CompleteTime:  redeemedAt,
+			Status:        common.TopUpStatusSuccess,
+		}
+		if err := tx.Create(&topup).Error; err != nil {
+			return nil, err
+		}
+	case common.RedemptionRewardTypeSubscription:
+		if redemption.PlanId <= 0 {
+			return nil, errors.New("兑换码未绑定订阅套餐")
+		}
+		plan, err := getSubscriptionPlanByIdTx(tx, redemption.PlanId)
+		if err != nil {
+			return nil, err
+		}
+		if !plan.Enabled {
+			return nil, errors.New("订阅套餐未启用")
+		}
+		sub, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "redemption")
+		if err != nil {
+			return nil, err
+		}
+		if sub != nil && sub.Id > 0 {
+			if err = tx.Model(sub).Update("redemption_id", redemption.Id).Error; err != nil {
+				return nil, err
+			}
+			applyResult.subscriptionId = sub.Id
+		}
+		applyResult.upgradedSubscriptionGroup = strings.TrimSpace(plan.UpgradeGroup)
+		result.PlanId = redemption.PlanId
+		result.PlanTitle = strings.TrimSpace(plan.Title)
+
+		topup := TopUp{
+			UserId:        userId,
+			Amount:        0,
+			Money:         redemption.PayMoney,
+			TradeNo:       tradeNo,
+			PaymentMethod: "redemption",
+			CreateTime:    redeemedAt,
+			CompleteTime:  redeemedAt,
+			Status:        common.TopUpStatusSuccess,
+		}
+		if err = tx.Create(&topup).Error; err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New("不支持的兑换码奖励类型")
+	}
+
+	var totalRecharge float64
+	if err := tx.Model(&TopUp{}).
+		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Select("COALESCE(SUM(money), 0)").
+		Scan(&totalRecharge).Error; err != nil {
+		return nil, err
+	}
+
+	var err error
+	applyResult.levelChanged, applyResult.upgradedGroup, applyResult.upgradedLevelID, err = applyUserLevelByRechargeTx(tx, userId, totalRecharge)
+	if err != nil {
+		return nil, err
+	}
+	return applyResult, nil
 }
 
 func Redeem(key string, userId int) (result *RedeemResult, err error) {
@@ -133,10 +258,7 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 		return nil, errors.New("无效的 user id")
 	}
 	redemption := &Redemption{}
-	var levelChanged bool
-	var upgradedGroup string
-	var upgradedLevelID int
-	var upgradedSubscriptionGroup string
+	var applyResult *redemptionRewardApplyResult
 	result = &RedeemResult{}
 
 	keyCol := "`key`"
@@ -150,120 +272,81 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 			return errors.New("无效的兑换码")
 		}
 		if redemption.Status != common.RedemptionCodeStatusEnabled {
-			return errors.New("该兑换码已被使用")
+			return ErrRedemptionAlreadyRedeemed
 		}
 		if redemption.ExpiredTime != 0 && redemption.ExpiredTime < common.GetTimestamp() {
-			return errors.New("该兑换码已过期")
+			return ErrRedemptionExpired
 		}
-		rewardType := redemption.RewardType
-		if rewardType == 0 {
-			rewardType = common.RedemptionRewardTypeQuota
-		}
-		if redemption.PayMoney < 0 {
-			return errors.New("兑换码实付金额无效")
-		}
-		result.RewardType = rewardType
 
-		switch rewardType {
-		case common.RedemptionRewardTypeQuota:
-			if redemption.Quota <= 0 {
-				return errors.New("兑换码额度无效")
+		codeType := redemption.CodeType
+		if codeType == 0 {
+			codeType = common.RedemptionCodeTypeNormal
+		}
+		redeemedAt := common.GetTimestamp()
+		if codeType == common.RedemptionCodeTypeWelfare {
+			var usageCount int64
+			if err := tx.Model(&RedemptionUsage{}).Where("redemption_id = ? AND user_id = ?", redemption.Id, userId).Count(&usageCount).Error; err != nil {
+				return err
 			}
-			err = tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", redemption.Quota)).Error
+			if usageCount > 0 {
+				return ErrRedemptionAlreadyRedeemed
+			}
+			tradeNo := fmt.Sprintf("redeem-%d-u%d", redemption.Id, userId)
+			applyResult, err = applyRedemptionRewardTx(tx, redemption, userId, result, tradeNo)
 			if err != nil {
 				return err
 			}
-			result.Quota = redemption.Quota
-
-			redeemedAt := common.GetTimestamp()
-			topup := TopUp{
-				UserId:        userId,
-				Amount:        int64(redemption.Quota),
-				Money:         redemption.PayMoney,
-				TradeNo:       fmt.Sprintf("redeem-%d", redemption.Id),
-				PaymentMethod: "redemption",
-				CreateTime:    redeemedAt,
-				CompleteTime:  redeemedAt,
-				Status:        common.TopUpStatusSuccess,
+			usage := RedemptionUsage{
+				RedemptionId:   redemption.Id,
+				UserId:         userId,
+				Key:            redemption.Key,
+				RedeemedTime:   redeemedAt,
+				RewardType:     result.RewardType,
+				PlanId:         result.PlanId,
+				Quota:          result.Quota,
+				SubscriptionId: applyResult.subscriptionId,
 			}
-			if err = tx.Create(&topup).Error; err != nil {
-				return err
+			if err = tx.Create(&usage).Error; err != nil {
+				return ErrRedemptionAlreadyRedeemed
 			}
-		case common.RedemptionRewardTypeSubscription:
-			if redemption.PlanId <= 0 {
-				return errors.New("兑换码未绑定订阅套餐")
-			}
-			plan, err := getSubscriptionPlanByIdTx(tx, redemption.PlanId)
-			if err != nil {
-				return err
-			}
-			if !plan.Enabled {
-				return errors.New("订阅套餐未启用")
-			}
-			sub, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "redemption")
-			if err != nil {
-				return err
-			}
-			if sub != nil && sub.Id > 0 {
-				if err = tx.Model(sub).Update("redemption_id", redemption.Id).Error; err != nil {
-					return err
-				}
-			}
-			upgradedSubscriptionGroup = strings.TrimSpace(plan.UpgradeGroup)
-			result.PlanId = redemption.PlanId
-
-			redeemedAt := common.GetTimestamp()
-			topup := TopUp{
-				UserId:        userId,
-				Amount:        0,
-				Money:         redemption.PayMoney,
-				TradeNo:       fmt.Sprintf("redeem-%d", redemption.Id),
-				PaymentMethod: "redemption",
-				CreateTime:    redeemedAt,
-				CompleteTime:  redeemedAt,
-				Status:        common.TopUpStatusSuccess,
-			}
-			if err = tx.Create(&topup).Error; err != nil {
-				return err
-			}
-		default:
-			return errors.New("不支持的兑换码奖励类型")
+			redemption.RedeemedTime = redeemedAt
+			return tx.Model(redemption).Select("redeemed_time").Updates(redemption).Error
 		}
-		redemption.RedeemedTime = common.GetTimestamp()
+
+		applyResult, err = applyRedemptionRewardTx(tx, redemption, userId, result, fmt.Sprintf("redeem-%d", redemption.Id))
+		if err != nil {
+			return err
+		}
+		redemption.RedeemedTime = redeemedAt
 		redemption.Status = common.RedemptionCodeStatusUsed
 		redemption.UsedUserId = userId
-		err = tx.Save(redemption).Error
-		if err != nil {
-			return err
-		}
-
-		var totalRecharge float64
-		err = tx.Model(&TopUp{}).
-			Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
-			Select("COALESCE(SUM(money), 0)").
-			Scan(&totalRecharge).Error
-		if err != nil {
-			return err
-		}
-
-		levelChanged, upgradedGroup, upgradedLevelID, err = applyUserLevelByRechargeTx(tx, userId, totalRecharge)
-		return err
+		return tx.Save(redemption).Error
 	})
 	if err != nil {
+		if isRedemptionBusinessError(err) {
+			return nil, err
+		}
 		common.SysError("redemption failed: " + err.Error())
 		return nil, ErrRedeemFailed
 	}
-	if result.RewardType == common.RedemptionRewardTypeSubscription && upgradedSubscriptionGroup != "" {
-		_ = UpdateUserGroupCache(userId, upgradedSubscriptionGroup)
+	if applyResult == nil {
+		applyResult = &redemptionRewardApplyResult{}
+	}
+	if result.RewardType == common.RedemptionRewardTypeSubscription && applyResult.upgradedSubscriptionGroup != "" {
+		_ = UpdateUserGroupCache(userId, applyResult.upgradedSubscriptionGroup)
 	}
 	if result.RewardType == common.RedemptionRewardTypeSubscription {
-		RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码开通订阅，套餐ID %d，兑换码ID %d", result.PlanId, redemption.Id))
+		if result.PlanTitle != "" {
+			RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码开通订阅，套餐 %s，兑换码ID %d", result.PlanTitle, redemption.Id))
+		} else {
+			RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码开通订阅，套餐ID %d，兑换码ID %d", result.PlanId, redemption.Id))
+		}
 	} else {
 		RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码充值 %s，兑换码ID %d", logger.LogQuota(redemption.Quota), redemption.Id))
 	}
-	if levelChanged {
+	if applyResult.levelChanged {
 		_ = invalidateUserCache(userId)
-		RecordLog(userId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", upgradedGroup, upgradedLevelID))
+		RecordLog(userId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", applyResult.upgradedGroup, applyResult.upgradedLevelID))
 	}
 	return result, nil
 }
@@ -282,7 +365,7 @@ func (redemption *Redemption) SelectUpdate() error {
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (redemption *Redemption) Update() error {
 	var err error
-	err = DB.Model(redemption).Select("name", "status", "reward_type", "quota", "plan_id", "pay_money", "redeemed_time", "expired_time").Updates(redemption).Error
+	err = DB.Model(redemption).Select("name", "status", "code_type", "reward_type", "quota", "plan_id", "pay_money", "redeemed_time", "expired_time").Updates(redemption).Error
 	return err
 }
 

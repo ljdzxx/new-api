@@ -280,7 +280,7 @@ func loadPaidUserSet(tx *gorm.DB, entries []model.LotteryEntry) (map[int]bool, e
 func loadSuccessfulOrderUserSet(tx *gorm.DB, userIds []int) (map[int]bool, error) {
 	var userIdsWithOrders []int
 	if err := tx.Model(&model.TopUp{}).
-		Where("user_id IN ? AND status = ?", userIds, common.TopUpStatusSuccess).
+		Where("user_id IN ? AND status = ? AND money > ?", userIds, common.TopUpStatusSuccess, 0).
 		Distinct("user_id").
 		Pluck("user_id", &userIdsWithOrders).Error; err != nil {
 		return nil, err

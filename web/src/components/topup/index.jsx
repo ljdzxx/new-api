@@ -215,10 +215,15 @@ const TopUp = () => {
           REDEMPTION_REWARD_TYPES.QUOTA;
         showSuccess(t('兑换成功！'));
         if (rewardType === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
+          const planTitle =
+            data?.plan_title ||
+            t('套餐 #{{planId}}', {
+              planId: Number(data?.plan_id || 0) || '-',
+            });
           Modal.success({
             title: t('兑换成功！'),
-            content: t('订阅已兑换成功，套餐 #{{planId}}', {
-              planId: Number(data?.plan_id || 0) || '-',
+            content: t('成功兑换：订阅套餐-{{planTitle}}', {
+              planTitle,
             }),
             centered: true,
           });
@@ -227,7 +232,7 @@ const TopUp = () => {
           const quotaValue = Number(data?.quota || 0);
           Modal.success({
             title: t('兑换成功！'),
-            content: t('额度已兑换成功 {{quota}}', {
+            content: t('成功兑换：{{quota}} 余额', {
               quota: renderQuota(quotaValue),
             }),
             centered: true,
@@ -460,7 +465,9 @@ const TopUp = () => {
           payMethods = JSON.parse(payMethods);
         }
         if (payMethods && payMethods.length > 0) {
-          payMethods = payMethods.filter((method) => method.name && method.type);
+          payMethods = payMethods.filter(
+            (method) => method.name && method.type,
+          );
           payMethods = payMethods.map((method) => {
             const normalizedMinTopup = Number(method.min_topup);
             method.min_topup = Number.isFinite(normalizedMinTopup)
@@ -499,12 +506,15 @@ const TopUp = () => {
         const enableStripeTopUp = data.enable_stripe_topup || false;
         const enableOnlineTopUp = data.enable_online_topup || false;
         const enableCreemTopUp = data.enable_creem_topup || false;
-        const hasMallMethod = payMethods.some((method) => method.type === 'mall');
-        const minTopUpValue = enableOnlineTopUp || hasMallMethod
-          ? data.min_topup
-          : enableStripeTopUp
-            ? data.stripe_min_topup
-            : 1;
+        const hasMallMethod = payMethods.some(
+          (method) => method.type === 'mall',
+        );
+        const minTopUpValue =
+          enableOnlineTopUp || hasMallMethod
+            ? data.min_topup
+            : enableStripeTopUp
+              ? data.stripe_min_topup
+              : 1;
         let resolvedMinTopUp = minTopUpValue;
 
         setHasMallPayMethod(hasMallMethod);
@@ -521,11 +531,12 @@ const TopUp = () => {
           const currentProvider = providerMeta.provider;
           const currentProviderReady =
             providerMeta.enabled && providerMeta.config_ready;
-          resolvedMinTopUp = currentProvider === 'stripe'
-            ? data.stripe_min_topup
-            : currentProvider === 'epay' || currentProvider === 'mall'
-              ? data.min_topup
-              : 1;
+          resolvedMinTopUp =
+            currentProvider === 'stripe'
+              ? data.stripe_min_topup
+              : currentProvider === 'epay' || currentProvider === 'mall'
+                ? data.min_topup
+                : 1;
 
           setPayMethods(providerPayMethods);
           setEnableOnlineTopUp(
@@ -598,7 +609,9 @@ const TopUp = () => {
   // Transfer quota to a referred user
   const transfer = async () => {
     if (transferAmount < getQuotaPerUnit()) {
-      showError('Transfer amount must be at least ' + renderQuota(getQuotaPerUnit()));
+      showError(
+        'Transfer amount must be at least ' + renderQuota(getQuotaPerUnit()),
+      );
       return;
     }
     const res = await API.post(`/api/user/aff_transfer`, {
@@ -741,7 +754,6 @@ const TopUp = () => {
     }));
   };
 
-
   return (
     <div className='w-full max-w-7xl mx-auto relative min-h-screen lg:min-h-0 mt-[60px] px-2'>
       {/* Transfer modal */}
@@ -796,14 +808,17 @@ const TopUp = () => {
         {selectedCreemProduct && (
           <>
             <p>
-              {'Product: '}{selectedCreemProduct.name}
+              {'Product: '}
+              {selectedCreemProduct.name}
             </p>
             <p>
-              {'Price: '}{selectedCreemProduct.currency === 'EUR' ? 'EUR ' : '$'}
+              {'Price: '}
+              {selectedCreemProduct.currency === 'EUR' ? 'EUR ' : '$'}
               {selectedCreemProduct.price}
             </p>
             <p>
-              {'Quota: '}{selectedCreemProduct.quota}
+              {'Quota: '}
+              {selectedCreemProduct.quota}
             </p>
             <p>{'Confirm top-up?'}</p>
           </>
@@ -870,4 +885,3 @@ const TopUp = () => {
 };
 
 export default TopUp;
-

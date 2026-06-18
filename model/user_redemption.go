@@ -11,6 +11,7 @@ import (
 type UserRedemptionRecord struct {
 	Id                    int    `json:"id"`
 	Key                   string `json:"key"`
+	CodeType              int    `json:"code_type"`
 	RewardType            int    `json:"reward_type"`
 	PlanId                int    `json:"plan_id"`
 	PlanTitle             string `json:"plan_title"`
@@ -41,6 +42,21 @@ func GetRedemptionCountsByUserIDs(userIDs []int) (map[int]int64, error) {
 	}
 	for _, row := range rows {
 		result[row.UsedUserId] = row.Count
+	}
+	usageRows := make([]struct {
+		UserId int   `gorm:"column:user_id"`
+		Count  int64 `gorm:"column:redemption_count"`
+	}, 0)
+	err = DB.Model(&RedemptionUsage{}).
+		Select("user_id, COUNT(*) AS redemption_count").
+		Where("user_id IN ?", userIDs).
+		Group("user_id").
+		Scan(&usageRows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range usageRows {
+		result[row.UserId] += row.Count
 	}
 	return result, nil
 }
@@ -88,8 +104,10 @@ us.status = ? OR
 
 func buildUserRedemptionRecordsQuery(userId int) *gorm.DB {
 	return DB.Table("redemptions AS r").
+		Joins("LEFT JOIN redemption_usages AS ru ON ru.redemption_id = r.id AND ru.user_id = ?", userId).
 		Joins("LEFT JOIN subscription_plans AS sp ON sp.id = r.plan_id").
 		Joins(`LEFT JOIN user_subscriptions AS us ON
+us.user_id = ? AND
 (us.redemption_id = r.id OR (
 us.redemption_id = 0 AND
 r.reward_type = ? AND
@@ -97,8 +115,11 @@ us.user_id = r.used_user_id AND
 us.plan_id = r.plan_id AND
 us.source = ? AND
 ABS(us.created_at - r.redeemed_time) <= ?
-))`, common.RedemptionRewardTypeSubscription, "redemption", 5).
-		Where("r.used_user_id = ? AND r.status = ?", userId, common.RedemptionCodeStatusUsed)
+))`, userId, common.RedemptionRewardTypeSubscription, "redemption", 5).
+		Where(`(
+(r.used_user_id = ? AND r.status = ?) OR
+ru.user_id = ?
+)`, userId, common.RedemptionCodeStatusUsed, userId)
 }
 
 func GetUserRedemptionRecords(userId int, pageInfo *common.PageInfo, status string) ([]UserRedemptionRecord, int64, error) {
@@ -120,10 +141,11 @@ func GetUserRedemptionRecords(userId int, pageInfo *common.PageInfo, status stri
 	err := base.
 		Select(`r.id,
 r.key,
+COALESCE(r.code_type, 1) AS code_type,
 r.reward_type,
 r.plan_id,
 COALESCE(sp.title, '') AS plan_title,
-r.redeemed_time,
+COALESCE(NULLIF(ru.redeemed_time, 0), r.redeemed_time) AS redeemed_time,
 COALESCE(us.start_time, 0) AS subscription_start_time,
 COALESCE(us.end_time, 0) AS subscription_end_time,
 COALESCE(us.status, '') AS subscription_status`).

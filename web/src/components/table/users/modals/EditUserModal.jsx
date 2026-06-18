@@ -69,6 +69,7 @@ const EditUserModal = (props) => {
   const isMobile = useIsMobile();
   const [groupOptions, setGroupOptions] = useState([]);
   const [bindingModalVisible, setBindingModalVisible] = useState(false);
+  const [updateQuota, setUpdateQuota] = useState(false);
   const formApiRef = useRef(null);
 
   const isEdit = Boolean(userId);
@@ -88,6 +89,10 @@ const EditUserModal = (props) => {
     global_model_ratio: 1,
     group: 'default',
     remark: '',
+    rate_limit_enabled: false,
+    rate_limit_duration_minutes: 1,
+    rate_limit_count: 0,
+    rate_limit_success_count: 1000,
   });
 
   const fetchGroups = async () => {
@@ -108,6 +113,7 @@ const EditUserModal = (props) => {
     const { success, message, data } = res.data;
     if (success) {
       data.password = '';
+      setUpdateQuota(false);
       formApiRef.current?.setValues({ ...getInitValues(), ...data });
     } else {
       showError(message);
@@ -133,10 +139,25 @@ const EditUserModal = (props) => {
   const submit = async (values) => {
     setLoading(true);
     let payload = { ...values };
+    payload.update_quota = updateQuota;
+    if (!updateQuota) {
+      delete payload.quota;
+    }
     if (typeof payload.quota === 'string')
       payload.quota = parseInt(payload.quota) || 0;
     if (typeof payload.global_model_ratio === 'string') {
       payload.global_model_ratio = parseFloat(payload.global_model_ratio) || 0;
+    }
+    if (typeof payload.rate_limit_duration_minutes === 'string') {
+      payload.rate_limit_duration_minutes =
+        parseInt(payload.rate_limit_duration_minutes) || 1;
+    }
+    if (typeof payload.rate_limit_count === 'string') {
+      payload.rate_limit_count = parseInt(payload.rate_limit_count) || 0;
+    }
+    if (typeof payload.rate_limit_success_count === 'string') {
+      payload.rate_limit_success_count =
+        parseInt(payload.rate_limit_success_count) || 1000;
     }
     if (userId) {
       payload.id = parseInt(userId);
@@ -156,6 +177,7 @@ const EditUserModal = (props) => {
 
   /* --------------------- quota helper -------------------- */
   const addLocalQuota = () => {
+    if (!updateQuota) return;
     const current = parseInt(formApiRef.current?.getValue('quota') || 0);
     const delta = parseInt(addQuotaLocal) || 0;
     formApiRef.current?.setValue('quota', current + delta);
@@ -307,6 +329,19 @@ const EditUserModal = (props) => {
                         />
                       </Col>
 
+                      <Col span={24}>
+                        <Form.Slot label={t('编辑剩余额度')}>
+                          <Form.Switch
+                            noLabel
+                            field='update_quota_switch'
+                            checked={updateQuota}
+                            onChange={setUpdateQuota}
+                            checkedText='｜'
+                            uncheckedText='〇'
+                          />
+                        </Form.Slot>
+                      </Col>
+
                       <Col span={10}>
                         <Form.InputNumber
                           field='quota'
@@ -314,7 +349,12 @@ const EditUserModal = (props) => {
                           placeholder={t('请输入新的剩余额度')}
                           step={500000}
                           extraText={renderQuotaWithPrompt(values.quota || 0)}
-                          rules={[{ required: true, message: t('请输入额度') }]}
+                          disabled={!updateQuota}
+                          rules={
+                            updateQuota
+                              ? [{ required: true, message: t('请输入额度') }]
+                              : []
+                          }
                           style={{ width: '100%' }}
                         />
                       </Col>
@@ -324,6 +364,7 @@ const EditUserModal = (props) => {
                           <Button
                             icon={<IconPlus />}
                             onClick={() => setIsModalOpen(true)}
+                            disabled={!updateQuota}
                           />
                         </Form.Slot>
                       </Col>
@@ -339,6 +380,77 @@ const EditUserModal = (props) => {
                           extraText={t(
                             '默认 1，仅对该用户生效，会与系统全局模型倍率叠乘参与所有计费场景，不显示在使用日志中',
                           )}
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+                    </Row>
+                  </Card>
+                )}
+
+                {/* 速率限制 */}
+                {userId && (
+                  <Card className='!rounded-2xl shadow-sm border-0'>
+                    <div className='flex items-center mb-2'>
+                      <Avatar
+                        size='small'
+                        color='orange'
+                        className='mr-2 shadow-md'
+                      >
+                        <IconUserGroup size={16} />
+                      </Avatar>
+                      <div>
+                        <Text className='text-lg font-medium'>
+                          {t('速率限制')}
+                        </Text>
+                        <div className='text-xs text-gray-600'>
+                          {t('用户模型请求速率限制')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Row gutter={12}>
+                      <Col span={24}>
+                        <Form.Switch
+                          field='rate_limit_enabled'
+                          label={t('启用用户模型请求速率限制')}
+                          checkedText='｜'
+                          uncheckedText='〇'
+                        />
+                      </Col>
+
+                      <Col span={12}>
+                        <Form.InputNumber
+                          field='rate_limit_duration_minutes'
+                          label={t('限制周期')}
+                          min={1}
+                          step={1}
+                          suffix={t('分钟')}
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+
+                      <Col span={12}>
+                        <Form.InputNumber
+                          field='rate_limit_count'
+                          label={t('用户每周期最多请求次数')}
+                          min={0}
+                          max={100000000}
+                          step={1}
+                          suffix={t('次')}
+                          extraText={t('包括失败请求的次数，0代表不限制')}
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+
+                      <Col span={24}>
+                        <Form.InputNumber
+                          field='rate_limit_success_count'
+                          label={t('用户每周期最多请求完成次数')}
+                          min={1}
+                          max={100000000}
+                          step={1}
+                          suffix={t('次')}
+                          extraText={t('只包括请求成功的次数')}
                           style={{ width: '100%' }}
                         />
                       </Col>

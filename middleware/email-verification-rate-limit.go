@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -50,6 +51,8 @@ func redisEmailVerificationRateLimiter(c *gin.Context) {
 	c.JSON(http.StatusTooManyRequests, gin.H{
 		"success": false,
 		"message": fmt.Sprintf("发送过于频繁，请等待 %d 秒后再试", waitSeconds),
+		"type":    "new_api_error",
+		"code":    types.ErrorCodeSystemRateLimit,
 	})
 	c.Abort()
 }
@@ -61,6 +64,8 @@ func memoryEmailVerificationRateLimiter(c *gin.Context) {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"success": false,
 			"message": "发送过于频繁，请稍后再试",
+			"type":    "new_api_error",
+			"code":    types.ErrorCodeSystemRateLimit,
 		})
 		c.Abort()
 		return

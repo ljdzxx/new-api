@@ -611,14 +611,19 @@ func GetUserModels(c *gin.Context) {
 
 func UpdateUser(c *gin.Context) {
 	type updateUserRequest struct {
-		Id               int      `json:"id"`
-		Username         string   `json:"username" validate:"max=20"`
-		Password         string   `json:"password" validate:"omitempty,min=8,max=20"`
-		DisplayName      string   `json:"display_name" validate:"max=20"`
-		Group            string   `json:"group"`
-		Quota            int      `json:"quota"`
-		Remark           string   `json:"remark" validate:"max=255"`
-		GlobalModelRatio *float64 `json:"global_model_ratio"`
+		Id                       int      `json:"id"`
+		Username                 string   `json:"username" validate:"max=20"`
+		Password                 string   `json:"password" validate:"omitempty,min=8,max=20"`
+		DisplayName              string   `json:"display_name" validate:"max=20"`
+		Group                    string   `json:"group"`
+		Quota                    int      `json:"quota"`
+		UpdateQuota              bool     `json:"update_quota"`
+		Remark                   string   `json:"remark" validate:"max=255"`
+		GlobalModelRatio         *float64 `json:"global_model_ratio"`
+		RateLimitEnabled         *bool    `json:"rate_limit_enabled"`
+		RateLimitDurationMinutes *int     `json:"rate_limit_duration_minutes"`
+		RateLimitCount           *int     `json:"rate_limit_count"`
+		RateLimitSuccessCount    *int     `json:"rate_limit_success_count"`
 	}
 
 	var req updateUserRequest
@@ -628,6 +633,18 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 	if req.GlobalModelRatio != nil && *req.GlobalModelRatio < 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if req.RateLimitDurationMinutes != nil && *req.RateLimitDurationMinutes < 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if req.RateLimitCount != nil && *req.RateLimitCount < 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if req.RateLimitSuccessCount != nil && *req.RateLimitSuccessCount < 1 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
@@ -649,17 +666,37 @@ func UpdateUser(c *gin.Context) {
 	if req.GlobalModelRatio != nil {
 		globalModelRatio = *req.GlobalModelRatio
 	}
+	rateLimitEnabled := originUser.RateLimitEnabled
+	rateLimitDurationMinutes := originUser.RateLimitDurationMinutes
+	rateLimitCount := originUser.RateLimitCount
+	rateLimitSuccessCount := originUser.RateLimitSuccessCount
+	if req.RateLimitEnabled != nil {
+		rateLimitEnabled = *req.RateLimitEnabled
+	}
+	if req.RateLimitDurationMinutes != nil {
+		rateLimitDurationMinutes = *req.RateLimitDurationMinutes
+	}
+	if req.RateLimitCount != nil {
+		rateLimitCount = *req.RateLimitCount
+	}
+	if req.RateLimitSuccessCount != nil {
+		rateLimitSuccessCount = *req.RateLimitSuccessCount
+	}
 
 	updatedUser := model.User{
-		Id:               req.Id,
-		Username:         req.Username,
-		Password:         req.Password,
-		DisplayName:      req.DisplayName,
-		Group:            req.Group,
-		Quota:            req.Quota,
-		Remark:           req.Remark,
-		GlobalModelRatio: globalModelRatio,
-		Role:             originUser.Role,
+		Id:                       req.Id,
+		Username:                 req.Username,
+		Password:                 req.Password,
+		DisplayName:              req.DisplayName,
+		Group:                    req.Group,
+		Quota:                    req.Quota,
+		Remark:                   req.Remark,
+		GlobalModelRatio:         globalModelRatio,
+		RateLimitEnabled:         rateLimitEnabled,
+		RateLimitDurationMinutes: rateLimitDurationMinutes,
+		RateLimitCount:           rateLimitCount,
+		RateLimitSuccessCount:    rateLimitSuccessCount,
+		Role:                     originUser.Role,
 	}
 	if updatedUser.Password == "" {
 		updatedUser.Password = "$I_LOVE_U"
@@ -672,11 +709,11 @@ func UpdateUser(c *gin.Context) {
 		updatedUser.Password = "" // rollback to what it should be
 	}
 	updatePassword := updatedUser.Password != ""
-	if err := updatedUser.Edit(updatePassword); err != nil {
+	if err := updatedUser.Edit(updatePassword, req.UpdateQuota); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if originUser.Quota != updatedUser.Quota {
+	if req.UpdateQuota && originUser.Quota != updatedUser.Quota {
 		model.RecordLog(originUser.Id, model.LogTypeManage, fmt.Sprintf("管理员将用户额度从 %s修改为 %s", logger.LogQuota(originUser.Quota), logger.LogQuota(updatedUser.Quota)))
 	}
 	c.JSON(http.StatusOK, gin.H{

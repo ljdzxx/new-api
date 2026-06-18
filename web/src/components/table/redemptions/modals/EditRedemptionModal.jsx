@@ -28,7 +28,10 @@ import {
   renderQuotaWithPrompt,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
-import { REDEMPTION_REWARD_TYPES } from '../../../../constants/redemption.constants';
+import {
+  REDEMPTION_CODE_TYPES,
+  REDEMPTION_REWARD_TYPES,
+} from '../../../../constants/redemption.constants';
 import {
   Button,
   Modal,
@@ -42,6 +45,7 @@ import {
   Avatar,
   Row,
   Col,
+  Input,
 } from '@douyinfe/semi-ui';
 import {
   IconCreditCard,
@@ -58,11 +62,14 @@ const EditRedemptionModal = (props) => {
   const [loading, setLoading] = useState(isEdit);
   const [plansLoading, setPlansLoading] = useState(false);
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
+  const [fixedRedemptionKey, setFixedRedemptionKey] = useState('');
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
 
   const getInitValues = () => ({
     name: '',
+    code_type: REDEMPTION_CODE_TYPES.NORMAL,
+    key: '',
     reward_type: REDEMPTION_REWARD_TYPES.QUOTA,
     quota: 100000,
     plan_id: undefined,
@@ -98,6 +105,10 @@ const EditRedemptionModal = (props) => {
       if (!data.reward_type) {
         data.reward_type = REDEMPTION_REWARD_TYPES.QUOTA;
       }
+      if (!data.code_type) {
+        data.code_type = REDEMPTION_CODE_TYPES.NORMAL;
+      }
+      setFixedRedemptionKey(data.key || '');
       formApiRef.current?.setValues({ ...getInitValues(), ...data });
     } else {
       showError(message);
@@ -127,6 +138,7 @@ const EditRedemptionModal = (props) => {
       if (isEdit) {
         loadRedemption();
       } else {
+        setFixedRedemptionKey('');
         formApiRef.current.setValues(getInitValues());
       }
     }
@@ -141,6 +153,8 @@ const EditRedemptionModal = (props) => {
     localInputs.count = parseInt(localInputs.count, 10) || 0;
     localInputs.reward_type =
       parseInt(localInputs.reward_type, 10) || REDEMPTION_REWARD_TYPES.QUOTA;
+    localInputs.code_type =
+      parseInt(localInputs.code_type, 10) || REDEMPTION_CODE_TYPES.NORMAL;
     localInputs.quota = parseInt(localInputs.quota, 10) || 0;
     localInputs.plan_id = parseInt(localInputs.plan_id, 10) || 0;
     localInputs.pay_money = Number(localInputs.pay_money || 0);
@@ -153,13 +167,30 @@ const EditRedemptionModal = (props) => {
       );
     }
 
+    if (localInputs.code_type === REDEMPTION_CODE_TYPES.WELFARE) {
+      localInputs.count = 1;
+      localInputs.key = String(
+        isEdit ? fixedRedemptionKey : localInputs.key || '',
+      ).trim();
+      if (!isEdit && !localInputs.key) {
+        showError(t('请输入福利兑换码'));
+        return;
+      }
+      if (!isEdit && [...localInputs.key].length > 32) {
+        showError(t('福利兑换码长度不能超过32个字符'));
+        return;
+      }
+    }
+
     if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.QUOTA) {
       if (localInputs.quota <= 0) {
         showError(t('额度必须大于0'));
         return;
       }
       localInputs.plan_id = 0;
-    } else if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
+    } else if (
+      localInputs.reward_type === REDEMPTION_REWARD_TYPES.SUBSCRIPTION
+    ) {
       if (localInputs.plan_id <= 0) {
         showError(t('请选择订阅套餐'));
         return;
@@ -176,7 +207,9 @@ const EditRedemptionModal = (props) => {
       if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.QUOTA) {
         localInputs.name = renderQuota(localInputs.quota);
       } else {
-        const matched = planOptions.find((p) => p.value === localInputs.plan_id);
+        const matched = planOptions.find(
+          (p) => p.value === localInputs.plan_id,
+        );
         localInputs.name = matched
           ? `${matched.label}`
           : `订阅套餐#${localInputs.plan_id}`;
@@ -288,188 +321,236 @@ const EditRedemptionModal = (props) => {
             getFormApi={(api) => (formApiRef.current = api)}
             onSubmit={submit}
           >
-            {({ values }) => (
-              <div className='p-2'>
-                <Card className='!rounded-2xl shadow-sm border-0 mb-6'>
-                  <div className='flex items-center mb-2'>
-                    <Avatar
-                      size='small'
-                      color='blue'
-                      className='mr-2 shadow-md'
-                    >
-                      <IconGift size={16} />
-                    </Avatar>
-                    <div>
-                      <Text className='text-lg font-medium'>{t('基本信息')}</Text>
-                      <div className='text-xs text-gray-600'>
-                        {t('设置兑换码的基本信息')}
+            {({ values }) => {
+              const currentCodeType = Number(
+                values.code_type || REDEMPTION_CODE_TYPES.NORMAL,
+              );
+              return (
+                <div className='p-2'>
+                  <Card className='!rounded-2xl shadow-sm border-0 mb-6'>
+                    <div className='flex items-center mb-2'>
+                      <Avatar
+                        size='small'
+                        color='blue'
+                        className='mr-2 shadow-md'
+                      >
+                        <IconGift size={16} />
+                      </Avatar>
+                      <div>
+                        <Text className='text-lg font-medium'>
+                          {t('基本信息')}
+                        </Text>
+                        <div className='text-xs text-gray-600'>
+                          {t('设置兑换码的基本信息')}
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <Row gutter={12}>
-                    <Col span={24}>
-                      <Form.Input
-                        field='name'
-                        label={t('名称')}
-                        placeholder={t('请输入名称')}
-                        style={{ width: '100%' }}
-                        rules={
-                          !isEdit
-                            ? []
-                            : [{ required: true, message: t('请输入名称') }]
-                        }
-                        showClear
-                      />
-                    </Col>
-                    <Col span={24}>
-                      <Form.Select
-                        field='reward_type'
-                        label={t('奖励类型')}
-                        optionList={[
-                          { label: t('额度'), value: REDEMPTION_REWARD_TYPES.QUOTA },
-                          {
-                            label: t('订阅套餐'),
-                            value: REDEMPTION_REWARD_TYPES.SUBSCRIPTION,
-                          },
-                        ]}
-                      />
-                    </Col>
-                    {values.reward_type === REDEMPTION_REWARD_TYPES.SUBSCRIPTION && (
+                    <Row gutter={12}>
                       <Col span={24}>
-                        <Form.Select
-                          field='plan_id'
-                          label={t('订阅套餐')}
-                          placeholder={t('请选择要绑定的订阅套餐')}
-                          loading={plansLoading}
-                          filter
-                          optionList={planOptions}
-                          rules={[
-                            { required: true, message: t('请选择订阅套餐') },
-                          ]}
-                        />
-                      </Col>
-                    )}
-                    <Col span={24}>
-                      <Form.DatePicker
-                        field='expired_time'
-                        label={t('过期时间')}
-                        type='dateTime'
-                        placeholder={t('选择过期时间（可选，留空为永不过期）')}
-                        style={{ width: '100%' }}
-                        showClear
-                      />
-                    </Col>
-                  </Row>
-                </Card>
-
-                <Card className='!rounded-2xl shadow-sm border-0'>
-                  <div className='flex items-center mb-2'>
-                    <Avatar
-                      size='small'
-                      color='green'
-                      className='mr-2 shadow-md'
-                    >
-                      <IconCreditCard size={16} />
-                    </Avatar>
-                    <div>
-                      <Text className='text-lg font-medium'>{t('兑换设置')}</Text>
-                      <div className='text-xs text-gray-600'>
-                        {t('设置兑换码的奖励和数量')}
-                      </div>
-                    </div>
-                  </div>
-
-                  <Row gutter={12}>
-                    {values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA && (
-                      <Col span={isMobile ? 24 : !isEdit ? 8 : 12}>
-                        <Form.AutoComplete
-                          field='quota'
-                          label={t('额度')}
-                          placeholder={t('请输入额度')}
+                        <Form.Input
+                          field='name'
+                          label={t('名称')}
+                          placeholder={t('请输入名称')}
                           style={{ width: '100%' }}
-                          type='number'
-                          rules={[
-                            { required: true, message: t('请输入额度') },
-                            {
-                              validator: (rule, v) => {
-                                const num = parseInt(v, 10);
-                                return num > 0
-                                  ? Promise.resolve()
-                                  : Promise.reject(t('额度必须大于0'));
-                              },
-                            },
-                          ]}
-                          extraText={renderQuotaWithPrompt(
-                            Number(values.quota) || 0,
-                          )}
-                          data={[
-                            { value: 500000, label: '1$' },
-                            { value: 5000000, label: '10$' },
-                            { value: 25000000, label: '50$' },
-                            { value: 50000000, label: '100$' },
-                            { value: 250000000, label: '500$' },
-                            { value: 500000000, label: '1000$' },
-                          ]}
+                          rules={
+                            !isEdit
+                              ? []
+                              : [{ required: true, message: t('请输入名称') }]
+                          }
                           showClear
                         />
                       </Col>
-                    )}
-                    <Col
-                      span={
-                        isMobile
-                          ? 24
-                          : values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA
-                          ? !isEdit
-                            ? 8
-                            : 12
-                          : !isEdit
-                            ? 12
-                            : 24
-                      }
-                    >
-                      <Form.InputNumber
-                        field='pay_money'
-                        label={t('实付金额')}
-                        min={0}
-                        precision={2}
-                        step={1}
-                        rules={[
-                          {
-                            validator: (rule, v) => {
-                              const num = Number(v || 0);
-                              return num >= 0
-                                ? Promise.resolve()
-                                : Promise.reject(t('实付金额不能小于0'));
+                      <Col span={24}>
+                        <Form.Select
+                          field='code_type'
+                          label={t('兑换码类型')}
+                          disabled={isEdit}
+                          optionList={[
+                            {
+                              label: t('普通兑换码'),
+                              value: REDEMPTION_CODE_TYPES.NORMAL,
                             },
-                          },
-                        ]}
-                        style={{ width: '100%' }}
-                        showClear
-                      />
-                    </Col>
-                    {!isEdit && (
+                            {
+                              label: t('福利兑换码'),
+                              value: REDEMPTION_CODE_TYPES.WELFARE,
+                            },
+                          ]}
+                        />
+                      </Col>
+                      {currentCodeType === REDEMPTION_CODE_TYPES.WELFARE && (
+                        <Col span={24}>
+                          {isEdit ? (
+                            <div>
+                              <div className='semi-form-field-label'>
+                                {t('固定兑换码')}
+                              </div>
+                              <Input
+                                value={fixedRedemptionKey}
+                                disabled
+                                style={{ width: '100%' }}
+                              />
+                            </div>
+                          ) : (
+                            <Form.Input
+                              field='key'
+                              label={t('固定兑换码')}
+                              placeholder={t('请输入固定兑换码')}
+                              style={{ width: '100%' }}
+                              rules={[
+                                {
+                                  required: true,
+                                  message: t('请输入福利兑换码'),
+                                },
+                                {
+                                  validator: (rule, v) => {
+                                    const value = String(v || '').trim();
+                                    if (!value) {
+                                      return Promise.reject(
+                                        t('请输入福利兑换码'),
+                                      );
+                                    }
+                                    return [...value].length <= 32
+                                      ? Promise.resolve()
+                                      : Promise.reject(
+                                          t('福利兑换码长度不能超过32个字符'),
+                                        );
+                                  },
+                                },
+                              ]}
+                              showClear
+                            />
+                          )}
+                        </Col>
+                      )}
+                      <Col span={24}>
+                        <Form.Select
+                          field='reward_type'
+                          label={t('奖励类型')}
+                          optionList={[
+                            {
+                              label: t('额度'),
+                              value: REDEMPTION_REWARD_TYPES.QUOTA,
+                            },
+                            {
+                              label: t('订阅套餐'),
+                              value: REDEMPTION_REWARD_TYPES.SUBSCRIPTION,
+                            },
+                          ]}
+                        />
+                      </Col>
+                      {values.reward_type ===
+                        REDEMPTION_REWARD_TYPES.SUBSCRIPTION && (
+                        <Col span={24}>
+                          <Form.Select
+                            field='plan_id'
+                            label={t('订阅套餐')}
+                            placeholder={t('请选择要绑定的订阅套餐')}
+                            loading={plansLoading}
+                            filter
+                            optionList={planOptions}
+                            rules={[
+                              { required: true, message: t('请选择订阅套餐') },
+                            ]}
+                          />
+                        </Col>
+                      )}
+                      <Col span={24}>
+                        <Form.DatePicker
+                          field='expired_time'
+                          label={t('过期时间')}
+                          type='dateTime'
+                          placeholder={t(
+                            '选择过期时间（可选，留空为永不过期）',
+                          )}
+                          style={{ width: '100%' }}
+                          showClear
+                        />
+                      </Col>
+                    </Row>
+                  </Card>
+
+                  <Card className='!rounded-2xl shadow-sm border-0'>
+                    <div className='flex items-center mb-2'>
+                      <Avatar
+                        size='small'
+                        color='green'
+                        className='mr-2 shadow-md'
+                      >
+                        <IconCreditCard size={16} />
+                      </Avatar>
+                      <div>
+                        <Text className='text-lg font-medium'>
+                          {t('兑换设置')}
+                        </Text>
+                        <div className='text-xs text-gray-600'>
+                          {t('设置兑换码的奖励和数量')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Row gutter={12}>
+                      {values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA && (
+                        <Col span={isMobile ? 24 : !isEdit ? 8 : 12}>
+                          <Form.AutoComplete
+                            field='quota'
+                            label={t('额度')}
+                            placeholder={t('请输入额度')}
+                            style={{ width: '100%' }}
+                            type='number'
+                            rules={[
+                              { required: true, message: t('请输入额度') },
+                              {
+                                validator: (rule, v) => {
+                                  const num = parseInt(v, 10);
+                                  return num > 0
+                                    ? Promise.resolve()
+                                    : Promise.reject(t('额度必须大于0'));
+                                },
+                              },
+                            ]}
+                            extraText={renderQuotaWithPrompt(
+                              Number(values.quota) || 0,
+                            )}
+                            data={[
+                              { value: 500000, label: '1$' },
+                              { value: 5000000, label: '10$' },
+                              { value: 25000000, label: '50$' },
+                              { value: 50000000, label: '100$' },
+                              { value: 250000000, label: '500$' },
+                              { value: 500000000, label: '1000$' },
+                            ]}
+                            showClear
+                          />
+                        </Col>
+                      )}
                       <Col
                         span={
                           isMobile
                             ? 24
-                            : values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA
-                            ? 8
-                            : 12
+                            : values.reward_type ===
+                                REDEMPTION_REWARD_TYPES.QUOTA
+                              ? !isEdit
+                                ? 8
+                                : 12
+                              : !isEdit
+                                ? 12
+                                : 24
                         }
                       >
                         <Form.InputNumber
-                          field='count'
-                          label={t('生成数量')}
-                          min={1}
+                          field='pay_money'
+                          label={t('实付金额')}
+                          min={0}
+                          precision={2}
+                          step={1}
                           rules={[
-                            { required: true, message: t('请输入生成数量') },
                             {
                               validator: (rule, v) => {
-                                const num = parseInt(v, 10);
-                                return num > 0
+                                const num = Number(v || 0);
+                                return num >= 0
                                   ? Promise.resolve()
-                                  : Promise.reject(t('生成数量必须大于0'));
+                                  : Promise.reject(t('实付金额不能小于0'));
                               },
                             },
                           ]}
@@ -477,11 +558,46 @@ const EditRedemptionModal = (props) => {
                           showClear
                         />
                       </Col>
-                    )}
-                  </Row>
-                </Card>
-              </div>
-            )}
+                      {!isEdit &&
+                        currentCodeType !== REDEMPTION_CODE_TYPES.WELFARE && (
+                          <Col
+                            span={
+                              isMobile
+                                ? 24
+                                : values.reward_type ===
+                                    REDEMPTION_REWARD_TYPES.QUOTA
+                                  ? 8
+                                  : 12
+                            }
+                          >
+                            <Form.InputNumber
+                              field='count'
+                              label={t('生成数量')}
+                              min={1}
+                              rules={[
+                                {
+                                  required: true,
+                                  message: t('请输入生成数量'),
+                                },
+                                {
+                                  validator: (rule, v) => {
+                                    const num = parseInt(v, 10);
+                                    return num > 0
+                                      ? Promise.resolve()
+                                      : Promise.reject(t('生成数量必须大于0'));
+                                  },
+                                },
+                              ]}
+                              style={{ width: '100%' }}
+                              showClear
+                            />
+                          </Col>
+                        )}
+                    </Row>
+                  </Card>
+                </div>
+              );
+            }}
           </Form>
         </Spin>
       </SideSheet>

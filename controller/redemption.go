@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
@@ -15,6 +16,12 @@ import (
 func normalizeAndValidateRedemptionReward(c *gin.Context, redemption *model.Redemption) (bool, string) {
 	if redemption == nil {
 		return false, i18n.T(c, i18n.MsgInvalidParams)
+	}
+	if redemption.CodeType == 0 {
+		redemption.CodeType = common.RedemptionCodeTypeNormal
+	}
+	if redemption.CodeType != common.RedemptionCodeTypeNormal && redemption.CodeType != common.RedemptionCodeTypeWelfare {
+		return false, "不支持的兑换码类型"
 	}
 	if redemption.RewardType == 0 {
 		redemption.RewardType = common.RedemptionRewardTypeQuota
@@ -105,6 +112,21 @@ func AddRedemption(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgRedemptionNameLength)
 		return
 	}
+	if redemption.CodeType == 0 {
+		redemption.CodeType = common.RedemptionCodeTypeNormal
+	}
+	if redemption.CodeType == common.RedemptionCodeTypeWelfare {
+		redemption.Count = 1
+		redemption.Key = strings.TrimSpace(redemption.Key)
+		if redemption.Key == "" {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "请输入福利兑换码"})
+			return
+		}
+		if utf8.RuneCountInString(redemption.Key) > 32 {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "福利兑换码长度不能超过 32 个字符"})
+			return
+		}
+	}
 	if redemption.Count <= 0 {
 		common.ApiErrorI18n(c, i18n.MsgRedemptionCountPositive)
 		return
@@ -124,11 +146,15 @@ func AddRedemption(c *gin.Context) {
 	var keys []string
 	for i := 0; i < redemption.Count; i++ {
 		key := common.GetUUID()
+		if redemption.CodeType == common.RedemptionCodeTypeWelfare {
+			key = redemption.Key
+		}
 		cleanRedemption := model.Redemption{
 			UserId:      c.GetInt("id"),
 			Name:        redemption.Name,
 			Key:         key,
 			CreatedTime: common.GetTimestamp(),
+			CodeType:    redemption.CodeType,
 			RewardType:  redemption.RewardType,
 			Quota:       redemption.Quota,
 			PlanId:      redemption.PlanId,
@@ -183,6 +209,9 @@ func UpdateRedemption(c *gin.Context) {
 		return
 	}
 	if statusOnly == "" {
+		if redemption.CodeType == 0 {
+			redemption.CodeType = cleanRedemption.CodeType
+		}
 		if valid, msg := normalizeAndValidateRedemptionReward(c, &redemption); !valid {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 			return
@@ -193,6 +222,7 @@ func UpdateRedemption(c *gin.Context) {
 		}
 		// If you add more fields, please also update redemption.Update()
 		cleanRedemption.Name = redemption.Name
+		cleanRedemption.CodeType = redemption.CodeType
 		cleanRedemption.RewardType = redemption.RewardType
 		cleanRedemption.Quota = redemption.Quota
 		cleanRedemption.PlanId = redemption.PlanId

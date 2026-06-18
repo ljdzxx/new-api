@@ -15,20 +15,28 @@ import (
 
 // UserBase struct remains the same as it represents the cached data structure
 type UserBase struct {
-	Id               int     `json:"id"`
-	Group            string  `json:"group"`
-	UserLevelID      int     `json:"user_level_id"`
-	Email            string  `json:"email"`
-	Quota            int     `json:"quota"`
-	Status           int     `json:"status"`
-	Username         string  `json:"username"`
-	Setting          string  `json:"setting"`
-	GlobalModelRatio float64 `json:"-"`
+	Id                       int     `json:"id"`
+	Group                    string  `json:"group"`
+	UserLevelID              int     `json:"user_level_id"`
+	RateLimitEnabled         bool    `json:"rate_limit_enabled"`
+	RateLimitDurationMinutes int     `json:"rate_limit_duration_minutes"`
+	RateLimitCount           int     `json:"rate_limit_count"`
+	RateLimitSuccessCount    int     `json:"rate_limit_success_count"`
+	Email                    string  `json:"email"`
+	Quota                    int     `json:"quota"`
+	Status                   int     `json:"status"`
+	Username                 string  `json:"username"`
+	Setting                  string  `json:"setting"`
+	GlobalModelRatio         float64 `json:"-"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
 	common.SetContextKey(c, constant.ContextKeyUserGroup, user.Group)
 	common.SetContextKey(c, constant.ContextKeyUserLevelID, user.UserLevelID)
+	common.SetContextKey(c, constant.ContextKeyUserRateLimitEnabled, user.RateLimitEnabled)
+	common.SetContextKey(c, constant.ContextKeyUserRateLimitDurationMinutes, user.RateLimitDurationMinutes)
+	common.SetContextKey(c, constant.ContextKeyUserRateLimitCount, user.RateLimitCount)
+	common.SetContextKey(c, constant.ContextKeyUserRateLimitSuccessCount, user.RateLimitSuccessCount)
 	common.SetContextKey(c, constant.ContextKeyUserQuota, user.Quota)
 	common.SetContextKey(c, constant.ContextKeyUserStatus, user.Status)
 	common.SetContextKey(c, constant.ContextKeyUserEmail, user.Email)
@@ -103,15 +111,19 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 
 	// Create cache object from user data
 	userCache = &UserBase{
-		Id:               user.Id,
-		Group:            user.Group,
-		UserLevelID:      user.UserLevelId,
-		Quota:            user.Quota,
-		Status:           user.Status,
-		Username:         user.Username,
-		Setting:          user.Setting,
-		Email:            user.Email,
-		GlobalModelRatio: user.GlobalModelRatio,
+		Id:                       user.Id,
+		Group:                    user.Group,
+		UserLevelID:              user.UserLevelId,
+		RateLimitEnabled:         user.RateLimitEnabled,
+		RateLimitDurationMinutes: user.RateLimitDurationMinutes,
+		RateLimitCount:           user.RateLimitCount,
+		RateLimitSuccessCount:    user.RateLimitSuccessCount,
+		Quota:                    user.Quota,
+		Status:                   user.Status,
+		Username:                 user.Username,
+		Setting:                  user.Setting,
+		Email:                    user.Email,
+		GlobalModelRatio:         user.GlobalModelRatio,
 	}
 
 	return userCache, nil

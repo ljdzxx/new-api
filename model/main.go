@@ -258,6 +258,10 @@ func migrateDB() error {
 		if err := ensureUsersTableSQLite(); err != nil {
 			return err
 		}
+	} else {
+		if err := DB.AutoMigrate(&User{}); err != nil {
+			return err
+		}
 	}
 
 	autoMigrateModels := []interface{}{
@@ -266,6 +270,7 @@ func migrateDB() error {
 		&PasskeyCredential{},
 		&Option{},
 		&Redemption{},
+		&RedemptionUsage{},
 		&Ability{},
 		&Log{},
 		&Midjourney{},
@@ -327,6 +332,7 @@ func migrateDBFast() error {
 		{&PasskeyCredential{}, "PasskeyCredential"},
 		{&Option{}, "Option"},
 		{&Redemption{}, "Redemption"},
+		{&RedemptionUsage{}, "RedemptionUsage"},
 		{&Ability{}, "Ability"},
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
@@ -393,6 +399,9 @@ func migrateDBFast() error {
 			return err
 		}
 	} else {
+		if err := DB.AutoMigrate(&User{}); err != nil {
+			return err
+		}
 		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
 			return err
 		}
@@ -449,6 +458,10 @@ func ensureUsersTableSQLite() error {
 		{Name: "used_quota", DDL: "`used_quota` integer DEFAULT 0"},
 		{Name: "request_count", DDL: "`request_count` integer DEFAULT 0"},
 		{Name: "group", DDL: "`group` varchar(64) DEFAULT 'default'"},
+		{Name: "rate_limit_enabled", DDL: "`rate_limit_enabled` numeric DEFAULT 0"},
+		{Name: "rate_limit_duration_minutes", DDL: "`rate_limit_duration_minutes` integer DEFAULT 1"},
+		{Name: "rate_limit_count", DDL: "`rate_limit_count` integer DEFAULT 0"},
+		{Name: "rate_limit_success_count", DDL: "`rate_limit_success_count` integer DEFAULT 1000"},
 		{Name: "aff_code", DDL: "`aff_code` varchar(32)"},
 		{Name: "aff_count", DDL: "`aff_count` integer DEFAULT 0"},
 		{Name: "aff_quota", DDL: "`aff_quota` integer DEFAULT 0"},
@@ -573,9 +586,11 @@ func ensureRedemptionsTableSQLite() error {
 		existing[c.Name] = struct{}{}
 	}
 	required := []sqliteRedemptionColumnDef{
+		{Name: "code_type", DDL: "`code_type` integer DEFAULT 1"},
 		{Name: "reward_type", DDL: "`reward_type` integer DEFAULT 1"},
 		{Name: "plan_id", DDL: "`plan_id` integer DEFAULT 0"},
 		{Name: "pay_money", DDL: "`pay_money` real DEFAULT 0"},
+		{Name: "expired_time", DDL: "`expired_time` bigint DEFAULT 0"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {

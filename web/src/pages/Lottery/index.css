@@ -352,11 +352,12 @@
   width: 100%;
   color: #111827;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-  font-size: clamp(12px, 2.1vw, 18px);
+  font-size: clamp(10px, 3.2vw, 14px);
   line-height: 1;
   letter-spacing: 0;
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
+  text-align: center;
   text-shadow: 0 1px 0 #fff;
 }
 

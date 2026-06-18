@@ -184,7 +184,7 @@ func IsPaidUser(userId int) bool {
 	}
 	var count int64
 	if err := DB.Model(&TopUp{}).
-		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Where("user_id = ? AND status = ? AND money > ?", userId, common.TopUpStatusSuccess, 0).
 		Count(&count).Error; err != nil {
 		return false
 	}

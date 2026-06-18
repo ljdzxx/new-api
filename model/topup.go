@@ -30,6 +30,7 @@ type TopUpFilter struct {
 	Keyword        string
 	UserId         int
 	Username       string
+	Status         string
 	StartTimestamp int64
 	EndTimestamp   int64
 }
@@ -289,6 +290,9 @@ func applyTopUpFilter(query *gorm.DB, filter TopUpFilter) *gorm.DB {
 		like := "%%" + username + "%%"
 		userQuery := DB.Model(&User{}).Select("id").Where("username LIKE ?", like)
 		query = query.Where("user_id IN (?)", userQuery)
+	}
+	if status := strings.TrimSpace(filter.Status); status != "" {
+		query = query.Where("status = ?", status)
 	}
 	if filter.StartTimestamp > 0 {
 		query = query.Where("create_time >= ?", filter.StartTimestamp)

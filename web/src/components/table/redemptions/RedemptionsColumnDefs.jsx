@@ -26,6 +26,8 @@ import {
   REDEMPTION_STATUS_MAP,
   REDEMPTION_ACTIONS,
   REDEMPTION_REWARD_TYPES,
+  REDEMPTION_CODE_TYPES,
+  REDEMPTION_CODE_TYPE_MAP,
 } from '../../../constants/redemption.constants';
 
 /**
@@ -89,7 +91,9 @@ export const getRedemptionsColumns = ({
   showDeleteRedemptionModal,
 }) => {
   const getRewardTypeText = (record) => {
-    const rewardType = Number(record?.reward_type || REDEMPTION_REWARD_TYPES.QUOTA);
+    const rewardType = Number(
+      record?.reward_type || REDEMPTION_REWARD_TYPES.QUOTA,
+    );
     if (rewardType === REDEMPTION_REWARD_TYPES.SUBSCRIPTION) {
       const planId = Number(record?.plan_id || 0);
       if (planId > 0) {
@@ -98,6 +102,17 @@ export const getRedemptionsColumns = ({
       return t('订阅套餐');
     }
     return renderQuota(parseInt(record?.quota || 0, 10));
+  };
+  const renderCodeType = (record) => {
+    const codeType = Number(record?.code_type || REDEMPTION_CODE_TYPES.NORMAL);
+    const config =
+      REDEMPTION_CODE_TYPE_MAP[codeType] ||
+      REDEMPTION_CODE_TYPE_MAP[REDEMPTION_CODE_TYPES.NORMAL];
+    return (
+      <Tag color={config.color} shape='circle'>
+        {t(config.text)}
+      </Tag>
+    );
   };
 
   return [
@@ -108,6 +123,13 @@ export const getRedemptionsColumns = ({
     {
       title: t('名称'),
       dataIndex: 'name',
+    },
+    {
+      title: t('类型'),
+      dataIndex: 'code_type',
+      render: (text, record) => {
+        return <div>{renderCodeType(record)}</div>;
+      },
     },
     {
       title: t('状态'),

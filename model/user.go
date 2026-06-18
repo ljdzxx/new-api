@@ -19,38 +19,42 @@ const UserNameMaxLength = 20
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
-	Id               int            `json:"id"`
-	Username         string         `json:"username" gorm:"unique;index" validate:"max=20"`
-	Password         string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
-	OriginalPassword string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
-	DisplayName      string         `json:"display_name" gorm:"index" validate:"max=20"`
-	Role             int            `json:"role" gorm:"type:int;default:1"`   // admin, common
-	Status           int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
-	Email            string         `json:"email" gorm:"index" validate:"max=50"`
-	GitHubId         string         `json:"github_id" gorm:"column:github_id;index"`
-	DiscordId        string         `json:"discord_id" gorm:"column:discord_id;index"`
-	OidcId           string         `json:"oidc_id" gorm:"column:oidc_id;index"`
-	WeChatId         string         `json:"wechat_id" gorm:"column:wechat_id;index"`
-	TelegramId       string         `json:"telegram_id" gorm:"column:telegram_id;index"`
-	VerificationCode string         `json:"verification_code" gorm:"-:all"`                                    // this field is only for Email verification, don't save it to database!
-	AccessToken      *string        `json:"access_token" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota            int            `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota        int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount     int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
-	GlobalModelRatio float64        `json:"-" gorm:"type:decimal(12,6);default:1;column:global_model_ratio"`
-	Group            string         `json:"group" gorm:"type:varchar(64);default:'default'"`
-	UserLevelId      int            `json:"user_level_id" gorm:"type:int;default:1;column:user_level_id;index"`
-	AffCode          string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
-	AffCount         int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota         int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota  int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
-	InviterId        int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
-	DeletedAt        gorm.DeletedAt `gorm:"index"`
-	CreatedAt        int64          `json:"created_at" gorm:"type:bigint;column:created_at;index"`
-	LinuxDOId        string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
-	Setting          string         `json:"setting" gorm:"type:text;column:setting"`
-	Remark           string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
-	StripeCustomer   string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
+	Id                       int            `json:"id"`
+	Username                 string         `json:"username" gorm:"unique;index" validate:"max=20"`
+	Password                 string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
+	OriginalPassword         string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	DisplayName              string         `json:"display_name" gorm:"index" validate:"max=20"`
+	Role                     int            `json:"role" gorm:"type:int;default:1"`   // admin, common
+	Status                   int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
+	Email                    string         `json:"email" gorm:"index" validate:"max=50"`
+	GitHubId                 string         `json:"github_id" gorm:"column:github_id;index"`
+	DiscordId                string         `json:"discord_id" gorm:"column:discord_id;index"`
+	OidcId                   string         `json:"oidc_id" gorm:"column:oidc_id;index"`
+	WeChatId                 string         `json:"wechat_id" gorm:"column:wechat_id;index"`
+	TelegramId               string         `json:"telegram_id" gorm:"column:telegram_id;index"`
+	VerificationCode         string         `json:"verification_code" gorm:"-:all"`                                    // this field is only for Email verification, don't save it to database!
+	AccessToken              *string        `json:"access_token" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
+	Quota                    int            `json:"quota" gorm:"type:int;default:0"`
+	UsedQuota                int            `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
+	RequestCount             int            `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	GlobalModelRatio         float64        `json:"-" gorm:"type:decimal(12,6);default:1;column:global_model_ratio"`
+	Group                    string         `json:"group" gorm:"type:varchar(64);default:'default'"`
+	UserLevelId              int            `json:"user_level_id" gorm:"type:int;default:1;column:user_level_id;index"`
+	RateLimitEnabled         bool           `json:"rate_limit_enabled" gorm:"default:false;column:rate_limit_enabled"`
+	RateLimitDurationMinutes int            `json:"rate_limit_duration_minutes" gorm:"type:int;default:1;column:rate_limit_duration_minutes"`
+	RateLimitCount           int            `json:"rate_limit_count" gorm:"type:int;default:0;column:rate_limit_count"`
+	RateLimitSuccessCount    int            `json:"rate_limit_success_count" gorm:"type:int;default:1000;column:rate_limit_success_count"`
+	AffCode                  string         `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
+	AffCount                 int            `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
+	AffQuota                 int            `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota          int            `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	InviterId                int            `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
+	DeletedAt                gorm.DeletedAt `gorm:"index"`
+	CreatedAt                int64          `json:"created_at" gorm:"type:bigint;column:created_at;index"`
+	LinuxDOId                string         `json:"linux_do_id" gorm:"column:linux_do_id;index"`
+	Setting                  string         `json:"setting" gorm:"type:text;column:setting"`
+	Remark                   string         `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
+	StripeCustomer           string         `json:"stripe_customer" gorm:"type:varchar(64);column:stripe_customer;index"`
 
 	DailySubscriptionTotal     int64 `json:"daily_subscription_total" gorm:"-"`
 	DailySubscriptionRemain    int64 `json:"daily_subscription_remain" gorm:"-"`
@@ -67,15 +71,19 @@ func (user *User) BeforeCreate(tx *gorm.DB) error {
 
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
-		Id:               user.Id,
-		Group:            user.Group,
-		UserLevelID:      user.UserLevelId,
-		Quota:            user.Quota,
-		Status:           user.Status,
-		Username:         user.Username,
-		Setting:          user.Setting,
-		Email:            user.Email,
-		GlobalModelRatio: user.GlobalModelRatio,
+		Id:                       user.Id,
+		Group:                    user.Group,
+		UserLevelID:              user.UserLevelId,
+		RateLimitEnabled:         user.RateLimitEnabled,
+		RateLimitDurationMinutes: user.RateLimitDurationMinutes,
+		RateLimitCount:           user.RateLimitCount,
+		RateLimitSuccessCount:    user.RateLimitSuccessCount,
+		Quota:                    user.Quota,
+		Status:                   user.Status,
+		Username:                 user.Username,
+		Setting:                  user.Setting,
+		Email:                    user.Email,
+		GlobalModelRatio:         user.GlobalModelRatio,
 	}
 	return cache
 }
@@ -342,10 +350,18 @@ GROUP BY us.user_id
 	}
 	redemptionKey = strings.TrimSpace(redemptionKey)
 	if redemptionKey != "" {
+		redemptionKeyCol := "r.`key`"
+		if common.UsingPostgreSQL {
+			redemptionKeyCol = `r."key"`
+		}
 		redemptionSubQuery := tx.Model(&Redemption{}).
 			Select("used_user_id").
 			Where("used_user_id > 0 AND "+commonKeyCol+" LIKE ?", "%"+redemptionKey+"%")
-		query = query.Where("id IN (?)", redemptionSubQuery)
+		welfareRedemptionSubQuery := tx.Table("redemption_usages AS ru").
+			Select("ru.user_id").
+			Joins("JOIN redemptions AS r ON r.id = ru.redemption_id").
+			Where(redemptionKeyCol+" LIKE ?", "%"+redemptionKey+"%")
+		query = query.Where("id IN (?) OR id IN (?)", redemptionSubQuery, welfareRedemptionSubQuery)
 	}
 
 	// 构建搜索条件
@@ -655,7 +671,7 @@ func (user *User) Update(updatePassword bool) error {
 	return updateUserCache(*user)
 }
 
-func (user *User) Edit(updatePassword bool) error {
+func (user *User) Edit(updatePassword bool, updateQuota bool) error {
 	var err error
 	if updatePassword {
 		user.Password, err = common.Password2Hash(user.Password)
@@ -666,15 +682,21 @@ func (user *User) Edit(updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":           newUser.Username,
-		"display_name":       newUser.DisplayName,
-		"group":              newUser.Group,
-		"quota":              newUser.Quota,
-		"remark":             newUser.Remark,
-		"global_model_ratio": newUser.GlobalModelRatio,
+		"username":                    newUser.Username,
+		"display_name":                newUser.DisplayName,
+		"group":                       newUser.Group,
+		"remark":                      newUser.Remark,
+		"global_model_ratio":          newUser.GlobalModelRatio,
+		"rate_limit_enabled":          newUser.RateLimitEnabled,
+		"rate_limit_duration_minutes": newUser.RateLimitDurationMinutes,
+		"rate_limit_count":            newUser.RateLimitCount,
+		"rate_limit_success_count":    newUser.RateLimitSuccessCount,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password
+	}
+	if updateQuota {
+		updates["quota"] = newUser.Quota
 	}
 
 	DB.First(&user, user.Id)

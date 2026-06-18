@@ -378,6 +378,7 @@ func GetAllTopUps(c *gin.Context) {
 		Keyword:        c.Query("keyword"),
 		UserId:         userId,
 		Username:       c.Query("username"),
+		Status:         c.Query("status"),
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 	}
