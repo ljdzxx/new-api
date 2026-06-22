@@ -239,6 +239,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logClaudeRelayDebug(c, "relay info generated: request_id=%s origin_model=%q relay_mode=%d token_group=%q using_group=%q", requestId, relayInfo.OriginModelName, relayInfo.RelayMode, relayInfo.TokenGroup, relayInfo.UsingGroup)
 	}
 
+	if shouldMockTestRelay(c, relayInfo) {
+		if relayFormat == types.RelayFormatClaude {
+			logClaudeRelayDebug(c, "mock test relay short-circuited: request_id=%s origin_model=%q stream=%t", requestId, relayInfo.OriginModelName, relayInfo.IsStream)
+		}
+		newAPIError = handleMockTestRelay(c, relayInfo)
+		return
+	}
+
 	if (relayInfo.RelayMode == relayconstant.RelayModeResponses ||
 		relayInfo.RelayMode == relayconstant.RelayModeResponsesCompact) &&
 		common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeXiaomi {

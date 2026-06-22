@@ -259,6 +259,7 @@ export const useChannelsData = () => {
             name: '标签：' + tag,
             group: '',
             used_quota: 0,
+            today_used_quota: 0,
             response_time: 0,
             priority: -1,
             weight: -1,
@@ -300,7 +301,8 @@ export const useChannelsData = () => {
         if (channels[i].status === 1) {
           tagChannelDates.status = 1;
         }
-        tagChannelDates.used_quota += channels[i].used_quota;
+        tagChannelDates.used_quota += channels[i].used_quota || 0;
+        tagChannelDates.today_used_quota += channels[i].today_used_quota || 0;
         tagChannelDates.response_time += channels[i].response_time;
         tagChannelDates.response_time = tagChannelDates.response_time / 2;
       }

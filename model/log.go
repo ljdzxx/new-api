@@ -334,6 +334,51 @@ func excludeChannelForwardPrecheckLogs(tx *gorm.DB) *gorm.DB {
 	return tx.Where("(logs.other = '' OR logs.other IS NULL OR logs.other NOT LIKE ?)", `%"channel_forward_precheck":true%`)
 }
 
+func FillChannelsTodayUsedQuota(channels []*Channel) error {
+	if len(channels) == 0 {
+		return nil
+	}
+
+	channelIDs := make([]int, 0, len(channels))
+	channelByID := make(map[int]*Channel, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		channel.TodayUsedQuota = 0
+		channelIDs = append(channelIDs, channel.Id)
+		channelByID[channel.Id] = channel
+	}
+	if len(channelIDs) == 0 {
+		return nil
+	}
+
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
+	startOfTomorrow := startOfDay + int64(24*time.Hour/time.Second)
+
+	var rows []struct {
+		ChannelID int   `gorm:"column:channel_id"`
+		Quota     int64 `gorm:"column:quota"`
+	}
+	tx := LOG_DB.Table("logs").
+		Select("channel_id, COALESCE(SUM(quota), 0) AS quota").
+		Where("type = ? AND channel_id IN ? AND created_at >= ? AND created_at < ?", LogTypeConsume, channelIDs, startOfDay, startOfTomorrow).
+		Group("channel_id")
+	tx = excludeChannelForwardPrecheckLogs(tx)
+	if err := tx.Scan(&rows).Error; err != nil {
+		common.SysError("failed to fill channels today used quota: " + err.Error())
+		return errors.New("查询渠道今日用量失败")
+	}
+
+	for _, row := range rows {
+		if channel, ok := channelByID[row.ChannelID]; ok {
+			channel.TodayUsedQuota = row.Quota
+		}
+	}
+	return nil
+}
+
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {

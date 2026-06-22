@@ -524,7 +524,7 @@ export const getChannelsColumns = ({
     },
     {
       key: COLUMN_KEYS.BALANCE,
-      title: t('已用/剩余'),
+      title: t('已用/今日/剩余'),
       dataIndex: 'expired_time',
       render: (text, record, index) => {
         if (record.children === undefined) {
@@ -534,6 +534,11 @@ export const getChannelsColumns = ({
                 <Tooltip content={t('已用额度')}>
                   <Tag color='white' type='ghost' shape='circle'>
                     {renderQuota(record.used_quota)}
+                  </Tag>
+                </Tooltip>
+                <Tooltip content={t('今日已用')}>
+                  <Tag color='white' type='ghost' shape='circle'>
+                    {renderQuota(record.today_used_quota || 0)}
                   </Tag>
                 </Tooltip>
                 <Tooltip
@@ -558,11 +563,18 @@ export const getChannelsColumns = ({
           );
         } else {
           return (
-            <Tooltip content={t('已用额度')}>
-              <Tag color='white' type='ghost' shape='circle'>
-                {renderQuota(record.used_quota)}
-              </Tag>
-            </Tooltip>
+            <Space spacing={1}>
+              <Tooltip content={t('已用额度')}>
+                <Tag color='white' type='ghost' shape='circle'>
+                  {renderQuota(record.used_quota)}
+                </Tag>
+              </Tooltip>
+              <Tooltip content={t('今日已用')}>
+                <Tag color='white' type='ghost' shape='circle'>
+                  {renderQuota(record.today_used_quota || 0)}
+                </Tag>
+              </Tooltip>
+            </Space>
           );
         }
       },
