@@ -121,13 +121,14 @@ func (p *EpayPaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutReques
 	}
 
 	topUp := &model.TopUp{
-		UserId:        req.UserID,
-		Amount:        normalizeTopupStoredAmount(req.Amount),
-		Money:         payMoney,
-		TradeNo:       tradeNo,
-		PaymentMethod: req.PaymentMethod,
-		CreateTime:    common.GetTimestamp(),
-		Status:        common.TopUpStatusPending,
+		UserId:          req.UserID,
+		Amount:          normalizeTopupStoredAmount(req.Amount),
+		Money:           payMoney,
+		TradeNo:         tradeNo,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentProvider: model.PaymentProviderEpay,
+		CreateTime:      common.GetTimestamp(),
+		Status:          common.TopUpStatusPending,
 	}
 	if err = topUp.Insert(); err != nil {
 		return nil, fmt.Errorf("创建订单失败")
@@ -164,13 +165,14 @@ func (p *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.Subscriptio
 
 	tradeNo := buildSubscriptionEpayTradeNo(req.UserID)
 	order := &model.SubscriptionOrder{
-		UserId:        req.UserID,
-		PlanId:        plan.Id,
-		Money:         plan.PriceAmount,
-		TradeNo:       tradeNo,
-		PaymentMethod: req.PaymentMethod,
-		CreateTime:    common.GetTimestamp(),
-		Status:        common.TopUpStatusPending,
+		UserId:          req.UserID,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         tradeNo,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentProvider: model.PaymentProviderEpay,
+		CreateTime:      common.GetTimestamp(),
+		Status:          common.TopUpStatusPending,
 	}
 	if err := order.Insert(); err != nil {
 		return nil, fmt.Errorf("创建订单失败")
@@ -178,7 +180,7 @@ func (p *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.Subscriptio
 
 	uri, params, err := client.Purchase(buildSubscriptionPurchaseArgs(req.PaymentMethod, tradeNo, plan.Title, plan.PriceAmount, notifyURL, returnURL))
 	if err != nil {
-		_ = model.ExpireSubscriptionOrder(tradeNo)
+		_ = model.ExpireSubscriptionOrder(tradeNo, model.PaymentProviderEpay)
 		return nil, fmt.Errorf("拉起支付失败")
 	}
 	return createFormCheckoutResult(types.PaymentSceneSubscription, p.ID(), uri, stringifyMap(params)), nil

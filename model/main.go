@@ -304,6 +304,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := backfillPaymentProviders(); err != nil {
+		return err
+	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -388,6 +391,9 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	if err := backfillPaymentProviders(); err != nil {
+		return err
+	}
 	if common.UsingSQLite {
 		if err := ensureUsersTableSQLite(); err != nil {
 			return err
@@ -414,6 +420,47 @@ func migrateLOGDB() error {
 	var err error
 	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
 		return err
+	}
+	return nil
+}
+
+func backfillPaymentProviders() error {
+	if DB == nil {
+		return nil
+	}
+	if DB.Migrator().HasColumn(&TopUp{}, "payment_provider") {
+		if err := DB.Model(&TopUp{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND payment_method = ?", PaymentProviderStripe).
+			Update("payment_provider", PaymentProviderStripe).Error; err != nil {
+			return err
+		}
+		if err := DB.Model(&TopUp{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND payment_method = ?", PaymentProviderCreem).
+			Update("payment_provider", PaymentProviderCreem).Error; err != nil {
+			return err
+		}
+		if err := DB.Model(&TopUp{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND trade_no LIKE ? AND payment_method <> ''", "USR%NO%").
+			Update("payment_provider", PaymentProviderEpay).Error; err != nil {
+			return err
+		}
+	}
+	if DB.Migrator().HasColumn(&SubscriptionOrder{}, "payment_provider") {
+		if err := DB.Model(&SubscriptionOrder{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND payment_method = ?", PaymentProviderStripe).
+			Update("payment_provider", PaymentProviderStripe).Error; err != nil {
+			return err
+		}
+		if err := DB.Model(&SubscriptionOrder{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND payment_method = ?", PaymentProviderCreem).
+			Update("payment_provider", PaymentProviderCreem).Error; err != nil {
+			return err
+		}
+		if err := DB.Model(&SubscriptionOrder{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND trade_no LIKE ? AND payment_method <> ''", "SUBUSR%NO%").
+			Update("payment_provider", PaymentProviderEpay).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }

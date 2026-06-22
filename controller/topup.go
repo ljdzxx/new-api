@@ -186,13 +186,14 @@ func RequestEpay(c *gin.Context) {
 		amount = dAmount.Div(dQuotaPerUnit).IntPart()
 	}
 	topUp := &model.TopUp{
-		UserId:        id,
-		Amount:        amount,
-		Money:         payMoney,
-		TradeNo:       tradeNo,
-		PaymentMethod: req.PaymentMethod,
-		CreateTime:    time.Now().Unix(),
-		Status:        "pending",
+		UserId:          id,
+		Amount:          amount,
+		Money:           payMoney,
+		TradeNo:         tradeNo,
+		PaymentMethod:   req.PaymentMethod,
+		PaymentProvider: model.PaymentProviderEpay,
+		CreateTime:      time.Now().Unix(),
+		Status:          "pending",
 	}
 	err = topUp.Insert()
 	if err != nil {
@@ -266,12 +267,7 @@ func EpayNotify(c *gin.Context) {
 		return
 	}
 	verifyInfo, err := client.Verify(params)
-	if err == nil && verifyInfo.VerifyStatus {
-		_, err := c.Writer.Write([]byte("success"))
-		if err != nil {
-			log.Println("易支付回调写入失败")
-		}
-	} else {
+	if err != nil || !verifyInfo.VerifyStatus {
 		_, err := c.Writer.Write([]byte("fail"))
 		if err != nil {
 			log.Println("易支付回调写入失败")
@@ -287,13 +283,21 @@ func EpayNotify(c *gin.Context) {
 		topUp := model.GetTopUpByTradeNo(verifyInfo.ServiceTradeNo)
 		if topUp == nil {
 			log.Printf("易支付回调未找到订单: %v", verifyInfo)
+			_, _ = c.Writer.Write([]byte("fail"))
+			return
+		}
+		if err := validateEpayTopUpCallback(c.Request.Context(), verifyInfo, topUp); err != nil {
+			log.Printf("易支付回调校验失败 trade_no=%s err=%v verify_info=%v", verifyInfo.ServiceTradeNo, err, verifyInfo)
+			_, _ = c.Writer.Write([]byte("fail"))
 			return
 		}
 		if topUp.Status == "pending" {
+			topUp.CompleteTime = common.GetTimestamp()
 			topUp.Status = "success"
 			err := topUp.Update()
 			if err != nil {
 				log.Printf("易支付回调更新订单失败: %v", topUp)
+				_, _ = c.Writer.Write([]byte("fail"))
 				return
 			}
 			//user, _ := model.GetUserById(topUp.UserId, false)
@@ -304,6 +308,7 @@ func EpayNotify(c *gin.Context) {
 			err = model.IncreaseUserQuota(topUp.UserId, quotaToAdd, true)
 			if err != nil {
 				log.Printf("易支付回调更新用户失败: %v", topUp)
+				_, _ = c.Writer.Write([]byte("fail"))
 				return
 			}
 			if err = model.TryAutoUpgradeUserLevelByRecharge(topUp.UserId); err != nil {
@@ -312,8 +317,13 @@ func EpayNotify(c *gin.Context) {
 			log.Printf("易支付回调更新用户成功 %v", topUp)
 			model.RecordLog(topUp.UserId, model.LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money))
 		}
+		_, err := c.Writer.Write([]byte("success"))
+		if err != nil {
+			log.Println("易支付回调写入失败")
+		}
 	} else {
 		log.Printf("易支付异常回调: %v", verifyInfo)
+		_, _ = c.Writer.Write([]byte("fail"))
 	}
 }
 

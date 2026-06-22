@@ -111,13 +111,14 @@ func (p *StripePaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutRequ
 	}
 
 	topUp := &model.TopUp{
-		UserId:        user.Id,
-		Amount:        req.Amount,
-		Money:         getStripeChargedAmount(float64(req.Amount), *user),
-		TradeNo:       referenceID,
-		PaymentMethod: string(types.PaymentProviderStripe),
-		CreateTime:    common.GetTimestamp(),
-		Status:        common.TopUpStatusPending,
+		UserId:          user.Id,
+		Amount:          req.Amount,
+		Money:           getStripeChargedAmount(float64(req.Amount), *user),
+		TradeNo:         referenceID,
+		PaymentMethod:   string(types.PaymentProviderStripe),
+		PaymentProvider: model.PaymentProviderStripe,
+		CreateTime:      common.GetTimestamp(),
+		Status:          common.TopUpStatusPending,
 	}
 	if err := topUp.Insert(); err != nil {
 		return nil, fmt.Errorf("创建订单失败")
@@ -143,13 +144,14 @@ func (p *StripePaymentProvider) CreateSubscriptionCheckout(plan *model.Subscript
 		return nil, err
 	}
 	order := &model.SubscriptionOrder{
-		UserId:        req.UserID,
-		PlanId:        plan.Id,
-		Money:         plan.PriceAmount,
-		TradeNo:       referenceID,
-		PaymentMethod: string(types.PaymentProviderStripe),
-		CreateTime:    common.GetTimestamp(),
-		Status:        common.TopUpStatusPending,
+		UserId:          req.UserID,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         referenceID,
+		PaymentMethod:   string(types.PaymentProviderStripe),
+		PaymentProvider: model.PaymentProviderStripe,
+		CreateTime:      common.GetTimestamp(),
+		Status:          common.TopUpStatusPending,
 	}
 	if err := order.Insert(); err != nil {
 		return nil, fmt.Errorf("创建订单失败")

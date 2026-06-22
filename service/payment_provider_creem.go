@@ -101,13 +101,14 @@ func (p *CreemPaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutReque
 	}
 	referenceID := buildCreemTopupReference(user.Id)
 	topUp := &model.TopUp{
-		UserId:        user.Id,
-		Amount:        product.Quota,
-		Money:         product.Price,
-		TradeNo:       referenceID,
-		PaymentMethod: string(types.PaymentProviderCreem),
-		CreateTime:    common.GetTimestamp(),
-		Status:        common.TopUpStatusPending,
+		UserId:          user.Id,
+		Amount:          product.Quota,
+		Money:           product.Price,
+		TradeNo:         referenceID,
+		PaymentMethod:   string(types.PaymentProviderCreem),
+		PaymentProvider: model.PaymentProviderCreem,
+		CreateTime:      common.GetTimestamp(),
+		Status:          common.TopUpStatusPending,
 	}
 	if err := topUp.Insert(); err != nil {
 		return nil, fmt.Errorf("创建订单失败")
@@ -132,13 +133,14 @@ func (p *CreemPaymentProvider) CreateSubscriptionCheckout(plan *model.Subscripti
 	}
 	referenceID := buildCreemSubscriptionReference(user)
 	order := &model.SubscriptionOrder{
-		UserId:        user.Id,
-		PlanId:        plan.Id,
-		Money:         plan.PriceAmount,
-		TradeNo:       referenceID,
-		PaymentMethod: string(types.PaymentProviderCreem),
-		CreateTime:    common.GetTimestamp(),
-		Status:        common.TopUpStatusPending,
+		UserId:          user.Id,
+		PlanId:          plan.Id,
+		Money:           plan.PriceAmount,
+		TradeNo:         referenceID,
+		PaymentMethod:   string(types.PaymentProviderCreem),
+		PaymentProvider: model.PaymentProviderCreem,
+		CreateTime:      common.GetTimestamp(),
+		Status:          common.TopUpStatusPending,
 	}
 	if err := order.Insert(); err != nil {
 		return nil, fmt.Errorf("创建订单失败")

@@ -14,17 +14,30 @@ import (
 )
 
 type TopUp struct {
-	Id            int     `json:"id"`
-	UserId        int     `json:"user_id" gorm:"index"`
-	Username      string  `json:"username" gorm:"-"`
-	Amount        int64   `json:"amount"`
-	Money         float64 `json:"money"`
-	TradeNo       string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod string  `json:"payment_method" gorm:"type:varchar(50)"`
-	CreateTime    int64   `json:"create_time"`
-	CompleteTime  int64   `json:"complete_time"`
-	Status        string  `json:"status"`
+	Id              int     `json:"id"`
+	UserId          int     `json:"user_id" gorm:"index"`
+	Username        string  `json:"username" gorm:"-"`
+	Amount          int64   `json:"amount"`
+	Money           float64 `json:"money"`
+	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CreateTime      int64   `json:"create_time"`
+	CompleteTime    int64   `json:"complete_time"`
+	Status          string  `json:"status"`
 }
+
+const (
+	PaymentProviderEpay   = "epay"
+	PaymentProviderStripe = "stripe"
+	PaymentProviderCreem  = "creem"
+)
+
+var (
+	ErrPaymentMethodMismatch = errors.New("payment method mismatch")
+	ErrTopUpNotFound         = errors.New("topup not found")
+	ErrTopUpStatusInvalid    = errors.New("topup status invalid")
+)
 
 type TopUpFilter struct {
 	Keyword        string
@@ -65,6 +78,31 @@ func GetTopUpByTradeNo(tradeNo string) *TopUp {
 		return nil
 	}
 	return topUp
+}
+
+func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, targetStatus string) error {
+	if tradeNo == "" {
+		return errors.New("未提供支付单号")
+	}
+	refCol := "`trade_no`"
+	if common.UsingPostgreSQL {
+		refCol = `"trade_no"`
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			return ErrTopUpNotFound
+		}
+		if expectedPaymentProvider != "" && topUp.PaymentProvider != expectedPaymentProvider {
+			return ErrPaymentMethodMismatch
+		}
+		if topUp.Status != common.TopUpStatusPending {
+			return ErrTopUpStatusInvalid
+		}
+		topUp.Status = targetStatus
+		topUp.CompleteTime = common.GetTimestamp()
+		return tx.Save(topUp).Error
+	})
 }
 
 func GetUserTotalRechargeAmount(userId int) (float64, error) {
@@ -155,6 +193,10 @@ func Recharge(referenceId string, customerId string) (err error) {
 		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", referenceId).First(topUp).Error
 		if err != nil {
 			return errors.New("充值订单不存在")
+		}
+
+		if topUp.PaymentProvider != PaymentProviderStripe {
+			return ErrPaymentMethodMismatch
 		}
 
 		if topUp.Status != common.TopUpStatusPending {
@@ -403,7 +445,7 @@ func ManualCompleteTopUp(tradeNo string) error {
 		// 计算应充值额度：
 		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
 		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
-		if topUp.PaymentMethod == "stripe" {
+		if topUp.PaymentProvider == PaymentProviderStripe {
 			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 			quotaToAdd = int(decimal.NewFromFloat(topUp.Money).Mul(dQuotaPerUnit).IntPart())
 		} else {
@@ -472,6 +514,10 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", referenceId).First(topUp).Error
 		if err != nil {
 			return errors.New("充值订单不存在")
+		}
+
+		if topUp.PaymentProvider != PaymentProviderCreem {
+			return ErrPaymentMethodMismatch
 		}
 
 		if topUp.Status != common.TopUpStatusPending {
