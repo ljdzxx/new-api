@@ -159,6 +159,9 @@ function renderIsStream(bool, t) {
 
 function renderUseTime(type, t) {
   const time = parseInt(type);
+  if (!Number.isFinite(time) || time < 0) {
+    return <></>;
+  }
   if (time < 101) {
     return (
       <Tag color='green' shape='circle'>
@@ -184,16 +187,19 @@ function renderUseTime(type, t) {
 }
 
 function renderFirstUseTime(type, t) {
-  let time = parseFloat(type) / 1000.0;
-  time = time.toFixed(1);
-  if (time < 3) {
+  const timeValue = parseFloat(type) / 1000.0;
+  if (!Number.isFinite(timeValue) || timeValue < 0) {
+    return <></>;
+  }
+  const time = timeValue.toFixed(1);
+  if (timeValue < 3) {
     return (
       <Tag color='green' shape='circle'>
         {' '}
         {time} s{' '}
       </Tag>
     );
-  } else if (time < 10) {
+  } else if (timeValue < 10) {
     return (
       <Tag color='orange' shape='circle'>
         {' '}
@@ -546,6 +552,15 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
 
   if (other == null || record.type !== 2) {
     return null;
+  }
+
+  if (other?.mock_test === true) {
+    return {
+      segments: [
+        { text: t('Mock测试'), tone: 'primary' },
+        { text: `${t('扣费')}：${renderQuota(0, 6)}`, tone: 'secondary' },
+      ],
+    };
   }
 
   if (

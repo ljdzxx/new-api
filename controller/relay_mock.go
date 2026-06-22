@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	openairelay "github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -43,22 +46,31 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 	if c == nil || info == nil {
 		return types.NewError(fmt.Errorf("invalid mock relay context"), types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
 	}
+	if info.ChannelMeta == nil {
+		info.InitChannelMeta(c)
+	}
 	info.SetFirstResponseTime()
 	info.ShouldIncludeUsage = true
 	usage := mockTestUsage(c, info)
 
+	var apiErr *types.NewAPIError
 	if info.IsStream {
 		if info.RelayFormat == types.RelayFormatOpenAI && info.RelayMode == relayconstant.RelayModeCompletions {
-			return mockTestCompletionsStream(c, info, usage)
+			apiErr = mockTestCompletionsStream(c, info, usage)
+		} else {
+			switch info.RelayFormat {
+			case types.RelayFormatOpenAIResponses:
+				apiErr = mockTestResponsesStream(c, info, usage)
+			case types.RelayFormatOpenAIResponsesCompaction:
+				apiErr = mockTestResponsesCompaction(c, info, usage)
+			default:
+				apiErr = mockTestChatStream(c, info, usage)
+			}
 		}
-		switch info.RelayFormat {
-		case types.RelayFormatOpenAIResponses:
-			return mockTestResponsesStream(c, info, usage)
-		case types.RelayFormatOpenAIResponsesCompaction:
-			return mockTestResponsesCompaction(c, info, usage)
-		default:
-			return mockTestChatStream(c, info, usage)
+		if apiErr == nil {
+			recordMockTestConsumeLog(c, info, usage)
 		}
+		return apiErr
 	}
 
 	switch info.RelayFormat {
@@ -69,7 +81,7 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 	case types.RelayFormatOpenAIResponses:
 		c.JSON(http.StatusOK, mockTestResponsesResponse(c, info, usage))
 	case types.RelayFormatOpenAIResponsesCompaction:
-		return mockTestResponsesCompaction(c, info, usage)
+		apiErr = mockTestResponsesCompaction(c, info, usage)
 	default:
 		if info.RelayMode == relayconstant.RelayModeCompletions {
 			c.JSON(http.StatusOK, mockTestCompletionsResponse(c, info, usage))
@@ -77,7 +89,10 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 			c.JSON(http.StatusOK, mockTestOpenAIResponse(c, info, usage))
 		}
 	}
-	return nil
+	if apiErr == nil {
+		recordMockTestConsumeLog(c, info, usage)
+	}
+	return apiErr
 }
 
 func mockTestUsage(c *gin.Context, info *relaycommon.RelayInfo) dto.Usage {
@@ -128,6 +143,95 @@ func mockTestModel(info *relaycommon.RelayInfo) string {
 		return info.UpstreamModelName
 	}
 	return info.OriginModelName
+}
+
+func recordMockTestConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) {
+	if c == nil || info == nil {
+		return
+	}
+	userID := info.UserId
+	if userID == 0 {
+		userID = common.GetContextKeyInt(c, constant.ContextKeyUserId)
+	}
+	if userID == 0 && info.IsChannelTest {
+		userID = 1
+	}
+	if userID == 0 {
+		return
+	}
+
+	tokenName := c.GetString("token_name")
+	if tokenName == "" {
+		tokenName = "模型测试"
+	}
+	content := "Mock测试"
+	if info.IsChannelTest {
+		content = "模型测试"
+	}
+
+	requestPath := info.RequestURLPath
+	if c.Request != nil && c.Request.URL != nil && c.Request.URL.Path != "" {
+		requestPath = c.Request.URL.Path
+	} else if idx := strings.Index(requestPath, "?"); idx != -1 {
+		requestPath = requestPath[:idx]
+	}
+	other := map[string]interface{}{
+		"mock_test":        true,
+		"usage_source":     "mock_test",
+		"model_ratio":      0,
+		"model_price":      -1,
+		"group_ratio":      1,
+		"completion_ratio": 0,
+		"cache_ratio":      1,
+	}
+	if !info.FirstResponseTime.IsZero() && !info.StartTime.IsZero() {
+		other["frt"] = float64(info.FirstResponseTime.UnixMilli() - info.StartTime.UnixMilli())
+	}
+	if requestPath != "" {
+		other["request_path"] = requestPath
+	}
+	if len(info.RequestConversionChain) > 0 {
+		chain := make([]string, 0, len(info.RequestConversionChain))
+		for _, format := range info.RequestConversionChain {
+			chain = append(chain, string(format))
+		}
+		other["request_conversion"] = chain
+	}
+	if info.GetFinalRequestRelayFormat() == types.RelayFormatClaude {
+		other["claude"] = true
+	}
+
+	adminInfo := map[string]interface{}{
+		"use_channel": c.GetStringSlice("use_channel"),
+	}
+	if common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+		adminInfo["is_multi_key"] = true
+		adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
+	}
+	if common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens) {
+		adminInfo["local_count_tokens"] = true
+	}
+	service.AppendChannelAffinityAdminInfo(c, adminInfo)
+	other["admin_info"] = adminInfo
+
+	useTimeSeconds := 0
+	if !info.StartTime.IsZero() {
+		useTimeSeconds = int(time.Since(info.StartTime).Seconds())
+	}
+	model.RecordConsumeLog(c, userID, model.RecordConsumeLogParams{
+		ChannelId:        info.ChannelId,
+		PromptTokens:     usage.PromptTokens,
+		CompletionTokens: usage.CompletionTokens,
+		ModelName:        info.OriginModelName,
+		TokenName:        tokenName,
+		Quota:            0,
+		Content:          content,
+		TokenId:          info.TokenId,
+		UseTimeSeconds:   useTimeSeconds,
+		IsStream:         info.IsStream,
+		Group:            info.UsingGroup,
+		Other:            other,
+	})
 }
 
 func mockTestOpenAIResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *dto.OpenAITextResponse {

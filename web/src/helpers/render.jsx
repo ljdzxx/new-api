@@ -1256,7 +1256,12 @@ function getEffectiveRatio(groupRatio, user_group_ratio) {
   const ratioLabel = useUserGroupRatio
     ? i18next.t('专属倍率')
     : i18next.t('分组倍率');
-  const effectiveRatio = useUserGroupRatio ? user_group_ratio : groupRatio;
+  const fallbackGroupRatio = Number(groupRatio);
+  const effectiveRatio = useUserGroupRatio
+    ? user_group_ratio
+    : Number.isFinite(fallbackGroupRatio)
+      ? fallbackGroupRatio
+      : 1;
 
   return {
     ratio: effectiveRatio,
@@ -1289,7 +1294,10 @@ function shouldUseRatioBillingProcess(modelPrice = -1) {
 
 function formatCompactDisplayPrice(usdAmount, digits = 6) {
   const { symbol, rate } = getCurrencyConfig();
-  const amount = Number((usdAmount * rate).toFixed(digits));
+  const value = Number(usdAmount);
+  const amount = Number(
+    ((Number.isFinite(value) ? value : 0) * rate).toFixed(digits),
+  );
   return `${symbol}${amount}`;
 }
 
@@ -1325,7 +1333,12 @@ function renderDisplayAmountFromUsd(usdAmount, digits = 6) {
 }
 
 function formatBillingDisplayPrice(usdAmount, rate, digits = 6) {
-  return (usdAmount * rate).toFixed(digits);
+  const value = Number(usdAmount);
+  const safeRate = Number(rate);
+  return (
+    (Number.isFinite(value) ? value : 0) *
+    (Number.isFinite(safeRate) ? safeRate : 1)
+  ).toFixed(digits);
 }
 
 function buildBillingText(key, vars) {
@@ -1379,6 +1392,19 @@ function renderPriceSimpleCore({
   displayMode = 'price',
   outputMode = 'text',
 }) {
+  modelRatio = formatRatioValue(modelRatio);
+  modelPrice = modelPrice === -1 ? -1 : formatRatioValue(modelPrice);
+  groupRatio = formatRatioValue(groupRatio, 6) || 1;
+  cacheTokens = formatRatioValue(cacheTokens);
+  cacheRatio = formatRatioValue(cacheRatio, 6) || 1.0;
+  cacheCreationTokens = formatRatioValue(cacheCreationTokens);
+  cacheCreationRatio = formatRatioValue(cacheCreationRatio, 6) || 1.0;
+  cacheCreationTokens5m = formatRatioValue(cacheCreationTokens5m);
+  cacheCreationRatio5m = formatRatioValue(cacheCreationRatio5m, 6) || 1.0;
+  cacheCreationTokens1h = formatRatioValue(cacheCreationTokens1h);
+  cacheCreationRatio1h = formatRatioValue(cacheCreationRatio1h, 6) || 1.0;
+  imageRatio = formatRatioValue(imageRatio, 6) || 1.0;
+
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
     groupRatio,
     user_group_ratio,

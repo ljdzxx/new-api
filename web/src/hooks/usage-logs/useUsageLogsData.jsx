@@ -426,42 +426,46 @@ export const useLogsData = () => {
         });
       }
       if (logs[i].type === 2) {
+        const logDetailContent =
+          other?.mock_test === true
+            ? t('Mock测试，扣费为 0')
+            : other?.claude
+              ? renderClaudeLogContent(
+                  other?.model_ratio,
+                  other.completion_ratio,
+                  other.model_price,
+                  other.group_ratio,
+                  other?.user_group_ratio,
+                  other.cache_ratio || 1.0,
+                  other.cache_creation_ratio || 1.0,
+                  other.cache_creation_tokens_5m || 0,
+                  other.cache_creation_ratio_5m ||
+                    other.cache_creation_ratio ||
+                    1.0,
+                  other.cache_creation_tokens_1h || 0,
+                  other.cache_creation_ratio_1h ||
+                    other.cache_creation_ratio ||
+                    1.0,
+                  billingDisplayMode,
+                )
+              : renderLogContent(
+                  other?.model_ratio,
+                  other.completion_ratio,
+                  other.model_price,
+                  other.group_ratio,
+                  other?.user_group_ratio,
+                  other.cache_ratio || 1.0,
+                  false,
+                  1.0,
+                  other.web_search || false,
+                  other.web_search_call_count || 0,
+                  other.file_search || false,
+                  other.file_search_call_count || 0,
+                  billingDisplayMode,
+                );
         expandDataLocal.push({
           key: t('日志详情'),
-          value: other?.claude
-            ? renderClaudeLogContent(
-                other?.model_ratio,
-                other.completion_ratio,
-                other.model_price,
-                other.group_ratio,
-                other?.user_group_ratio,
-                other.cache_ratio || 1.0,
-                other.cache_creation_ratio || 1.0,
-                other.cache_creation_tokens_5m || 0,
-                other.cache_creation_ratio_5m ||
-                  other.cache_creation_ratio ||
-                  1.0,
-                other.cache_creation_tokens_1h || 0,
-                other.cache_creation_ratio_1h ||
-                  other.cache_creation_ratio ||
-                  1.0,
-                billingDisplayMode,
-              )
-            : renderLogContent(
-                other?.model_ratio,
-                other.completion_ratio,
-                other.model_price,
-                other.group_ratio,
-                other?.user_group_ratio,
-                other.cache_ratio || 1.0,
-                false,
-                1.0,
-                other.web_search || false,
-                other.web_search_call_count || 0,
-                other.file_search || false,
-                other.file_search_call_count || 0,
-                billingDisplayMode,
-              ),
+          value: logDetailContent,
         });
         if (logs[i]?.content) {
           expandDataLocal.push({
@@ -496,9 +500,10 @@ export const useLogsData = () => {
           other?.violation_fee === true ||
           Boolean(other?.violation_fee_code) ||
           Boolean(other?.violation_fee_marker);
+        const isMockTestLog = other?.mock_test === true;
 
         let content = '';
-        if (!isViolationFeeLog) {
+        if (!isViolationFeeLog && !isMockTestLog) {
           if (other?.ws || other?.audio) {
             content = renderAudioModelPrice(
               other?.text_input,

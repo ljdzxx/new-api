@@ -245,6 +245,39 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 	// 更新请求中的模型名称
 	request.SetModelName(testModel)
 
+	if shouldMockTestRelay(c, info) {
+		newAPIError := handleMockTestRelay(c, info)
+		if newAPIError != nil {
+			return testResult{
+				context:     c,
+				localErr:    newAPIError,
+				newAPIError: newAPIError,
+			}
+		}
+		result := w.Result()
+		respBody, err := readTestResponseBody(result.Body, isStream)
+		if err != nil {
+			return testResult{
+				context:     c,
+				localErr:    err,
+				newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
+			}
+		}
+		if bodyErr := detectErrorFromTestResponseBody(respBody); bodyErr != nil {
+			return testResult{
+				context:     c,
+				localErr:    bodyErr,
+				newAPIError: types.NewOpenAIError(bodyErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
+			}
+		}
+		common.SysLog(fmt.Sprintf("testing mock channel #%d, response: \n%s", channel.Id, string(respBody)))
+		return testResult{
+			context:     c,
+			localErr:    nil,
+			newAPIError: nil,
+		}
+	}
+
 	apiType, _ := common.ChannelType2APIType(channel.Type)
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact &&
 		apiType != constant.APITypeOpenAI &&
