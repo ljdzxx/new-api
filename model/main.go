@@ -275,6 +275,8 @@ func migrateDB() error {
 		&Log{},
 		&Midjourney{},
 		&TopUp{},
+		&PaymentReconcileJob{},
+		&PaymentReconcileItem{},
 		&QuotaData{},
 		&ImageGenerationRecord{},
 		&Task{},
@@ -305,6 +307,9 @@ func migrateDB() error {
 		return err
 	}
 	if err := backfillPaymentProviders(); err != nil {
+		return err
+	}
+	if err := backfillTopUpReconcileStatus(); err != nil {
 		return err
 	}
 	if common.UsingSQLite {
@@ -340,6 +345,8 @@ func migrateDBFast() error {
 		{&Log{}, "Log"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
+		{&PaymentReconcileJob{}, "PaymentReconcileJob"},
+		{&PaymentReconcileItem{}, "PaymentReconcileItem"},
 		{&QuotaData{}, "QuotaData"},
 		{&ImageGenerationRecord{}, "ImageGenerationRecord"},
 		{&Task{}, "Task"},
@@ -394,6 +401,9 @@ func migrateDBFast() error {
 	if err := backfillPaymentProviders(); err != nil {
 		return err
 	}
+	if err := backfillTopUpReconcileStatus(); err != nil {
+		return err
+	}
 	if common.UsingSQLite {
 		if err := ensureUsersTableSQLite(); err != nil {
 			return err
@@ -440,6 +450,11 @@ func backfillPaymentProviders() error {
 			return err
 		}
 		if err := DB.Model(&TopUp{}).
+			Where("(payment_provider = '' OR payment_provider IS NULL) AND payment_method = ?", "redemption").
+			Update("payment_provider", PaymentProviderMall).Error; err != nil {
+			return err
+		}
+		if err := DB.Model(&TopUp{}).
 			Where("(payment_provider = '' OR payment_provider IS NULL) AND trade_no LIKE ? AND payment_method <> ''", "USR%NO%").
 			Update("payment_provider", PaymentProviderEpay).Error; err != nil {
 			return err
@@ -463,6 +478,18 @@ func backfillPaymentProviders() error {
 		}
 	}
 	return nil
+}
+
+func backfillTopUpReconcileStatus() error {
+	if DB == nil {
+		return nil
+	}
+	if !DB.Migrator().HasColumn(&TopUp{}, "reconcile_status") {
+		return nil
+	}
+	return DB.Model(&TopUp{}).
+		Where("reconcile_status = '' OR reconcile_status IS NULL").
+		Update("reconcile_status", PaymentReconcileStatusUnchecked).Error
 }
 
 type sqliteColumnDef struct {

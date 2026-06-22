@@ -16,6 +16,7 @@ import (
 // UserBase struct remains the same as it represents the cached data structure
 type UserBase struct {
 	Id                       int     `json:"id"`
+	Role                     int     `json:"role"`
 	Group                    string  `json:"group"`
 	UserLevelID              int     `json:"user_level_id"`
 	RateLimitEnabled         bool    `json:"rate_limit_enabled"`
@@ -112,6 +113,7 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 	// Create cache object from user data
 	userCache = &UserBase{
 		Id:                       user.Id,
+		Role:                     user.Role,
 		Group:                    user.Group,
 		UserLevelID:              user.UserLevelId,
 		RateLimitEnabled:         user.RateLimitEnabled,
@@ -138,6 +140,9 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 	err := common.RedisHGetObj(getUserCacheKey(userId), &userCache)
 	if err != nil {
 		return nil, err
+	}
+	if !common.IsValidateRole(userCache.Role) {
+		return nil, fmt.Errorf("cached user role is invalid")
 	}
 	return &userCache, nil
 }

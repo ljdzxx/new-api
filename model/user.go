@@ -72,6 +72,7 @@ func (user *User) BeforeCreate(tx *gorm.DB) error {
 func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
 		Id:                       user.Id,
+		Role:                     user.Role,
 		Group:                    user.Group,
 		UserLevelID:              user.UserLevelId,
 		RateLimitEnabled:         user.RateLimitEnabled,

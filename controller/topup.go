@@ -385,12 +385,15 @@ func GetAllTopUps(c *gin.Context) {
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
 	filter := model.TopUpFilter{
-		Keyword:        c.Query("keyword"),
-		UserId:         userId,
-		Username:       c.Query("username"),
-		Status:         c.Query("status"),
-		StartTimestamp: startTimestamp,
-		EndTimestamp:   endTimestamp,
+		Keyword:         c.Query("keyword"),
+		UserId:          userId,
+		Username:        c.Query("username"),
+		Status:          c.Query("status"),
+		PaymentProvider: c.Query("payment_provider"),
+		PaymentMethod:   c.Query("payment_method"),
+		ReconcileStatus: c.Query("reconcile_status"),
+		StartTimestamp:  startTimestamp,
+		EndTimestamp:    endTimestamp,
 	}
 
 	var (

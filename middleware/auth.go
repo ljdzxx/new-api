@@ -115,12 +115,28 @@ func validUserInfo(username string, role int) bool {
 	return true
 }
 
+func authUserID(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, v > 0
+	case int64:
+		return int(v), v > 0
+	case float64:
+		id := int(v)
+		return id, v == float64(id) && id > 0
+	case string:
+		id, err := strconv.Atoi(v)
+		return id, err == nil && id > 0
+	default:
+		return 0, false
+	}
+}
+
 func authHelper(c *gin.Context, minRole int) {
 	session := sessions.Default(c)
 	username := session.Get("username")
 	role := session.Get("role")
 	id := session.Get("id")
-	status := session.Get("status")
 	useAccessToken := false
 	if username == nil {
 		// Check access token
@@ -147,7 +163,6 @@ func authHelper(c *gin.Context, minRole int) {
 			username = user.Username
 			role = user.Role
 			id = user.Id
-			status = user.Status
 			useAccessToken = true
 		} else {
 			c.JSON(http.StatusOK, gin.H{
@@ -157,6 +172,15 @@ func authHelper(c *gin.Context, minRole int) {
 			c.Abort()
 			return
 		}
+	}
+	currentUserId, ok := authUserID(id)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "无权进行此操作，用户信息无效",
+		})
+		c.Abort()
+		return
 	}
 	// get header New-Api-User
 	apiUserIdStr := c.Request.Header.Get("New-Api-User")
@@ -178,7 +202,7 @@ func authHelper(c *gin.Context, minRole int) {
 		return
 
 	}
-	if id != apiUserId {
+	if currentUserId != apiUserId {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "无权进行此操作，New-Api-User 与登录用户不匹配",
@@ -186,7 +210,20 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
-	if status.(int) == common.UserStatusDisabled {
+
+	currentUser, err := model.GetUserById(currentUserId, false)
+	if err != nil || currentUser == nil || currentUser.Id == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"message": "无权进行此操作，用户不存在或已失效",
+		})
+		c.Abort()
+		return
+	}
+	username = currentUser.Username
+	role = currentUser.Role
+	id = currentUser.Id
+	if currentUser.Status != common.UserStatusEnabled {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "用户已被封禁",
@@ -215,8 +252,8 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("username", username)
 	c.Set("role", role)
 	c.Set("id", id)
-	c.Set("group", session.Get("group"))
-	c.Set("user_group", session.Get("group"))
+	c.Set("group", currentUser.Group)
+	c.Set("user_group", currentUser.Group)
 	c.Set("use_access_token", useAccessToken)
 
 	c.Next()

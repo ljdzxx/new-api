@@ -180,14 +180,15 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, re
 		result.Quota = redemption.Quota
 
 		topup := TopUp{
-			UserId:        userId,
-			Amount:        int64(redemption.Quota),
-			Money:         redemption.PayMoney,
-			TradeNo:       tradeNo,
-			PaymentMethod: "redemption",
-			CreateTime:    redeemedAt,
-			CompleteTime:  redeemedAt,
-			Status:        common.TopUpStatusSuccess,
+			UserId:          userId,
+			Amount:          int64(redemption.Quota),
+			Money:           redemption.PayMoney,
+			TradeNo:         tradeNo,
+			PaymentMethod:   "redemption",
+			PaymentProvider: PaymentProviderMall,
+			CreateTime:      redeemedAt,
+			CompleteTime:    redeemedAt,
+			Status:          common.TopUpStatusSuccess,
 		}
 		if err := tx.Create(&topup).Error; err != nil {
 			return nil, err
@@ -218,14 +219,15 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, re
 		result.PlanTitle = strings.TrimSpace(plan.Title)
 
 		topup := TopUp{
-			UserId:        userId,
-			Amount:        0,
-			Money:         redemption.PayMoney,
-			TradeNo:       tradeNo,
-			PaymentMethod: "redemption",
-			CreateTime:    redeemedAt,
-			CompleteTime:  redeemedAt,
-			Status:        common.TopUpStatusSuccess,
+			UserId:          userId,
+			Amount:          0,
+			Money:           redemption.PayMoney,
+			TradeNo:         tradeNo,
+			PaymentMethod:   "redemption",
+			PaymentProvider: PaymentProviderMall,
+			CreateTime:      redeemedAt,
+			CompleteTime:    redeemedAt,
+			Status:          common.TopUpStatusSuccess,
 		}
 		if err = tx.Create(&topup).Error; err != nil {
 			return nil, err

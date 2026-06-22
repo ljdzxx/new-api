@@ -14,23 +14,33 @@ import (
 )
 
 type TopUp struct {
-	Id              int     `json:"id"`
-	UserId          int     `json:"user_id" gorm:"index"`
-	Username        string  `json:"username" gorm:"-"`
-	Amount          int64   `json:"amount"`
-	Money           float64 `json:"money"`
-	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	CreateTime      int64   `json:"create_time"`
-	CompleteTime    int64   `json:"complete_time"`
-	Status          string  `json:"status"`
+	Id               int     `json:"id"`
+	UserId           int     `json:"user_id" gorm:"index"`
+	Username         string  `json:"username" gorm:"-"`
+	Amount           int64   `json:"amount"`
+	Money            float64 `json:"money"`
+	TradeNo          string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider  string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	ReconcileStatus  string  `json:"reconcile_status" gorm:"type:varchar(32);default:'unchecked';index"`
+	ReconcileTime    int64   `json:"reconcile_time"`
+	ReconcileMessage string  `json:"reconcile_message" gorm:"type:text"`
+	CreateTime       int64   `json:"create_time"`
+	CompleteTime     int64   `json:"complete_time"`
+	Status           string  `json:"status"`
 }
 
 const (
 	PaymentProviderEpay   = "epay"
 	PaymentProviderStripe = "stripe"
 	PaymentProviderCreem  = "creem"
+	PaymentProviderMall   = "mall"
+)
+
+const (
+	PaymentReconcileStatusUnchecked = "unchecked"
+	PaymentReconcileStatusNormal    = "normal"
+	PaymentReconcileStatusAbnormal  = "abnormal"
 )
 
 var (
@@ -40,12 +50,16 @@ var (
 )
 
 type TopUpFilter struct {
-	Keyword        string
-	UserId         int
-	Username       string
-	Status         string
-	StartTimestamp int64
-	EndTimestamp   int64
+	Keyword         string
+	UserId          int
+	Username        string
+	Status          string
+	PaymentProvider string
+	PaymentMethod   string
+	ReconcileStatus string
+	StartTimestamp  int64
+	EndTimestamp    int64
+	MaxId           int
 }
 
 func (topUp *TopUp) Insert() error {
@@ -336,11 +350,23 @@ func applyTopUpFilter(query *gorm.DB, filter TopUpFilter) *gorm.DB {
 	if status := strings.TrimSpace(filter.Status); status != "" {
 		query = query.Where("status = ?", status)
 	}
+	if paymentProvider := strings.TrimSpace(filter.PaymentProvider); paymentProvider != "" {
+		query = query.Where("payment_provider = ?", paymentProvider)
+	}
+	if paymentMethod := strings.TrimSpace(filter.PaymentMethod); paymentMethod != "" {
+		query = query.Where("payment_method = ?", paymentMethod)
+	}
+	if reconcileStatus := strings.TrimSpace(filter.ReconcileStatus); reconcileStatus != "" {
+		query = query.Where("reconcile_status = ?", reconcileStatus)
+	}
 	if filter.StartTimestamp > 0 {
 		query = query.Where("create_time >= ?", filter.StartTimestamp)
 	}
 	if filter.EndTimestamp > 0 {
 		query = query.Where("create_time <= ?", filter.EndTimestamp)
+	}
+	if filter.MaxId > 0 {
+		query = query.Where("id <= ?", filter.MaxId)
 	}
 	return query
 }
@@ -406,6 +432,39 @@ func SearchAllTopUpsWithFilter(filter TopUpFilter, pageInfo *common.PageInfo) (t
 	}
 	fillTopUpUsernames(topups)
 	return topups, total, nil
+}
+
+func CountTopUpsWithFilter(filter TopUpFilter) (int64, error) {
+	var total int64
+	err := applyTopUpFilter(DB.Model(&TopUp{}), filter).Count(&total).Error
+	return total, err
+}
+
+func MaxTopUpIdWithFilter(filter TopUpFilter) (int, error) {
+	var maxId int
+	err := applyTopUpFilter(DB.Model(&TopUp{}), filter).Select("COALESCE(MAX(id), 0)").Scan(&maxId).Error
+	return maxId, err
+}
+
+func FindTopUpsWithFilter(filter TopUpFilter, lastId int, limit int) ([]*TopUp, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := applyTopUpFilter(DB.Model(&TopUp{}), filter)
+	if lastId > 0 {
+		query = query.Where("id > ?", lastId)
+	}
+	var topups []*TopUp
+	err := query.Order("id asc").Limit(limit).Find(&topups).Error
+	return topups, err
+}
+
+func UpdateTopUpReconcileResult(topUpId int, status string, message string) error {
+	return DB.Model(&TopUp{}).Where("id = ?", topUpId).Updates(map[string]interface{}{
+		"reconcile_status":  status,
+		"reconcile_message": message,
+		"reconcile_time":    common.GetTimestamp(),
+	}).Error
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
