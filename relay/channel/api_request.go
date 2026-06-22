@@ -376,6 +376,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	common.WrapRequestBodyForDebugTrace(c, req, info)
 	if shouldTraceXiaomiClaudeFinalRequest(c, info) {
 		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude trace] FINAL upstream http request: method=%s url=%q host=%q headers={%s} header_override=%d",
 			req.Method,
@@ -418,6 +419,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	common.WrapRequestBodyForDebugTrace(c, req, info)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -600,6 +602,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	if resp == nil {
 		return nil, errors.New("resp is nil")
 	}
+	common.WrapResponseBodyForDebugTrace(c, resp, info)
 
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
@@ -623,6 +626,7 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
+	common.WrapRequestBodyForDebugTrace(c, req, info)
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
