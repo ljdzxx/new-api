@@ -36,7 +36,7 @@ var imageTraceRedactedKeys = map[string]struct{}{
 }
 
 func isImageTraceEnabled(c *gin.Context) bool {
-	return common.DebugTraceEnabled && isImageRelayPath(c)
+	return common.DebugTraceEnabledForContext(c) && isImageRelayPath(c)
 }
 
 func isImageRelayPath(c *gin.Context) bool {

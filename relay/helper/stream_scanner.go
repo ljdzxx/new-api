@@ -354,7 +354,7 @@ func streamScannerResultFromStatus(status *relaycommon.StreamStatus) StreamScann
 }
 
 func shouldLogXiaomiClaudeStreamData(c *gin.Context, info *relaycommon.RelayInfo) bool {
-	if !common.DebugEnabled && !common.DebugTraceEnabled {
+	if !common.DebugEnabled && !common.DebugTraceEnabledForContext(c) {
 		return false
 	}
 	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyXiaomiClaudeDebug) {

@@ -57,7 +57,7 @@ func (r *debugTraceReadCloser) log() {
 }
 
 func LogClientRequestTrace(c *gin.Context, info *RelayInfo) {
-	if !rootcommon.DebugTraceEnabled || c == nil || c.Request == nil {
+	if !rootcommon.DebugTraceEnabledForContext(c) || c == nil || c.Request == nil {
 		return
 	}
 	if _, ok := c.Get(debugTraceClientRequestLoggedKey); ok {
@@ -83,7 +83,7 @@ func LogClientRequestTrace(c *gin.Context, info *RelayInfo) {
 }
 
 func WrapRequestBodyForDebugTrace(c *gin.Context, req *http.Request, info *RelayInfo) {
-	if !rootcommon.DebugTraceEnabled || c == nil || req == nil || req.Body == nil {
+	if !rootcommon.DebugTraceEnabledForContext(c) || c == nil || req == nil || req.Body == nil {
 		return
 	}
 	urlText := ""
@@ -102,7 +102,7 @@ func WrapRequestBodyForDebugTrace(c *gin.Context, req *http.Request, info *Relay
 }
 
 func WrapResponseBodyForDebugTrace(c *gin.Context, resp *http.Response, info *RelayInfo) {
-	if !rootcommon.DebugTraceEnabled || c == nil || resp == nil || resp.Body == nil {
+	if !rootcommon.DebugTraceEnabledForContext(c) || c == nil || resp == nil || resp.Body == nil {
 		return
 	}
 	method := ""

@@ -145,7 +145,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
-	if relayInfo.PriceData.GlobalModelRatio != 1 || common.DebugTraceEnabled {
+	if relayInfo.PriceData.GlobalModelRatio != 1 || common.DebugTraceEnabledForContext(ctx) {
 		channelID := 0
 		if relayInfo.ChannelMeta != nil {
 			channelID = relayInfo.ChannelMeta.ChannelId
@@ -320,7 +320,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	}
 
 	quota := calculateAudioQuota(quotaInfo)
-	if globalModelRatio != 1 || common.DebugTraceEnabled {
+	if globalModelRatio != 1 || common.DebugTraceEnabledForContext(ctx) {
 		channelID := 0
 		if relayInfo.ChannelMeta != nil {
 			channelID = relayInfo.ChannelMeta.ChannelId

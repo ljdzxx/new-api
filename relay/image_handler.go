@@ -56,7 +56,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			service.MarkImageRecordFailure(c, err)
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		if common.DebugTraceEnabled {
+		if common.DebugTraceEnabledForContext(c) {
 			if bodyBytes, bodyErr := storage.Bytes(); bodyErr == nil {
 				service.LogImageRelayJSONRequestTrace(c, "pass-through", bodyBytes)
 			} else {

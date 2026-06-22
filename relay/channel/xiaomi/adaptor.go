@@ -24,8 +24,8 @@ type Adaptor struct {
 	openai.Adaptor
 }
 
-func shouldTraceXiaomiClaude(info *relaycommon.RelayInfo) bool {
-	return (common.DebugEnabled || common.DebugTraceEnabled) && info != nil && info.RelayFormat == types.RelayFormatClaude
+func shouldTraceXiaomiClaude(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	return (common.DebugEnabled || common.DebugTraceEnabledForContext(c)) && info != nil && info.RelayFormat == types.RelayFormatClaude
 }
 
 func logXiaomiClaudeTrace(c *gin.Context, format string, args ...any) {
@@ -108,7 +108,7 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 		req.Set("anthropic-version", anthropicVersion)
 		claude.CommonClaudeHeadersOperation(c, req, info)
 		copyXiaomiClaudeClientHeaders(c, req)
-		if shouldTraceXiaomiClaude(info) {
+		if shouldTraceXiaomiClaude(c, info) {
 			logXiaomiClaudeTrace(c, "xiaomi adaptor headers before override: api_key_present=%t x_api_key_present=%t authorization_present=%t anthropic_version=%q anthropic_beta=%q accept=%q content_type=%q user_agent=%q direct_browser=%q x_app=%q stainless_runtime=%q stainless_package_version=%q claude_session=%q",
 				req.Get("api-key") != "",
 				req.Get("x-api-key") != "",
@@ -153,7 +153,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err := normalizeClaudeToolsForMimo(request); err != nil {
 		return nil, err
 	}
-	if shouldTraceXiaomiClaude(info) {
+	if shouldTraceXiaomiClaude(c, info) {
 		toolChoiceSummary := "<nil>"
 		if request.ToolChoice != nil {
 			if encoded, err := common.Marshal(request.ToolChoice); err == nil {

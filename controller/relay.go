@@ -71,7 +71,7 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 }
 
 func logClaudeRelayDebug(c *gin.Context, format string, args ...any) {
-	if !common.DebugEnabled && !common.DebugTraceEnabled {
+	if !common.DebugEnabled && !common.DebugTraceEnabledForContext(c) {
 		return
 	}
 	logger.LogInfo(c, "[claude messages] "+fmt.Sprintf(format, args...))
@@ -82,7 +82,7 @@ func logClaudeRelayError(c *gin.Context, format string, args ...any) {
 }
 
 func logClaudeRelayRawRequest(c *gin.Context) {
-	if c == nil || c.Request == nil || (!common.DebugEnabled && !common.DebugTraceEnabled) {
+	if c == nil || c.Request == nil || (!common.DebugEnabled && !common.DebugTraceEnabledForContext(c)) {
 		return
 	}
 	dump, err := httputil.DumpRequest(c.Request, false)
@@ -728,7 +728,7 @@ func runChannelForwardPrecheck(c *gin.Context, sourceInfo *relaycommon.RelayInfo
 			precheckKeyHash = precheckKeyHash[:12]
 		}
 	}
-	if common.DebugEnabled || common.DebugTraceEnabled {
+	if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 		logger.LogInfo(c, fmt.Sprintf("channel forward precheck selected channel: source_channel=%d channel_type=%d base_url=%q key_present=%t key_len=%d key_sha1=%s multi_key=%t multi_key_index=%d",
 			sourceChannel.Id,
 			sourceChannel.Type,
@@ -782,7 +782,7 @@ func runChannelForwardPrecheck(c *gin.Context, sourceInfo *relaycommon.RelayInfo
 	if requestURL, urlErr := adaptor.GetRequestURL(precheckInfo); urlErr == nil {
 		precheckURL = requestURL
 	}
-	if common.DebugEnabled || common.DebugTraceEnabled {
+	if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 		logger.LogInfo(c, fmt.Sprintf("channel forward precheck request: source_channel=%d model=%s relay_mode=%d request_url=%s message_chars=%d", sourceChannel.Id, precheckInfo.UpstreamModelName, precheckInfo.RelayMode, precheckURL, len([]rune(newMessage))))
 	}
 	startTime := time.Now()
@@ -819,7 +819,7 @@ func runChannelForwardPrecheck(c *gin.Context, sourceInfo *relaycommon.RelayInfo
 	}
 	usage := response.Usage
 	recordChannelForwardPrecheckUsage(precheckContext, sourceInfo, precheckInfo, sourceChannel, &usage, int(time.Since(startTime).Seconds()))
-	if common.DebugEnabled || common.DebugTraceEnabled {
+	if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 		logger.LogInfo(c, fmt.Sprintf("channel forward precheck result: source_channel=%d model=%s metrics=%v prompt_tokens=%d completion_tokens=%d", sourceChannel.Id, precheckInfo.UpstreamModelName, metrics, usage.PromptTokens, usage.CompletionTokens))
 	}
 	return metrics, &usage, nil
@@ -979,7 +979,7 @@ func maybeApplyChannelForward(c *gin.Context, info *relaycommon.RelayInfo, chann
 			return channel, nil
 		}
 		if service.IsChannelForwardMessageTooLong(newMessage, channelSetting) {
-			if common.DebugEnabled || common.DebugTraceEnabled {
+			if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 				logger.LogInfo(c, fmt.Sprintf("channel forward skipped: channel_id=%d original_model=%s reason=message_too_long chars=%d max=%d", channel.Id, info.OriginModelName, len([]rune(newMessage)), channelSetting.ForwardMaxMessageChars))
 			}
 			return channel, nil
@@ -998,7 +998,7 @@ func maybeApplyChannelForward(c *gin.Context, info *relaycommon.RelayInfo, chann
 	}
 	if !shouldForward {
 		if matchInfo != nil && matchInfo.SkipReason != "" {
-			if common.DebugEnabled || common.DebugTraceEnabled {
+			if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 				logger.LogInfo(c, fmt.Sprintf("channel forward skipped: channel_id=%d original_model=%s reason=%s metrics=%v snippet=%q", channel.Id, info.OriginModelName, matchInfo.SkipReason, matchInfo.Metrics, matchInfo.TextSnippet))
 			}
 		}

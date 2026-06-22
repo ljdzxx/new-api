@@ -66,6 +66,7 @@ export default function SettingsPerformance(props) {
     'performance_setting.disk_cache_max_size_mb': 1024,
     'performance_setting.disk_cache_path': '',
     'performance_setting.debug_trace_enabled': false,
+    'performance_setting.debug_trace_token': '',
     'performance_setting.claude_relay_debug_log_enabled': false,
     'performance_setting.monitor_enabled': false,
     'performance_setting.monitor_cpu_threshold': 90,
@@ -304,6 +305,19 @@ export default function SettingsPerformance(props) {
                   onChange={handleFieldChange(
                     'performance_setting.debug_trace_enabled',
                   )}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Input
+                  field={'performance_setting.debug_trace_token'}
+                  label={t('调试追踪令牌')}
+                  extraText={t('仅命中该令牌时记录追踪日志，留空表示不指定令牌')}
+                  placeholder={t('可填写 sk- 开头令牌或令牌 key')}
+                  onChange={handleFieldChange(
+                    'performance_setting.debug_trace_token',
+                  )}
+                  showClear
+                  disabled={!inputs['performance_setting.debug_trace_enabled']}
                 />
               </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>

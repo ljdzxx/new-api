@@ -138,7 +138,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		scaledPreConsumedTokens := ScaleTokensByGlobalModelRatio(preConsumedTokens, globalModelRatio)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		preConsumedQuota = int(float64(scaledPreConsumedTokens) * ratio)
-		if globalModelRatio != 1 || common.DebugTraceEnabled {
+		if globalModelRatio != 1 || common.DebugTraceEnabledForContext(c) {
 			channelID := 0
 			if info.ChannelMeta != nil {
 				channelID = info.ChannelMeta.ChannelId

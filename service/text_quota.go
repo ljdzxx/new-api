@@ -297,7 +297,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		summary.Quota = 1
 	}
 
-	if summary.GlobalModelRatio != 1 || common.DebugTraceEnabled {
+	if summary.GlobalModelRatio != 1 || common.DebugTraceEnabledForContext(ctx) {
 		channelID := 0
 		if relayInfo.ChannelMeta != nil {
 			channelID = relayInfo.ChannelMeta.ChannelId

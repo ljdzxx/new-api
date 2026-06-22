@@ -1287,7 +1287,7 @@ func ClaudeHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 }
 
 func shouldLogXiaomiClaudeUpstreamResponse(c *gin.Context, info *relaycommon.RelayInfo) bool {
-	if !common.DebugEnabled && !common.DebugTraceEnabled {
+	if !common.DebugEnabled && !common.DebugTraceEnabledForContext(c) {
 		return false
 	}
 	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyXiaomiClaudeDebug) {

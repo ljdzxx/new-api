@@ -27,7 +27,7 @@ import (
 )
 
 func shouldTraceXiaomiClaudeFinalRequest(c *gin.Context, info *common.RelayInfo) bool {
-	if !common2.DebugEnabled && !common2.DebugTraceEnabled {
+	if !common2.DebugEnabled && !common2.DebugTraceEnabledForContext(c) {
 		return false
 	}
 	if c != nil && common2.GetContextKeyBool(c, rootconstant.ContextKeyXiaomiClaudeDebug) {

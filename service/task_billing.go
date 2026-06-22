@@ -307,7 +307,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	actualQuota := int(float64(scaledTotalTokens) * modelRatio * finalGroupRatio)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
-	if globalModelRatio != 1 || common.DebugTraceEnabled {
+	if globalModelRatio != 1 || (common.DebugTraceEnabled && common.NormalizeDebugTraceToken(common.DebugTraceToken) == "") {
 		logger.LogInfo(ctx, fmt.Sprintf(
 			"global model ratio task token scaling billing: task_id=%s user_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_tokens=%d scaled_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
 			task.TaskID, task.UserId, modelName,

@@ -23,7 +23,7 @@ import (
 )
 
 func logClaudeMessagesDebug(c *gin.Context, format string, args ...any) {
-	if !common.DebugEnabled && !common.DebugTraceEnabled {
+	if !common.DebugEnabled && !common.DebugTraceEnabledForContext(c) {
 		return
 	}
 	logger.LogInfo(c, "[claude messages] "+fmt.Sprintf(format, args...))
@@ -102,14 +102,14 @@ func readClaudeInboundBodyForLog(c *gin.Context) ([]byte, error) {
 }
 
 func logXiaomiClaudeTrace(c *gin.Context, format string, args ...any) {
-	if c == nil || (!common.DebugEnabled && !common.DebugTraceEnabled) {
+	if c == nil || (!common.DebugEnabled && !common.DebugTraceEnabledForContext(c)) {
 		return
 	}
 	logger.LogInfo(c, "[xiaomi claude trace] "+fmt.Sprintf(format, args...))
 }
 
-func shouldTraceXiaomiClaude(info *relaycommon.RelayInfo) bool {
-	if !common.DebugEnabled && !common.DebugTraceEnabled {
+func shouldTraceXiaomiClaude(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	if !common.DebugEnabled && !common.DebugTraceEnabledForContext(c) {
 		return false
 	}
 	return info != nil &&
@@ -622,7 +622,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 		logClaudeMessagesDebug(c, "using pass-through request body: bytes=%d disk=%t %s", storage.Size(), storage.IsDisk(), summarizeClaudeChannelForLog(info))
-		if shouldTraceXiaomiClaude(info) {
+		if shouldTraceXiaomiClaude(c, info) {
 			bodyBytes, bodyErr := storage.Bytes()
 			if bodyErr != nil {
 				logXiaomiClaudeTrace(c, "pass-through upstream request body read failed: %s bytes=%d disk=%t", bodyErr.Error(), storage.Size(), storage.IsDisk())
@@ -675,11 +675,11 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			logClaudeMessagesDebug(c, "param override applied: audit=%v body=%s", info.ParamOverrideAudit, summarizeClaudeJSONBodyForLog(jsonData))
 		}
 
-		if common.DebugEnabled || common.DebugTraceEnabled {
+		if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 			logClaudeMessagesDebug(c, "sanitized upstream request body summary: %s", summarizeClaudeJSONBodyForLog(jsonData))
 			logger.LogInfo(c, fmt.Sprintf("[claude messages raw] upstream request body bytes=%d:\n%s", len(jsonData), string(jsonData)))
 		}
-		if shouldTraceXiaomiClaude(info) {
+		if shouldTraceXiaomiClaude(c, info) {
 			logXiaomiClaudeTrace(c, "FINAL upstream request body source=converted %s details=%s", summarizeClaudeJSONBodyForLog(jsonData), summarizeClaudeJSONBodyDetailsForLog(jsonData))
 			logXiaomiClaudeTrace(c, "FINAL upstream request body raw bytes=%d:\n%s", len(jsonData), string(jsonData))
 		}
@@ -696,14 +696,14 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 	var httpResp *http.Response
-	if common.DebugEnabled || common.DebugTraceEnabled {
+	if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 		if requestURL, urlErr := adaptor.GetRequestURL(info); urlErr != nil {
 			logClaudeMessagesError(c, "build upstream request url failed before dispatch: %s %s", urlErr.Error(), summarizeClaudeChannelForLog(info))
 		} else {
 			logClaudeMessagesDebug(c, "dispatching upstream request: method=%s url=%q stream=%t %s", c.Request.Method, requestURL, info.IsStream, summarizeClaudeChannelForLog(info))
 		}
 	}
-	if shouldTraceXiaomiClaude(info) {
+	if shouldTraceXiaomiClaude(c, info) {
 		if requestURL, urlErr := adaptor.GetRequestURL(info); urlErr != nil {
 			logXiaomiClaudeTrace(c, "FINAL upstream request url build failed before dispatch: %s", urlErr.Error())
 		} else {

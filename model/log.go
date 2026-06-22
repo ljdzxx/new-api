@@ -152,7 +152,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if !common.LogConsumeEnabled {
 		return
 	}
-	if common.DebugEnabled || common.DebugTraceEnabled {
+	if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 		logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
 	}
 	username := c.GetString("username")

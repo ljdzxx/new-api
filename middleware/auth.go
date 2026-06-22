@@ -22,7 +22,7 @@ import (
 )
 
 func tokenAuthDebugEnabled(c *gin.Context) bool {
-	return common.DebugEnabled || common.DebugTraceEnabled
+	return common.DebugEnabled || common.DebugTraceEnabledForContext(c)
 }
 
 func tokenAuthMaskForLog(value string) string {
@@ -446,6 +446,7 @@ func TokenAuth() func(c *gin.Context) {
 			if id == 0 {
 				c.Set("id", token.UserId)
 			}
+			c.Set("debug_trace_token_key", token.Key)
 		}
 		if err != nil {
 			logTokenAuthDebug(c, "token validation failed: source=%s raw_token=%q raw_len=%d raw_sha1=%s attempts=[%s]", tokenSource, rawToken, len(rawToken), tokenAuthFingerprintForLog(rawToken), strings.Join(attemptErrs, "; "))
