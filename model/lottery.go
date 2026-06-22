@@ -178,6 +178,17 @@ func FillLotteryPrizeCodeCounts(prizes []LotteryPrize) []LotteryPrize {
 	return prizes
 }
 
+func MaskLotteryUsername(username string) string {
+	runes := []rune(username)
+	if len(runes) == 0 {
+		return ""
+	}
+	if len(runes) < 3 {
+		return string(runes[:1]) + strings.Repeat("*", len(runes)-1)
+	}
+	return string(runes[:1]) + strings.Repeat("*", len(runes)-2) + string(runes[len(runes)-1:])
+}
+
 func IsPaidUser(userId int) bool {
 	if userId <= 0 {
 		return false
@@ -227,6 +238,7 @@ func GetLotteryPublicPeriod(periodId int, userId int) (*LotteryPublicPeriod, err
 			winners[i].Code = ""
 			winners[i].CodeScratched = false
 			winners[i].CodeScratchedAt = 0
+			winners[i].Username = MaskLotteryUsername(winners[i].Username)
 		}
 	}
 
