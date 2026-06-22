@@ -28,7 +28,7 @@ import {
   Select,
   Spin,
 } from '@douyinfe/semi-ui';
-import { API, removeTrailingSlash, showError, showSuccess } from '../../../helpers';
+import { API, showError, showSuccess } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 
 const PAYMENT_DISPLAY_TYPE_FIELD = 'payment_setting.display_currency_type';
@@ -36,7 +36,6 @@ const PAYMENT_DISPLAY_SYMBOL_FIELD = 'payment_setting.display_currency_symbol';
 const PAYMENT_DISPLAY_RATE_FIELD = 'payment_setting.display_currency_exchange_rate';
 
 const DEFAULT_PAYMENT_DISPLAY_INPUTS = {
-  ServerAddress: '',
   [PAYMENT_DISPLAY_TYPE_FIELD]: 'FOLLOW_QUOTA',
   [PAYMENT_DISPLAY_SYMBOL_FIELD]: '\u00A4',
   [PAYMENT_DISPLAY_RATE_FIELD]: '1',
@@ -88,7 +87,6 @@ export default function SettingsGeneralPayment(props) {
     }
 
     const currentInputs = {
-      ServerAddress: props.options.ServerAddress || '',
       [PAYMENT_DISPLAY_TYPE_FIELD]:
         props.options[PAYMENT_DISPLAY_TYPE_FIELD] || 'FOLLOW_QUOTA',
       [PAYMENT_DISPLAY_SYMBOL_FIELD]:
@@ -155,10 +153,6 @@ export default function SettingsGeneralPayment(props) {
       });
       const requestQueue = [
         API.put('/api/option/', {
-          key: 'ServerAddress',
-          value: removeTrailingSlash(inputs.ServerAddress || ''),
-        }),
-        API.put('/api/option/', {
           key: PAYMENT_DISPLAY_TYPE_FIELD,
           value: displayType,
         }),
@@ -205,18 +199,6 @@ export default function SettingsGeneralPayment(props) {
       <Form>
         <Form.Section text={t('通用支付设置')}>
           <Row gutter={16}>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.Input
-                field='ServerAddress'
-                value={inputs.ServerAddress}
-                onChange={(value) => handleFormChange({ ServerAddress: value })}
-                label={t('服务器地址')}
-                placeholder='https://yourdomain.com'
-                extraText={t(
-                  '该服务器地址将影响支付回调地址以及默认首页展示的地址，请确保正确配置',
-                )}
-              />
-            </Col>
             <Col xs={24} sm={24} md={8} lg={8} xl={8}>
               <Form.Slot label={t('支付金额显示货币及汇率')}>
                 <InputGroup style={{ width: '100%' }}>

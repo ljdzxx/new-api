@@ -18,6 +18,7 @@ func RequestEpayCompat(c *gin.Context) {
 		UserID:        c.GetInt("id"),
 		Amount:        req.Amount,
 		PaymentMethod: req.PaymentMethod,
+		ReturnURL:     mustBuildPaymentReturnURL(c, "/console/log"),
 	})
 	if err != nil {
 		legacyTopupError(c, err)
@@ -79,12 +80,21 @@ func SubscriptionRequestEpayCompat(c *gin.Context) {
 		UserID:        c.GetInt("id"),
 		PlanID:        req.PlanId,
 		PaymentMethod: req.PaymentMethod,
+		ReturnURL:     mustBuildPaymentReturnURL(c, "/api/subscription/epay/return"),
 	})
 	if err != nil {
 		legacySubscriptionError(c, err)
 		return
 	}
 	legacySubscriptionSuccess(c, result)
+}
+
+func mustBuildPaymentReturnURL(c *gin.Context, returnPath string) string {
+	returnURL, err := service.BuildPaymentReturnURL(c.Request, returnPath)
+	if err != nil {
+		return ""
+	}
+	return returnURL
 }
 
 func SubscriptionRequestStripePayCompat(c *gin.Context) {

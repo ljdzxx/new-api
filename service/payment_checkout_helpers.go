@@ -343,7 +343,10 @@ func buildCreemSubscriptionReference(user *model.User) string {
 	return "sub_ref_" + common.Sha1([]byte(reference+time.Now().String()+user.Username))
 }
 
-func buildTopupEpayReturnURL() (*url.URL, error) {
+func buildTopupEpayReturnURL(returnURL string) (*url.URL, error) {
+	if strings.TrimSpace(returnURL) != "" {
+		return url.Parse(returnURL)
+	}
 	return url.Parse(system_setting.ServerAddress + "/console/log")
 }
 
@@ -351,7 +354,10 @@ func buildTopupEpayNotifyURL() (*url.URL, error) {
 	return url.Parse(GetCallbackAddress() + "/api/user/epay/notify")
 }
 
-func buildSubscriptionEpayReturnURL() (*url.URL, error) {
+func buildSubscriptionEpayReturnURL(returnURL string) (*url.URL, error) {
+	if strings.TrimSpace(returnURL) != "" {
+		return url.Parse(returnURL)
+	}
 	return url.Parse(GetCallbackAddress() + "/api/subscription/epay/return")
 }
 

@@ -105,7 +105,7 @@ func (p *EpayPaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutReques
 	if err != nil {
 		return nil, err
 	}
-	returnURL, err := buildTopupEpayReturnURL()
+	returnURL, err := buildTopupEpayReturnURL(req.ReturnURL)
 	if err != nil {
 		return nil, fmt.Errorf("回调地址配置错误")
 	}
@@ -154,7 +154,7 @@ func (p *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.Subscriptio
 	if err != nil {
 		return nil, err
 	}
-	returnURL, err := buildSubscriptionEpayReturnURL()
+	returnURL, err := buildSubscriptionEpayReturnURL(req.ReturnURL)
 	if err != nil {
 		return nil, fmt.Errorf("回调地址配置错误")
 	}

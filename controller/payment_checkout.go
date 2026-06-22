@@ -43,6 +43,9 @@ func CreatePaymentTopupCheckout(c *gin.Context) {
 		return
 	}
 	req.UserID = c.GetInt("id")
+	if returnURL, err := service.BuildPaymentReturnURL(c.Request, "/console/log"); err == nil {
+		req.ReturnURL = returnURL
+	}
 	result, err := service.CreateTopupCheckout(&req)
 	if err != nil {
 		common.ApiError(c, err)
@@ -95,6 +98,9 @@ func CreatePaymentSubscriptionCheckout(c *gin.Context) {
 		return
 	}
 	req.UserID = c.GetInt("id")
+	if returnURL, err := service.BuildPaymentReturnURL(c.Request, "/api/subscription/epay/return"); err == nil {
+		req.ReturnURL = returnURL
+	}
 	result, err := service.CreateSubscriptionCheckout(plan, &req)
 	if err != nil {
 		common.ApiError(c, err)

@@ -65,6 +65,7 @@ type TopupCheckoutRequest struct {
 	SuccessURL    string  `json:"success_url,omitempty"`
 	CancelURL     string  `json:"cancel_url,omitempty"`
 	PayMoney      float64 `json:"pay_money,omitempty"`
+	ReturnURL     string  `json:"-"`
 }
 
 type SubscriptionCheckoutRequest struct {
@@ -73,4 +74,5 @@ type SubscriptionCheckoutRequest struct {
 	PaymentMethod string `json:"payment_method,omitempty"`
 	SuccessURL    string `json:"success_url,omitempty"`
 	CancelURL     string `json:"cancel_url,omitempty"`
+	ReturnURL     string `json:"-"`
 }
