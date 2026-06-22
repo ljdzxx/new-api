@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	rootcommon "github.com/QuantumNous/new-api/common"
+	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -141,13 +142,14 @@ func logBodyTrace(c *gin.Context, info *RelayInfo, label, method, urlText string
 		b.WriteString(fmt.Sprintf(" status=%d", status))
 	}
 	if info != nil {
+		channelID, channelType, apiType, upstreamModelName := debugTraceRelayInfoFields(c, info)
 		b.WriteString(fmt.Sprintf(
 			" channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q retry=%d stream=%t",
-			info.ChannelId,
-			info.ChannelType,
-			info.ApiType,
+			channelID,
+			channelType,
+			apiType,
 			info.OriginModelName,
-			info.UpstreamModelName,
+			upstreamModelName,
 			info.RetryIndex,
 			info.IsStream,
 		))
@@ -162,6 +164,28 @@ func logBodyTrace(c *gin.Context, info *RelayInfo, label, method, urlText string
 	b.WriteString(fmt.Sprintf("\nbody_bytes=%d body_encoding=%s\n", len(body), encoding))
 	b.WriteString(text)
 	logger.LogInfo(c, b.String())
+}
+
+func debugTraceRelayInfoFields(c *gin.Context, info *RelayInfo) (channelID int, channelType int, apiType int, upstreamModelName string) {
+	if info == nil {
+		return 0, 0, 0, ""
+	}
+	upstreamModelName = info.OriginModelName
+	if info.ChannelMeta != nil {
+		channelID = info.ChannelId
+		channelType = info.ChannelType
+		apiType = info.ApiType
+		if info.UpstreamModelName != "" {
+			upstreamModelName = info.UpstreamModelName
+		}
+		return channelID, channelType, apiType, upstreamModelName
+	}
+	if c != nil {
+		channelID = rootcommon.GetContextKeyInt(c, appconstant.ContextKeyChannelId)
+		channelType = rootcommon.GetContextKeyInt(c, appconstant.ContextKeyChannelType)
+		apiType, _ = rootcommon.ChannelType2APIType(channelType)
+	}
+	return channelID, channelType, apiType, upstreamModelName
 }
 
 func debugTraceBodyText(header http.Header, body []byte) (string, string) {
