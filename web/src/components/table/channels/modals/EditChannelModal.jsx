@@ -161,6 +161,37 @@ const parseForwardModelTargets = (text) =>
       };
     });
 
+const stringifyMockJSHandlers = (handlers) =>
+  handlers &&
+  typeof handlers === 'object' &&
+  !Array.isArray(handlers) &&
+  Object.keys(handlers).length > 0
+    ? JSON.stringify(handlers, null, 2)
+    : '';
+
+const parseMockJSHandlers = (text) => {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) {
+    return {};
+  }
+  const parsed = JSON.parse(trimmed);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('mock_js_handlers must be a JSON object');
+  }
+  const handlers = {};
+  Object.entries(parsed).forEach(([path, script]) => {
+    const normalizedPath = String(path || '').trim();
+    if (!normalizedPath) {
+      throw new Error('mock_js_handlers path is empty');
+    }
+    if (typeof script !== 'string') {
+      throw new Error('mock_js_handlers value must be string');
+    }
+    handlers[normalizedPath] = script;
+  });
+  return handlers;
+};
+
 const PARAM_OVERRIDE_LEGACY_TEMPLATE = {
   temperature: 0,
 };
@@ -249,6 +280,7 @@ const EditChannelModal = (props) => {
     force_format: false,
     thinking_to_content: false,
     mock_test: false,
+    mock_js_handlers_text: '',
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
@@ -597,6 +629,7 @@ const EditChannelModal = (props) => {
     force_format: false,
     thinking_to_content: false,
     mock_test: false,
+    mock_js_handlers_text: '',
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
@@ -932,6 +965,9 @@ const EditChannelModal = (props) => {
           data.thinking_to_content =
             parsedSettings.thinking_to_content || false;
           data.mock_test = parsedSettings.mock_test || false;
+          data.mock_js_handlers_text = stringifyMockJSHandlers(
+            parsedSettings.mock_js_handlers,
+          );
           data.proxy = parsedSettings.proxy || '';
           data.pass_through_body_enabled =
             parsedSettings.pass_through_body_enabled || false;
@@ -963,6 +999,7 @@ const EditChannelModal = (props) => {
           data.force_format = false;
           data.thinking_to_content = false;
           data.mock_test = false;
+          data.mock_js_handlers_text = '';
           data.proxy = '';
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
@@ -981,6 +1018,7 @@ const EditChannelModal = (props) => {
         data.force_format = false;
         data.thinking_to_content = false;
         data.mock_test = false;
+        data.mock_js_handlers_text = '';
         data.proxy = '';
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
@@ -1099,6 +1137,7 @@ const EditChannelModal = (props) => {
         force_format: data.force_format,
         thinking_to_content: data.thinking_to_content,
         mock_test: data.mock_test || false,
+        mock_js_handlers_text: data.mock_js_handlers_text || '',
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
@@ -1468,6 +1507,7 @@ const EditChannelModal = (props) => {
       force_format: false,
       thinking_to_content: false,
       mock_test: false,
+      mock_js_handlers_text: '',
       proxy: '',
       pass_through_body_enabled: false,
       system_prompt: '',
@@ -1916,6 +1956,14 @@ const EditChannelModal = (props) => {
       }
     }
 
+    let mockJSHandlers = {};
+    try {
+      mockJSHandlers = parseMockJSHandlers(localInputs.mock_js_handlers_text);
+    } catch (error) {
+      showInfo(t('Mock JS处理函数配置不是合法的 JSON 对象'));
+      return;
+    }
+
     // 生成渠道额外设置JSON
     const channelExtraSettings = {
       force_format: localInputs.force_format || false,
@@ -1941,6 +1989,9 @@ const EditChannelModal = (props) => {
       error_intercept_enabled: localInputs.error_intercept_enabled || false,
       error_intercept_message: localInputs.error_intercept_message || '',
     };
+    if (Object.keys(mockJSHandlers).length > 0) {
+      channelExtraSettings.mock_js_handlers = mockJSHandlers;
+    }
     localInputs.setting = JSON.stringify(channelExtraSettings);
 
     // 处理 settings 字段（包括企业账户设置和字段透传控制）
@@ -2018,6 +2069,7 @@ const EditChannelModal = (props) => {
     delete localInputs.force_format;
     delete localInputs.thinking_to_content;
     delete localInputs.mock_test;
+    delete localInputs.mock_js_handlers_text;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
@@ -4212,6 +4264,32 @@ const EditChannelModal = (props) => {
                         '开启后外部请求直接返回固定测试内容，不请求上游且不计费',
                       )}
                     />
+
+                    <div
+                      style={{
+                        display: channelSettings.mock_test ? 'block' : 'none',
+                      }}
+                    >
+                      <Form.TextArea
+                        field='mock_js_handlers_text'
+                        label={t('Mock JS处理函数')}
+                        placeholder={`{
+  "/v1/chat/completions": "function process(body){ return 'OK' }",
+  "/v1/responses": "function process(body){ return JSON.parse(body).input || 'OK' }"
+}`}
+                        onChange={(value) =>
+                          handleChannelSettingsChange(
+                            'mock_js_handlers_text',
+                            value,
+                          )
+                        }
+                        autosize
+                        showClear
+                        extraText={t(
+                          'JSON对象：键为请求路径，值为 JS 函数字符串；函数必须定义 process(body) 并返回文本',
+                        )}
+                      />
+                    </div>
 
                     <Form.Switch
                       field='pass_through_body_enabled'

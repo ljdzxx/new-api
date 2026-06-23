@@ -106,7 +106,7 @@ func seedRelayMockBillingRows(t *testing.T, db *gorm.DB) {
 func newRelayMockContext(stream bool) (*gin.Context, *httptest.ResponseRecorder, *relaycommon.RelayInfo) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 	common.SetContextKey(c, constant.ContextKeyUserId, 42)
@@ -143,6 +143,126 @@ func newRelayMockContext(stream bool) (*gin.Context, *httptest.ResponseRecorder,
 		panic(err)
 	}
 	return c, recorder, info
+}
+
+func TestMockTestRelayUsesPathBoundJSHandler(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, recorder, info := newRelayMockContext(false)
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest: true,
+		MockJSHandlers: map[string]string{
+			"/v1/chat/completions": `function process(body){
+  return JSON.parse(body).messages[0].content.toUpperCase();
+}`,
+		},
+	})
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatal("expected mock test relay to be enabled")
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr != nil {
+		t.Fatalf("mock relay returned error: %v", apiErr)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, "HELLO") {
+		t.Fatalf("expected js handler output in mock response, body: %s", body)
+	}
+
+	var log model.Log
+	if err := db.Order("id desc").First(&log).Error; err != nil {
+		t.Fatalf("failed to read consume log: %v", err)
+	}
+	if log.Quota != 0 {
+		t.Fatalf("expected js mock consume log quota 0, got %d", log.Quota)
+	}
+	if log.CompletionTokens <= 0 {
+		t.Fatalf("expected js mock completion tokens to be simulated, got %d", log.CompletionTokens)
+	}
+}
+
+func TestMockTestRelayUsesPathBoundJSHandlerForStream(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, recorder, info := newRelayMockContext(true)
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest: true,
+		MockJSHandlers: map[string]string{
+			"/v1/chat/completions": `function process(body){
+  return "stream-" + JSON.parse(body).messages[0].content;
+}`,
+		},
+	})
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatal("expected mock test relay to be enabled")
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr != nil {
+		t.Fatalf("mock relay returned error: %v", apiErr)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "stream-hello") {
+		t.Fatalf("expected js handler output in stream mock response, body: %s", body)
+	}
+	if !strings.Contains(body, "usage") {
+		t.Fatalf("expected stream mock response to include usage, body: %s", body)
+	}
+
+	var log model.Log
+	if err := db.Order("id desc").First(&log).Error; err != nil {
+		t.Fatalf("failed to read consume log: %v", err)
+	}
+	if log.Quota != 0 {
+		t.Fatalf("expected stream js mock consume log quota 0, got %d", log.Quota)
+	}
+}
+
+func TestMockTestRelayFallsBackWhenNoJSHandlerMatchesPath(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, recorder, info := newRelayMockContext(false)
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest: true,
+		MockJSHandlers: map[string]string{
+			"/v1/responses": `function process(body){ return "responses"; }`,
+		},
+	})
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatal("expected mock test relay to be enabled")
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr != nil {
+		t.Fatalf("mock relay returned error: %v", apiErr)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, mockTestResponseText) {
+		t.Fatalf("expected default mock response when no js handler matches, body: %s", body)
+	}
+}
+
+func TestMockTestRelayReturnsErrorWhenJSHandlerInvalid(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, _, info := newRelayMockContext(false)
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest: true,
+		MockJSHandlers: map[string]string{
+			"/v1/chat/completions": `function notProcess(body){ return "bad"; }`,
+		},
+	})
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatal("expected mock test relay to be enabled")
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr == nil {
+		t.Fatal("expected invalid js handler to return error")
+	}
+
+	var count int64
+	if err := db.Model(&model.Log{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count logs: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid js handler should not write success consume log, got %d logs", count)
+	}
 }
 
 func TestMockTestRelayRecordsZeroQuotaAndRealExternalTokenName(t *testing.T) {

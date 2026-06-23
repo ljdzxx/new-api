@@ -49,22 +49,26 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 	if info.ChannelMeta == nil {
 		info.InitChannelMeta(c)
 	}
+	responseText, err := resolveMockTestResponseText(c, info)
+	if err != nil {
+		return types.NewError(fmt.Errorf("mock js handler failed: %w", err), types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
+	}
 	info.SetFirstResponseTime()
 	info.ShouldIncludeUsage = true
-	usage := mockTestUsage(c, info)
+	usage := mockTestUsage(c, info, responseText)
 
 	var apiErr *types.NewAPIError
 	if info.IsStream {
 		if info.RelayFormat == types.RelayFormatOpenAI && info.RelayMode == relayconstant.RelayModeCompletions {
-			apiErr = mockTestCompletionsStream(c, info, usage)
+			apiErr = mockTestCompletionsStream(c, info, usage, responseText)
 		} else {
 			switch info.RelayFormat {
 			case types.RelayFormatOpenAIResponses:
-				apiErr = mockTestResponsesStream(c, info, usage)
+				apiErr = mockTestResponsesStream(c, info, usage, responseText)
 			case types.RelayFormatOpenAIResponsesCompaction:
-				apiErr = mockTestResponsesCompaction(c, info, usage)
+				apiErr = mockTestResponsesCompaction(c, info, usage, responseText)
 			default:
-				apiErr = mockTestChatStream(c, info, usage)
+				apiErr = mockTestChatStream(c, info, usage, responseText)
 			}
 		}
 		if apiErr == nil {
@@ -75,18 +79,18 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
-		c.JSON(http.StatusOK, service.ResponseOpenAI2Claude(mockTestOpenAIResponse(c, info, usage), info))
+		c.JSON(http.StatusOK, service.ResponseOpenAI2Claude(mockTestOpenAIResponse(c, info, usage, responseText), info))
 	case types.RelayFormatGemini:
-		c.JSON(http.StatusOK, service.ResponseOpenAI2Gemini(mockTestOpenAIResponse(c, info, usage), info))
+		c.JSON(http.StatusOK, service.ResponseOpenAI2Gemini(mockTestOpenAIResponse(c, info, usage, responseText), info))
 	case types.RelayFormatOpenAIResponses:
-		c.JSON(http.StatusOK, mockTestResponsesResponse(c, info, usage))
+		c.JSON(http.StatusOK, mockTestResponsesResponse(c, info, usage, responseText))
 	case types.RelayFormatOpenAIResponsesCompaction:
-		apiErr = mockTestResponsesCompaction(c, info, usage)
+		apiErr = mockTestResponsesCompaction(c, info, usage, responseText)
 	default:
 		if info.RelayMode == relayconstant.RelayModeCompletions {
-			c.JSON(http.StatusOK, mockTestCompletionsResponse(c, info, usage))
+			c.JSON(http.StatusOK, mockTestCompletionsResponse(c, info, usage, responseText))
 		} else {
-			c.JSON(http.StatusOK, mockTestOpenAIResponse(c, info, usage))
+			c.JSON(http.StatusOK, mockTestOpenAIResponse(c, info, usage, responseText))
 		}
 	}
 	if apiErr == nil {
@@ -95,16 +99,31 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 	return apiErr
 }
 
-func mockTestUsage(c *gin.Context, info *relaycommon.RelayInfo) dto.Usage {
+func resolveMockTestResponseText(c *gin.Context, info *relaycommon.RelayInfo) (string, error) {
+	if c == nil || info == nil || info.ChannelMeta == nil {
+		return mockTestResponseText, nil
+	}
+	script := getMockJSHandlerScript(c, info.ChannelSetting)
+	if script == "" {
+		return mockTestResponseText, nil
+	}
+	body, err := getMockJSBodyText(c)
+	if err != nil {
+		return "", err
+	}
+	return runMockJSProcess(script, body)
+}
+
+func mockTestUsage(c *gin.Context, info *relaycommon.RelayInfo, responseText string) dto.Usage {
 	promptTokens := 0
 	if info.Request != nil {
 		if meta := info.Request.GetTokenCountMeta(); meta != nil && meta.CombineText != "" {
 			promptTokens = service.CountTextToken(meta.CombineText, info.OriginModelName)
 		}
 	}
-	completionTokens := service.CountTextToken(mockTestResponseText, info.OriginModelName)
+	completionTokens := service.CountTextToken(responseText, info.OriginModelName)
 	if completionTokens <= 0 {
-		completionTokens = service.EstimateTokenByModel(info.OriginModelName, mockTestResponseText)
+		completionTokens = service.EstimateTokenByModel(info.OriginModelName, responseText)
 	}
 	info.SetEstimatePromptTokens(promptTokens)
 	common.SetContextKey(c, constant.ContextKeyLocalCountTokens, true)
@@ -234,9 +253,9 @@ func recordMockTestConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, usage
 	})
 }
 
-func mockTestOpenAIResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *dto.OpenAITextResponse {
+func mockTestOpenAIResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) *dto.OpenAITextResponse {
 	message := dto.Message{Role: "assistant"}
-	message.SetStringContent(mockTestResponseText)
+	message.SetStringContent(responseText)
 	return &dto.OpenAITextResponse{
 		Id:      mockTestID(c, "chatcmpl-mock-"),
 		Object:  "chat.completion",
@@ -253,7 +272,7 @@ func mockTestOpenAIResponse(c *gin.Context, info *relaycommon.RelayInfo, usage d
 	}
 }
 
-func mockTestCompletionsResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) gin.H {
+func mockTestCompletionsResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) gin.H {
 	return gin.H{
 		"id":      mockTestID(c, "cmpl-mock-"),
 		"object":  "text_completion",
@@ -262,7 +281,7 @@ func mockTestCompletionsResponse(c *gin.Context, info *relaycommon.RelayInfo, us
 		"choices": []gin.H{
 			{
 				"index":         0,
-				"text":          mockTestResponseText,
+				"text":          responseText,
 				"finish_reason": constant.FinishReasonStop,
 			},
 		},
@@ -270,7 +289,7 @@ func mockTestCompletionsResponse(c *gin.Context, info *relaycommon.RelayInfo, us
 	}
 }
 
-func mockTestCompletionsStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *types.NewAPIError {
+func mockTestCompletionsStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) *types.NewAPIError {
 	helper.SetEventStreamHeaders(c)
 	id := mockTestID(c, "cmpl-mock-")
 	created := common.GetTimestamp()
@@ -281,7 +300,7 @@ func mockTestCompletionsStream(c *gin.Context, info *relaycommon.RelayInfo, usag
 			"created": created,
 			"model":   mockTestModel(info),
 			"choices": []gin.H{
-				{"index": 0, "text": mockTestResponseText, "finish_reason": nil},
+				{"index": 0, "text": responseText, "finish_reason": nil},
 			},
 		},
 		{
@@ -315,7 +334,7 @@ func mockTestCompletionsStream(c *gin.Context, info *relaycommon.RelayInfo, usag
 	return nil
 }
 
-func mockTestChatStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *types.NewAPIError {
+func mockTestChatStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) *types.NewAPIError {
 	helper.SetEventStreamHeaders(c)
 	id := mockTestID(c, "chatcmpl-mock-")
 	created := common.GetTimestamp()
@@ -331,7 +350,7 @@ func mockTestChatStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.U
 				{
 					Index: 0,
 					Delta: dto.ChatCompletionsStreamResponseChoiceDelta{
-						Content: common.GetPointer(mockTestResponseText),
+						Content: common.GetPointer(responseText),
 					},
 				},
 			},
@@ -354,7 +373,7 @@ func mockTestChatStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.U
 	return nil
 }
 
-func mockTestResponsesResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *dto.OpenAIResponsesResponse {
+func mockTestResponsesResponse(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) *dto.OpenAIResponsesResponse {
 	status := json.RawMessage(`"completed"`)
 	return &dto.OpenAIResponsesResponse{
 		ID:        mockTestID(c, "resp_mock_"),
@@ -371,7 +390,7 @@ func mockTestResponsesResponse(c *gin.Context, info *relaycommon.RelayInfo, usag
 				Content: []dto.ResponsesOutputContent{
 					{
 						Type:        "output_text",
-						Text:        mockTestResponseText,
+						Text:        responseText,
 						Annotations: []interface{}{},
 					},
 				},
@@ -384,15 +403,15 @@ func mockTestResponsesResponse(c *gin.Context, info *relaycommon.RelayInfo, usag
 	}
 }
 
-func mockTestResponsesStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *types.NewAPIError {
+func mockTestResponsesStream(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) *types.NewAPIError {
 	helper.SetEventStreamHeaders(c)
-	response := mockTestResponsesResponse(c, info, usage)
+	response := mockTestResponsesResponse(c, info, usage, responseText)
 	outputIndex := 0
 	contentIndex := 0
 	events := []dto.ResponsesStreamResponse{
 		{Type: "response.created", Response: response},
 		{Type: dto.ResponsesOutputTypeItemAdded, OutputIndex: &outputIndex, Item: &response.Output[0]},
-		{Type: "response.output_text.delta", OutputIndex: &outputIndex, ContentIndex: &contentIndex, ItemID: response.Output[0].ID, Delta: mockTestResponseText},
+		{Type: "response.output_text.delta", OutputIndex: &outputIndex, ContentIndex: &contentIndex, ItemID: response.Output[0].ID, Delta: responseText},
 		{Type: "response.output_text.done", OutputIndex: &outputIndex, ContentIndex: &contentIndex, ItemID: response.Output[0].ID},
 		{Type: dto.ResponsesOutputTypeItemDone, OutputIndex: &outputIndex, Item: &response.Output[0]},
 		{Type: "response.completed", Response: response},
@@ -408,8 +427,8 @@ func mockTestResponsesStream(c *gin.Context, info *relaycommon.RelayInfo, usage 
 	return nil
 }
 
-func mockTestResponsesCompaction(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage) *types.NewAPIError {
-	output, err := common.Marshal(mockTestResponseText)
+func mockTestResponsesCompaction(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, responseText string) *types.NewAPIError {
+	output, err := common.Marshal(responseText)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
 	}
