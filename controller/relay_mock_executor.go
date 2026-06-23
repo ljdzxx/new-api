@@ -31,7 +31,7 @@ func getMockJSHandlerScript(c *gin.Context, settings dto.ChannelSettings) string
 }
 
 func getMockJSBodyText(c *gin.Context) (string, error) {
-	if c == nil {
+	if c == nil || c.Request == nil || c.Request.Body == nil {
 		return "", nil
 	}
 	storage, err := common.GetBodyStorage(c)

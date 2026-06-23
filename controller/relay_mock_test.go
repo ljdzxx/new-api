@@ -216,6 +216,40 @@ func TestMockTestRelayUsesPathBoundJSHandlerForStream(t *testing.T) {
 	}
 }
 
+func TestMockTestRelayJSHandlerTreatsNilRequestBodyAsEmpty(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, recorder, info := newRelayMockContext(false)
+	c.Request.Body = nil
+	info.IsChannelTest = true
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest: true,
+		MockJSHandlers: map[string]string{
+			"/v1/chat/completions": `function process(body){
+  return body === "" ? "empty-body" : "unexpected-body";
+}`,
+		},
+	})
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatal("expected mock test relay to be enabled")
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr != nil {
+		t.Fatalf("mock relay returned error: %v", apiErr)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, "empty-body") {
+		t.Fatalf("expected nil request body to be passed as empty string, body: %s", body)
+	}
+
+	var log model.Log
+	if err := db.Order("id desc").First(&log).Error; err != nil {
+		t.Fatalf("failed to read consume log: %v", err)
+	}
+	if log.Quota != 0 {
+		t.Fatalf("expected nil-body js mock consume log quota 0, got %d", log.Quota)
+	}
+}
+
 func TestMockTestRelayFallsBackWhenNoJSHandlerMatchesPath(t *testing.T) {
 	db := setupRelayMockTestDB(t)
 	seedRelayMockBillingRows(t, db)
