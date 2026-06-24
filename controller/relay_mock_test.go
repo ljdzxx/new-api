@@ -216,6 +216,64 @@ func TestMockTestRelayUsesPathBoundJSHandlerForStream(t *testing.T) {
 	}
 }
 
+func TestMockTestRelayBodyBytesLimitAllowsSmallerBody(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, recorder, info := newRelayMockContext(false)
+	bodyBytes, err := getMockRequestBodyBytes(c)
+	if err != nil {
+		t.Fatalf("failed to get mock request body bytes: %v", err)
+	}
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest:           true,
+		MockBodyBytesLimit: bodyBytes + 1,
+	})
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatalf("expected mock test relay when body_bytes=%d is smaller than limit", bodyBytes)
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr != nil {
+		t.Fatalf("mock relay returned error: %v", apiErr)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, mockTestResponseText) {
+		t.Fatalf("mock response missing fixed text, body: %s", body)
+	}
+
+	var log model.Log
+	if err := db.Order("id desc").First(&log).Error; err != nil {
+		t.Fatalf("failed to read consume log: %v", err)
+	}
+	if log.Quota != 0 {
+		t.Fatalf("expected body-bytes-limited mock consume log quota 0, got %d", log.Quota)
+	}
+}
+
+func TestMockTestRelayBodyBytesLimitSkipsWhenBodyBytesNotSmaller(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	c, _, info := newRelayMockContext(false)
+	bodyBytes, err := getMockRequestBodyBytes(c)
+	if err != nil {
+		t.Fatalf("failed to get mock request body bytes: %v", err)
+	}
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest:           true,
+		MockBodyBytesLimit: bodyBytes,
+	})
+
+	if shouldMockTestRelay(c, info) {
+		t.Fatalf("expected mock test relay to be skipped when body_bytes=%d equals limit", bodyBytes)
+	}
+
+	var count int64
+	if err := db.Model(&model.Log{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count logs: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("skipped mock should not write consume log before normal relay, got %d logs", count)
+	}
+}
+
 func TestMockTestRelayJSHandlerTreatsNilRequestBodyAsEmpty(t *testing.T) {
 	db := setupRelayMockTestDB(t)
 	seedRelayMockBillingRows(t, db)

@@ -45,6 +45,30 @@ func getMockJSBodyText(c *gin.Context) (string, error) {
 	return string(body), nil
 }
 
+func getMockRequestBodyBytes(c *gin.Context) (int64, error) {
+	if c == nil {
+		return 0, nil
+	}
+	if storage, exists := c.Get(common.KeyBodyStorage); exists && storage != nil {
+		if bs, ok := storage.(common.BodyStorage); ok {
+			return bs.Size(), nil
+		}
+	}
+	if cached, exists := c.Get(common.KeyRequestBody); exists && cached != nil {
+		if body, ok := cached.([]byte); ok {
+			return int64(len(body)), nil
+		}
+	}
+	if c.Request == nil || c.Request.Body == nil {
+		return 0, nil
+	}
+	storage, err := common.GetBodyStorage(c)
+	if err != nil {
+		return 0, err
+	}
+	return storage.Size(), nil
+}
+
 func runMockJSProcess(script string, body string) (string, error) {
 	script = strings.TrimSpace(script)
 	if script == "" {

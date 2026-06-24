@@ -36,6 +36,12 @@ func shouldMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) bool {
 		if info.ChannelMeta == nil {
 			info.InitChannelMeta(c)
 		}
+		if channelSetting.MockBodyBytesLimit > 0 {
+			bodyBytes, err := getMockRequestBodyBytes(c)
+			if err != nil || bodyBytes >= channelSetting.MockBodyBytesLimit {
+				return false
+			}
+		}
 		return true
 	default:
 		return false

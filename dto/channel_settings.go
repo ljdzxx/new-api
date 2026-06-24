@@ -21,6 +21,7 @@ type ChannelSettings struct {
 	ThinkingToContent      bool                        `json:"thinking_to_content,omitempty"`
 	MockTest               bool                        `json:"mock_test,omitempty"`
 	MockJSHandlers         map[string]string           `json:"mock_js_handlers,omitempty"`
+	MockBodyBytesLimit     int64                       `json:"mock_body_bytes_limit,omitempty"`
 	Proxy                  string                      `json:"proxy"`
 	PassThroughBodyEnabled bool                        `json:"pass_through_body_enabled,omitempty"`
 	SystemPrompt           string                      `json:"system_prompt,omitempty"`

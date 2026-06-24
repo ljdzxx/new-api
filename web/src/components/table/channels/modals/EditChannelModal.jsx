@@ -280,6 +280,7 @@ const EditChannelModal = (props) => {
     force_format: false,
     thinking_to_content: false,
     mock_test: false,
+    mock_body_bytes_limit: 0,
     mock_js_handlers_text: '',
     proxy: '',
     pass_through_body_enabled: false,
@@ -629,6 +630,7 @@ const EditChannelModal = (props) => {
     force_format: false,
     thinking_to_content: false,
     mock_test: false,
+    mock_body_bytes_limit: 0,
     mock_js_handlers_text: '',
     proxy: '',
     pass_through_body_enabled: false,
@@ -965,6 +967,8 @@ const EditChannelModal = (props) => {
           data.thinking_to_content =
             parsedSettings.thinking_to_content || false;
           data.mock_test = parsedSettings.mock_test || false;
+          data.mock_body_bytes_limit =
+            Number(parsedSettings.mock_body_bytes_limit) || 0;
           data.mock_js_handlers_text = stringifyMockJSHandlers(
             parsedSettings.mock_js_handlers,
           );
@@ -999,6 +1003,7 @@ const EditChannelModal = (props) => {
           data.force_format = false;
           data.thinking_to_content = false;
           data.mock_test = false;
+          data.mock_body_bytes_limit = 0;
           data.mock_js_handlers_text = '';
           data.proxy = '';
           data.pass_through_body_enabled = false;
@@ -1018,6 +1023,7 @@ const EditChannelModal = (props) => {
         data.force_format = false;
         data.thinking_to_content = false;
         data.mock_test = false;
+        data.mock_body_bytes_limit = 0;
         data.mock_js_handlers_text = '';
         data.proxy = '';
         data.pass_through_body_enabled = false;
@@ -1137,6 +1143,7 @@ const EditChannelModal = (props) => {
         force_format: data.force_format,
         thinking_to_content: data.thinking_to_content,
         mock_test: data.mock_test || false,
+        mock_body_bytes_limit: data.mock_body_bytes_limit || 0,
         mock_js_handlers_text: data.mock_js_handlers_text || '',
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
@@ -1507,6 +1514,7 @@ const EditChannelModal = (props) => {
       force_format: false,
       thinking_to_content: false,
       mock_test: false,
+      mock_body_bytes_limit: 0,
       mock_js_handlers_text: '',
       proxy: '',
       pass_through_body_enabled: false,
@@ -1969,6 +1977,7 @@ const EditChannelModal = (props) => {
       force_format: localInputs.force_format || false,
       thinking_to_content: localInputs.thinking_to_content || false,
       mock_test: localInputs.mock_test || false,
+      mock_body_bytes_limit: Number(localInputs.mock_body_bytes_limit) || 0,
       proxy: localInputs.proxy || '',
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
@@ -2069,6 +2078,7 @@ const EditChannelModal = (props) => {
     delete localInputs.force_format;
     delete localInputs.thinking_to_content;
     delete localInputs.mock_test;
+    delete localInputs.mock_body_bytes_limit;
     delete localInputs.mock_js_handlers_text;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
@@ -4270,6 +4280,22 @@ const EditChannelModal = (props) => {
                         display: channelSettings.mock_test ? 'block' : 'none',
                       }}
                     >
+                      <Form.InputNumber
+                        field='mock_body_bytes_limit'
+                        label={t('Mock body_bytes上限')}
+                        placeholder={t('为空或 0 表示不限制')}
+                        min={0}
+                        value={inputs.mock_body_bytes_limit || undefined}
+                        onNumberChange={(value) =>
+                          handleChannelSettingsChange(
+                            'mock_body_bytes_limit',
+                            Number(value) || 0,
+                          )
+                        }
+                        extraText={t(
+                          '仅当请求体 body_bytes 小于该值时才走 Mock 测试',
+                        )}
+                      />
                       <Form.TextArea
                         field='mock_js_handlers_text'
                         label={t('Mock JS处理函数')}
