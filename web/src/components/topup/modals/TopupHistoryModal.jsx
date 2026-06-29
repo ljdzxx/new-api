@@ -53,9 +53,21 @@ const PAYMENT_METHOD_MAP = {
   alipay: '支付宝',
   wxpay: '微信',
   mall: '商城',
+  redemption: '兑换码',
+  aff: '邀请奖励',
+  aff_inviter: '拉新奖励',
+  aff_invitee: '受邀奖励',
 };
 
-const TopupHistoryModal = ({ visible, onCancel, t }) => {
+const PAYMENT_PROVIDER_MAP = {
+  epay: 'Epay',
+  stripe: 'Stripe',
+  creem: 'Creem',
+  mall: '商城',
+  promotion: '活动',
+};
+
+const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
   const [loading, setLoading] = useState(false);
   const [topups, setTopups] = useState([]);
   const [total, setTotal] = useState(0);
@@ -72,7 +84,8 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       const base = userIsAdmin ? '/api/user/topup' : '/api/user/topup/self';
       const qs =
         `p=${currentPage}&page_size=${currentPageSize}` +
-        (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '');
+        (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '') +
+        (userIsAdmin && userId > 0 ? `&user_id=${userId}` : '');
       const endpoint = `${base}?${qs}`;
       const res = await API.get(endpoint);
       const { success, message, data } = res.data;
@@ -94,7 +107,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     if (visible) {
       loadTopups(page, pageSize);
     }
-  }, [visible, page, pageSize, keyword]);
+  }, [visible, page, pageSize, keyword, userId]);
 
   const handleAdminComplete = async (tradeNo) => {
     try {
@@ -136,6 +149,11 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     return <Text>{displayName ? t(displayName) : pm || '-'}</Text>;
   };
 
+  const renderPaymentProvider = (provider) => {
+    const displayName = PAYMENT_PROVIDER_MAP[provider];
+    return <Text>{displayName ? t(displayName) : provider || '-'}</Text>;
+  };
+
   const isSubscriptionTopup = (record) => {
     const tradeNo = (record?.trade_no || '').toLowerCase();
     return Number(record?.amount || 0) === 0 && tradeNo.startsWith('sub');
@@ -147,18 +165,36 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('订单号'),
         dataIndex: 'trade_no',
         key: 'trade_no',
-        render: (text) => <Text copyable>{text}</Text>,
+        width: 280,
+        render: (text) => (
+          <Text
+            copyable={{ content: text }}
+            ellipsis={{ showTooltip: true }}
+            style={{ maxWidth: 260 }}
+          >
+            {text}
+          </Text>
+        ),
       },
       {
         title: t('支付方式'),
         dataIndex: 'payment_method',
         key: 'payment_method',
+        width: 110,
         render: renderPaymentMethod,
+      },
+      {
+        title: t('来源'),
+        dataIndex: 'payment_provider',
+        key: 'payment_provider',
+        width: 90,
+        render: renderPaymentProvider,
       },
       {
         title: t('充值额度'),
         dataIndex: 'amount',
         key: 'amount',
+        width: 110,
         render: (amount, record) => {
           if (isSubscriptionTopup(record)) {
             return (
@@ -179,6 +215,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('支付金额'),
         dataIndex: 'money',
         key: 'money',
+        width: 110,
         render: (money) => (
           <Text type='danger'>¥{Number(money || 0).toFixed(2)}</Text>
         ),
@@ -187,6 +224,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('状态'),
         dataIndex: 'status',
         key: 'status',
+        width: 90,
         render: renderStatusBadge,
       },
     ];
@@ -195,6 +233,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       baseColumns.push({
         title: t('操作'),
         key: 'action',
+        width: 90,
         render: (_, record) => {
           if (record.status !== 'pending') return null;
           return (
@@ -215,6 +254,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       title: t('创建时间'),
       dataIndex: 'create_time',
       key: 'create_time',
+      width: 150,
       render: (time) => timestamp2string(time),
     });
 
@@ -228,6 +268,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       onCancel={onCancel}
       footer={null}
       size={isMobile ? 'full-width' : 'large'}
+      width={isMobile ? '100vw' : userIsAdmin ? 1060 : 970}
     >
       <div className='mb-3'>
         <Input
@@ -260,6 +301,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           },
         }}
         size='small'
+        scroll={{ x: userIsAdmin ? 1030 : 940 }}
         empty={
           <Empty
             image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useContext, useRef } from 'react';
+import React, { useEffect, useState, useContext, useRef, useMemo } from 'react';
 import {
   API,
   showError,
@@ -26,7 +26,6 @@ import {
   renderQuota,
   renderQuotaWithAmount,
   copy,
-  getQuotaPerUnit,
   executePaymentCheckout,
 } from '../../helpers';
 import { Modal, Toast } from '@douyinfe/semi-ui';
@@ -36,8 +35,6 @@ import { StatusContext } from '../../context/Status';
 import { REDEMPTION_REWARD_TYPES } from '../../constants/redemption.constants';
 
 import RechargeCard from './RechargeCard';
-import InvitationCard from './InvitationCard';
-import TransferModal from './modals/TransferModal';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
 
@@ -177,8 +174,6 @@ const TopUp = () => {
   const affFetchedRef = useRef(false);
 
   const [affLink, setAffLink] = useState('');
-  const [openTransfer, setOpenTransfer] = useState(false);
-  const [transferAmount, setTransferAmount] = useState(0);
 
   const [openHistory, setOpenHistory] = useState(false);
 
@@ -198,10 +193,39 @@ const TopUp = () => {
     mall_links: {},
   });
 
+  const invitationRewardInfo = useMemo(() => {
+    const status = statusState?.status || {};
+    const quotaPerUnit = Number(status.quota_per_unit || 1);
+    const normalizeMoney = (quota) => {
+      const value = Number(quota || 0);
+      if (!Number.isFinite(value) || value <= 0 || quotaPerUnit <= 0) {
+        return 0;
+      }
+      return value / quotaPerUnit;
+    };
+    const planId = Number(status.invitee_subscription_plan_id || 0);
+    const matchedPlan = (subscriptionPlans || []).find(
+      (item) => Number(item?.plan?.id || 0) === planId,
+    );
+
+    return {
+      inviteeMoney: normalizeMoney(status.quota_for_invitee),
+      inviterMoney: normalizeMoney(status.quota_for_inviter),
+      inviteePlanTitle:
+        planId > 0
+          ? (
+              status.invitee_subscription_plan_title ||
+              matchedPlan?.plan?.title ||
+              ''
+            ).trim()
+          : '',
+    };
+  }, [statusState?.status, subscriptionPlans]);
+
   const topUp = async () => {
     if (redemptionCode === '') {
       showInfo(t('请输入兑换码！'));
-      return;
+      return false;
     }
     setIsSubmitting(true);
     try {
@@ -246,11 +270,14 @@ const TopUp = () => {
           }
         }
         setRedemptionCode('');
+        return true;
       } else {
         showError(message);
+        return false;
       }
     } catch (err) {
       showError(t('操作失败'));
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -606,27 +633,6 @@ const TopUp = () => {
     }
   };
 
-  // Transfer quota to a referred user
-  const transfer = async () => {
-    if (transferAmount < getQuotaPerUnit()) {
-      showError(
-        'Transfer amount must be at least ' + renderQuota(getQuotaPerUnit()),
-      );
-      return;
-    }
-    const res = await API.post(`/api/user/aff_transfer`, {
-      quota: transferAmount,
-    });
-    const { success, message } = res.data;
-    if (success) {
-      showSuccess(message);
-      setOpenTransfer(false);
-      getUserQuota().then();
-    } else {
-      showError(message);
-    }
-  };
-
   // Copy invitation link
   const handleAffLinkClick = async () => {
     await copy(affLink);
@@ -635,7 +641,6 @@ const TopUp = () => {
 
   useEffect(() => {
     getUserQuota().then();
-    setTransferAmount(getQuotaPerUnit());
   }, []);
 
   useEffect(() => {
@@ -718,10 +723,6 @@ const TopUp = () => {
     setOpen(false);
   };
 
-  const handleTransferCancel = () => {
-    setOpenTransfer(false);
-  };
-
   const handleOpenHistory = () => {
     setOpenHistory(true);
   };
@@ -756,19 +757,6 @@ const TopUp = () => {
 
   return (
     <div className='w-full max-w-7xl mx-auto relative min-h-screen lg:min-h-0 mt-[60px] px-2'>
-      {/* Transfer modal */}
-      <TransferModal
-        t={t}
-        openTransfer={openTransfer}
-        transfer={transfer}
-        handleTransferCancel={handleTransferCancel}
-        userState={userState}
-        renderQuota={renderQuota}
-        getQuotaPerUnit={getQuotaPerUnit}
-        transferAmount={transferAmount}
-        setTransferAmount={setTransferAmount}
-      />
-
       {/* Payment confirmation modal */}
       <PaymentConfirmModal
         t={t}
@@ -826,7 +814,7 @@ const TopUp = () => {
       </Modal>
 
       {/* Main content */}
-      <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+      <div className='w-full'>
         <RechargeCard
           t={t}
           enableOnlineTopUp={enableOnlineTopUp}
@@ -870,14 +858,9 @@ const TopUp = () => {
           activeSubscriptions={activeSubscriptions}
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={getSubscriptionSelf}
-        />
-        <InvitationCard
-          t={t}
-          userState={userState}
-          renderQuota={renderQuota}
-          setOpenTransfer={setOpenTransfer}
           affLink={affLink}
           handleAffLinkClick={handleAffLinkClick}
+          invitationRewardInfo={invitationRewardInfo}
         />
       </div>
     </div>

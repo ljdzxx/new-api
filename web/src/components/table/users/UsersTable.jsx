@@ -34,6 +34,7 @@ import ResetTwoFAModal from './modals/ResetTwoFAModal';
 import UserSubscriptionsModal from './modals/UserSubscriptionsModal';
 import UserSubscriptionStatsModal from './modals/UserSubscriptionStatsModal';
 import UserRedemptionRecordsModal from './modals/UserRedemptionRecordsModal';
+import TopupHistoryModal from '../../topup/modals/TopupHistoryModal';
 
 const UsersTable = (usersData) => {
   const {
@@ -71,6 +72,7 @@ const UsersTable = (usersData) => {
     useState(false);
   const [showUserSubscriptionStatsModal, setShowUserSubscriptionStatsModal] =
     useState(false);
+  const [showUserOrdersModal, setShowUserOrdersModal] = useState(false);
 
   // Modal handlers
   const showPromoteUserModal = (user) => {
@@ -119,6 +121,11 @@ const UsersTable = (usersData) => {
     setShowUserSubscriptionStatsModal(true);
   };
 
+  const showUserOrdersUserModal = (user) => {
+    setModalUser(user);
+    setShowUserOrdersModal(true);
+  };
+
   // Modal confirm handlers
   const handlePromoteConfirm = () => {
     manageUser(modalUser.id, 'promote', modalUser);
@@ -158,6 +165,7 @@ const UsersTable = (usersData) => {
       showResetPasskeyModal: showResetPasskeyUserModal,
       showResetTwoFAModal: showResetTwoFAUserModal,
       showUserSubscriptionsModal: showUserSubscriptionsUserModal,
+      showUserOrdersModal: showUserOrdersUserModal,
       showUserRedemptionRecordsModal: showUserRedemptionRecordsUserModal,
       showUserSubscriptionStatsModal: showUserSubscriptionStatsUserModal,
     });
@@ -172,6 +180,7 @@ const UsersTable = (usersData) => {
     showResetPasskeyUserModal,
     showResetTwoFAUserModal,
     showUserSubscriptionsUserModal,
+    showUserOrdersUserModal,
     showUserRedemptionRecordsUserModal,
     showUserSubscriptionStatsUserModal,
   ]);
@@ -299,6 +308,13 @@ const UsersTable = (usersData) => {
         onCancel={() => setShowUserSubscriptionStatsModal(false)}
         user={modalUser}
         t={t}
+      />
+
+      <TopupHistoryModal
+        visible={showUserOrdersModal}
+        onCancel={() => setShowUserOrdersModal(false)}
+        t={t}
+        userId={modalUser?.id || 0}
       />
     </>
   );

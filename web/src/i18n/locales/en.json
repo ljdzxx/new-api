@@ -3348,6 +3348,13 @@
     "计费": "Billing",
     "新用户使用邀请码奖励订阅套餐": "Subscription plan reward for new users using an invite code",
     "未选择": "Not selected",
-    "允许注册的邮箱域名": "Allowed email domains for registration"
+    "允许注册的邮箱域名": "Allowed email domains for registration",
+    "按量计费充值": "Pay-as-you-go top-up",
+    "活动": "Promotion",
+    "已保存偏好为优先订阅，当前无生效订阅，将自动使用钱包": "Preference saved as subscription first. No active subscription is available, so wallet balance will be used automatically.",
+    "每邀请一个新人注册，新人自动获得": "For each new user you invite, they automatically receive",
+    "同时您也将获得": "You will also receive",
+    "拉新奖励": "Referral reward",
+    "受邀奖励": "Invitee reward"
   }
 }

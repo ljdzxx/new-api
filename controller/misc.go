@@ -76,6 +76,12 @@ func GetStatus(c *gin.Context) {
 
 	passkeySetting := system_setting.GetPasskeySettings()
 	legalSetting := system_setting.GetLegalSettings()
+	inviteeSubscriptionPlanTitle := ""
+	if common.InviteeSubscriptionPlanId > 0 {
+		if plan, err := model.GetSubscriptionPlanById(common.InviteeSubscriptionPlanId); err == nil && plan != nil {
+			inviteeSubscriptionPlanTitle = strings.TrimSpace(plan.Title)
+		}
+	}
 
 	data := gin.H{
 		"version":                          common.Version,
@@ -103,6 +109,10 @@ func GetStatus(c *gin.Context) {
 		"top_up_link":                      common.TopUpLink,
 		"docs_link":                        operation_setting.GetGeneralSetting().DocsLink,
 		"quota_per_unit":                   common.QuotaPerUnit,
+		"quota_for_invitee":                common.QuotaForInvitee,
+		"quota_for_inviter":                common.QuotaForInviter,
+		"invitee_subscription_plan_id":     common.InviteeSubscriptionPlanId,
+		"invitee_subscription_plan_title":  inviteeSubscriptionPlanTitle,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type
 		"display_in_currency":                    operation_setting.IsCurrencyDisplay(),
 		"quota_display_type":                     operation_setting.GetQuotaDisplayType(),

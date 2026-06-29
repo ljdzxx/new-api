@@ -3311,6 +3311,13 @@
     "计费": "Facturation",
     "新用户使用邀请码奖励订阅套餐": "Abonnement offert aux nouveaux utilisateurs avec code d'invitation",
     "未选择": "Non selectionne",
-    "允许注册的邮箱域名": "Domaines e-mail autorises pour l'inscription"
+    "允许注册的邮箱域名": "Domaines e-mail autorises pour l'inscription",
+    "按量计费充值": "Recharge a l’usage",
+    "活动": "Promotion",
+    "已保存偏好为优先订阅，当前无生效订阅，将自动使用钱包": "Preference enregistree avec l’abonnement en priorite. Aucun abonnement actif, le solde du portefeuille sera utilise automatiquement.",
+    "每邀请一个新人注册，新人自动获得": "Pour chaque nouvel utilisateur invite, il recoit automatiquement",
+    "同时您也将获得": "Vous recevrez egalement",
+    "拉新奖励": "Recompense de parrainage",
+    "受邀奖励": "Recompense invite"
   }
 }

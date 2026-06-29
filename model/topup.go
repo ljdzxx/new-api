@@ -31,10 +31,17 @@ type TopUp struct {
 }
 
 const (
-	PaymentProviderEpay   = "epay"
-	PaymentProviderStripe = "stripe"
-	PaymentProviderCreem  = "creem"
-	PaymentProviderMall   = "mall"
+	PaymentProviderEpay      = "epay"
+	PaymentProviderStripe    = "stripe"
+	PaymentProviderCreem     = "creem"
+	PaymentProviderMall      = "mall"
+	PaymentProviderPromotion = "promotion"
+)
+
+const (
+	PaymentMethodAffLegacy  = "aff"
+	PaymentMethodAffInviter = "aff_inviter"
+	PaymentMethodAffInvitee = "aff_invitee"
 )
 
 const (
@@ -72,6 +79,18 @@ func (topUp *TopUp) Update() error {
 	var err error
 	err = DB.Save(topUp).Error
 	return err
+}
+
+func quotaToTopUpAmount(quota int) int64 {
+	if quota <= 0 {
+		return 0
+	}
+	if common.QuotaPerUnit <= 0 {
+		return int64(quota)
+	}
+	dQuota := decimal.NewFromInt(int64(quota))
+	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	return dQuota.Div(dQuotaPerUnit).IntPart()
 }
 
 func GetTopUpById(id int) *TopUp {

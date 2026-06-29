@@ -457,14 +457,86 @@ func HardDeleteUserById(id int) error {
 }
 
 func inviteUser(inviterId int) (err error) {
-	user, err := GetUserById(inviterId, true)
-	if err != nil {
-		return err
+	if inviterId <= 0 {
+		return nil
 	}
-	user.AffCount++
-	user.AffQuota += common.QuotaForInviter
-	user.AffHistoryQuota += common.QuotaForInviter
-	return DB.Save(user).Error
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		user := User{}
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", inviterId).First(&user).Error; err != nil {
+			return err
+		}
+		user.AffCount++
+		user.AffHistoryQuota += common.QuotaForInviter
+		user.Quota += common.QuotaForInviter
+		if err := tx.Save(&user).Error; err != nil {
+			return err
+		}
+		return createPromotionTopUpTx(tx, inviterId, common.QuotaForInviter, PaymentMethodAffInviter)
+	})
+	if err == nil {
+		_ = invalidateUserCache(inviterId)
+	}
+	return err
+}
+
+func createPromotionTopUpTx(tx *gorm.DB, userId int, quota int, paymentMethod string) error {
+	if tx == nil || userId <= 0 || quota <= 0 {
+		return nil
+	}
+	if strings.TrimSpace(paymentMethod) == "" {
+		paymentMethod = PaymentMethodAffLegacy
+	}
+	now := common.GetTimestamp()
+	topup := TopUp{
+		UserId:          userId,
+		Amount:          quotaToTopUpAmount(quota),
+		Money:           0,
+		TradeNo:         "PROMO" + common.GetUUID(),
+		PaymentMethod:   paymentMethod,
+		PaymentProvider: PaymentProviderPromotion,
+		CreateTime:      now,
+		CompleteTime:    now,
+		Status:          common.TopUpStatusSuccess,
+	}
+	return tx.Create(&topup).Error
+}
+
+func createPromotionSubscriptionTopUpTx(tx *gorm.DB, userId int, paymentMethod string) error {
+	if tx == nil || userId <= 0 {
+		return nil
+	}
+	if strings.TrimSpace(paymentMethod) == "" {
+		paymentMethod = PaymentMethodAffLegacy
+	}
+	now := common.GetTimestamp()
+	topup := TopUp{
+		UserId:          userId,
+		Amount:          0,
+		Money:           0,
+		TradeNo:         "PROMO" + common.GetUUID(),
+		PaymentMethod:   paymentMethod,
+		PaymentProvider: PaymentProviderPromotion,
+		CreateTime:      now,
+		CompleteTime:    now,
+		Status:          common.TopUpStatusSuccess,
+	}
+	return tx.Create(&topup).Error
+}
+
+func grantInviteeQuota(userId int) error {
+	if userId <= 0 || common.QuotaForInvitee <= 0 {
+		return nil
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&User{}).Where("id = ?", userId).Update("quota", gorm.Expr("quota + ?", common.QuotaForInvitee)).Error; err != nil {
+			return err
+		}
+		return createPromotionTopUpTx(tx, userId, common.QuotaForInvitee, PaymentMethodAffInvitee)
+	})
+	if err == nil {
+		_ = invalidateUserCache(userId)
+	}
+	return err
 }
 
 func grantInviteeSubscription(userId int) {
@@ -478,8 +550,10 @@ func grantInviteeSubscription(userId int) {
 		return
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		_, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "invitee")
-		return err
+		if _, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, "invitee"); err != nil {
+			return err
+		}
+		return createPromotionSubscriptionTopUpTx(tx, userId, PaymentMethodAffInvitee)
 	})
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to grant invitee subscription plan #%d to user #%d: %s", planId, userId, err.Error()))
@@ -505,7 +579,7 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	defer tx.Rollback() // 确保在函数退出时事务能回滚
 
 	// 加锁查询用户以确保数据一致性
-	err := tx.Set("gorm:query_option", "FOR UPDATE").First(&user, user.Id).Error
+	err := tx.Set("gorm:query_option", "FOR UPDATE").First(user, user.Id).Error
 	if err != nil {
 		return err
 	}
@@ -524,8 +598,16 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 		return err
 	}
 
+	if err := createPromotionTopUpTx(tx, user.Id, quota, PaymentMethodAffInviter); err != nil {
+		return err
+	}
+
 	// 提交事务
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	_ = invalidateUserCache(user.Id)
+	return nil
 }
 
 func (user *User) Insert(inviterId int) error {
@@ -575,7 +657,9 @@ func (user *User) Insert(inviterId int) error {
 	}
 	if inviterId != 0 {
 		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
+			if err := grantInviteeQuota(user.Id); err != nil {
+				common.SysLog(fmt.Sprintf("failed to grant invitee quota to user #%d: %s", user.Id, err.Error()))
+			}
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
 		grantInviteeSubscription(user.Id)
@@ -640,7 +724,9 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	}
 	if inviterId != 0 {
 		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
+			if err := grantInviteeQuota(user.Id); err != nil {
+				common.SysLog(fmt.Sprintf("failed to grant invitee quota to user #%d: %s", user.Id, err.Error()))
+			}
 			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
 		}
 		grantInviteeSubscription(user.Id)

@@ -169,7 +169,98 @@ func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 
 	var topup TopUp
 	require.NoError(t, DB.Where("user_id = ? AND payment_method = ?", user.Id, "redemption").First(&topup).Error)
+	assert.Equal(t, int64(120), topup.Amount)
 	assert.InDelta(t, 240.0, topup.Money, 0.0001)
+	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
+}
+
+func TestInviteRewardsWritePromotionTopUpsForBothUsersWithScaledAmount(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+
+	originQuotaForNewUser := common.QuotaForNewUser
+	originQuotaForInvitee := common.QuotaForInvitee
+	originQuotaForInviter := common.QuotaForInviter
+	t.Cleanup(func() {
+		common.QuotaForNewUser = originQuotaForNewUser
+		common.QuotaForInvitee = originQuotaForInvitee
+		common.QuotaForInviter = originQuotaForInviter
+	})
+
+	common.QuotaPerUnit = 100
+	common.QuotaForNewUser = 0
+	common.QuotaForInvitee = 5000
+	common.QuotaForInviter = 12000
+
+	inviter := createRegisteredUser(t, "invite_topup_inviter")
+	invitee := &User{
+		Username:    fmt.Sprintf("invite_topup_invitee_%d", time.Now().UnixNano()),
+		Password:    "Password123",
+		DisplayName: "invitee",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+	}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	var inviteeTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", invitee.Id, PaymentMethodAffInvitee, PaymentProviderPromotion).First(&inviteeTopUp).Error)
+	assert.Equal(t, int64(50), inviteeTopUp.Amount)
+	assert.InDelta(t, 0.0, inviteeTopUp.Money, 0.0001)
+	assert.Equal(t, common.TopUpStatusSuccess, inviteeTopUp.Status)
+
+	var inviterTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", inviter.Id, PaymentMethodAffInviter, PaymentProviderPromotion).First(&inviterTopUp).Error)
+	assert.Equal(t, int64(120), inviterTopUp.Amount)
+	assert.InDelta(t, 0.0, inviterTopUp.Money, 0.0001)
+	assert.Equal(t, common.TopUpStatusSuccess, inviterTopUp.Status)
+}
+
+func TestInviteeSubscriptionRewardWritesPromotionTopUp(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+
+	originQuotaForNewUser := common.QuotaForNewUser
+	originQuotaForInvitee := common.QuotaForInvitee
+	originQuotaForInviter := common.QuotaForInviter
+	originInviteeSubscriptionPlanId := common.InviteeSubscriptionPlanId
+	t.Cleanup(func() {
+		common.QuotaForNewUser = originQuotaForNewUser
+		common.QuotaForInvitee = originQuotaForInvitee
+		common.QuotaForInviter = originQuotaForInviter
+		common.InviteeSubscriptionPlanId = originInviteeSubscriptionPlanId
+	})
+
+	common.QuotaForNewUser = 0
+	common.QuotaForInvitee = 0
+	common.QuotaForInviter = 0
+
+	plan := &SubscriptionPlan{
+		Title:         "invitee reward plan",
+		PriceAmount:   0,
+		Currency:      "USD",
+		DurationUnit:  "month",
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   1000,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+	common.InviteeSubscriptionPlanId = plan.Id
+
+	inviter := createRegisteredUser(t, "invite_subscription_inviter")
+	invitee := &User{
+		Username:    fmt.Sprintf("invite_subscription_invitee_%d", time.Now().UnixNano()),
+		Password:    "Password123",
+		DisplayName: "invitee",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+	}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	var subscription UserSubscription
+	require.NoError(t, DB.Where("user_id = ? AND plan_id = ?", invitee.Id, plan.Id).First(&subscription).Error)
+
+	var topup TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", invitee.Id, PaymentMethodAffInvitee, PaymentProviderPromotion).First(&topup).Error)
+	assert.Equal(t, int64(0), topup.Amount)
+	assert.InDelta(t, 0.0, topup.Money, 0.0001)
 	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
 }
 

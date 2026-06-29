@@ -55,6 +55,9 @@ const PAYMENT_METHOD_MAP = {
   wxpay: '微信',
   mall: '商城',
   redemption: '兑换码',
+  aff: '邀请奖励',
+  aff_inviter: '拉新奖励',
+  aff_invitee: '受邀奖励',
 };
 
 const PAYMENT_PROVIDER_MAP = {
@@ -62,6 +65,7 @@ const PAYMENT_PROVIDER_MAP = {
   stripe: 'Stripe',
   creem: 'Creem',
   mall: '商城',
+  promotion: '活动',
 };
 
 const RECONCILE_STATUS_CONFIG = {
@@ -81,6 +85,14 @@ const RECONCILE_JOB_STATUS_CONFIG = {
 const isSubscriptionTopup = (record) => {
   const tradeNo = (record?.trade_no || '').toLowerCase();
   return Number(record?.amount || 0) === 0 && tradeNo.startsWith('sub');
+};
+
+const getDefaultDateRange = () => {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return [start, end];
 };
 
 const Order = () => {
@@ -202,6 +214,7 @@ const Order = () => {
 
   const handleReset = () => {
     formApi?.reset();
+    formApi?.setValues?.({ dateRange: getDefaultDateRange() });
     setPage(1);
     setTimeout(() => loadOrders(1, pageSize), 0);
   };
@@ -597,6 +610,7 @@ const Order = () => {
           allowEmpty
           autoComplete='off'
           layout='vertical'
+          initValues={{ dateRange: getDefaultDateRange() }}
         >
           <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-2'>
             <Form.Input
@@ -646,6 +660,7 @@ const Order = () => {
                 { label: 'Stripe', value: 'stripe' },
                 { label: 'Creem', value: 'creem' },
                 { label: t('商城'), value: 'mall' },
+                { label: t('活动'), value: 'promotion' },
               ]}
             />
             <Form.Select
@@ -661,6 +676,9 @@ const Order = () => {
                 { label: 'Stripe', value: 'stripe' },
                 { label: 'Creem', value: 'creem' },
                 { label: t('商城'), value: 'mall' },
+                { label: t('邀请奖励'), value: 'aff' },
+                { label: t('拉新奖励'), value: 'aff_inviter' },
+                { label: t('受邀奖励'), value: 'aff_invitee' },
               ]}
             />
             <Form.Select

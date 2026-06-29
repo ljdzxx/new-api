@@ -181,7 +181,7 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, re
 
 		topup := TopUp{
 			UserId:          userId,
-			Amount:          int64(redemption.Quota),
+			Amount:          quotaToTopUpAmount(redemption.Quota),
 			Money:           redemption.PayMoney,
 			TradeNo:         tradeNo,
 			PaymentMethod:   "redemption",

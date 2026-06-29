@@ -312,6 +312,7 @@ export const renderOperations = (
     showResetPasskeyModal,
     showResetTwoFAModal,
     showUserSubscriptionsModal,
+    showUserOrdersModal,
     t,
   },
 ) => {
@@ -320,6 +321,19 @@ export const renderOperations = (
   }
 
   const moreMenu = [
+    {
+      node: 'item',
+      name: t('提升'),
+      onClick: () => showPromoteModal(record),
+    },
+    {
+      node: 'item',
+      name: t('降级'),
+      onClick: () => showDemoteModal(record),
+    },
+    {
+      node: 'divider',
+    },
     {
       node: 'item',
       name: t('订阅管理'),
@@ -351,6 +365,14 @@ export const renderOperations = (
 
   return (
     <Space>
+      <Button
+        type='tertiary'
+        theme='light'
+        size='small'
+        onClick={() => showUserOrdersModal(record)}
+      >
+        {t('订单')}
+      </Button>
       <Button
         type='primary'
         theme='light'
@@ -384,20 +406,6 @@ export const renderOperations = (
         }}
       >
         {t('编辑')}
-      </Button>
-      <Button
-        type='warning'
-        size='small'
-        onClick={() => showPromoteModal(record)}
-      >
-        {t('提升')}
-      </Button>
-      <Button
-        type='secondary'
-        size='small'
-        onClick={() => showDemoteModal(record)}
-      >
-        {t('降级')}
       </Button>
       <Dropdown menu={moreMenu} trigger='click' position='bottomRight'>
         <Button type='tertiary' size='small' icon={<IconMore />} />
@@ -463,6 +471,7 @@ export const getUsersColumns = ({
   showResetPasskeyModal,
   showResetTwoFAModal,
   showUserSubscriptionsModal,
+  showUserOrdersModal,
   showUserRedemptionRecordsModal,
   showUserSubscriptionStatsModal,
 }) => {
@@ -547,7 +556,7 @@ export const getUsersColumns = ({
       title: '',
       dataIndex: 'operate',
       fixed: 'right',
-      width: 380,
+      width: 320,
       render: (text, record, index) =>
         renderOperations(text, record, {
           showUserSubscriptionStatsModal,
@@ -560,12 +569,11 @@ export const getUsersColumns = ({
           showResetPasskeyModal,
           showResetTwoFAModal,
           showUserSubscriptionsModal,
+          showUserOrdersModal,
           t,
         }),
     },
   ];
 };
-
-
 
 

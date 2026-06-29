@@ -99,6 +99,7 @@ const SubscriptionPlansCard = ({
   allSubscriptions = [],
   reloadSubscriptionSelf,
   withCard = true,
+  showOverview = true,
 }) => {
   const [open, setOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
@@ -403,17 +404,19 @@ const SubscriptionPlansCard = ({
       {loading ? (
         <div className='space-y-4'>
           {/* Subscription overview */}
-          <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
-            <div className='flex items-center justify-between mb-3'>
-              <Skeleton.Title active style={{ width: 100, height: 20 }} />
-              <Skeleton.Button active style={{ width: 24, height: 24 }} />
-            </div>
-            <div className='space-y-2'>
-              <Skeleton.Paragraph active rows={2} />
-            </div>
-          </Card>
+          {showOverview && (
+            <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
+              <div className='flex items-center justify-between mb-3'>
+                <Skeleton.Title active style={{ width: 100, height: 20 }} />
+                <Skeleton.Button active style={{ width: 24, height: 24 }} />
+              </div>
+              <div className='space-y-2'>
+                <Skeleton.Paragraph active rows={2} />
+              </div>
+            </Card>
+          )}
           {/* Subscription plans skeleton */}
-          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5 w-full px-1'>
+          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full px-1'>
             {[1, 2, 3].map((i) => (
               <Card
                 key={i}
@@ -448,144 +451,149 @@ const SubscriptionPlansCard = ({
       ) : (
         <Space vertical style={{ width: '100%' }} spacing={8}>
           {/* Subscription list */}
-          <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
-            <div className='flex items-center justify-between mb-2 gap-3'>
-              <div className='flex items-center gap-2 flex-1 min-w-0'>
-                <Text strong>{t('我的订阅')}</Text>
-                {hasActiveSubscription ? (
-                  <Tag
-                    color='white'
-                    size='small'
-                    shape='circle'
-                    prefixIcon={<Badge dot type='success' />}
-                  >
-                    {activeSubscriptions.length} {t('个生效中')}
-                  </Tag>
-                ) : (
-                  <Tag color='white' size='small' shape='circle'>
-                    {t('暂无激活订阅')}
-                  </Tag>
-                )}
-                {visibleSubscriptions.length > activeSubscriptions.length && (
-                  <Tag color='white' size='small' shape='circle'>
-                    {visibleSubscriptions.length - activeSubscriptions.length}{' '}
-                    {t('个已结束')}
-                  </Tag>
-                )}
-              </div>
-              <div className='flex items-center gap-2'>
-                <Select
-                  value={displayBillingPreference}
-                  onChange={onChangeBillingPreference}
-                  size='small'
-                  optionList={[
-                    {
-                      value: 'subscription_first',
-                      label: disableSubscriptionPreference
-                        ? `${t('优先订阅扣费')} (${t('暂无激活订阅')})`
-                        : t('优先订阅扣费'),
-                      disabled: disableSubscriptionPreference,
-                    },
-                    { value: 'wallet_first', label: t('优先钱包扣费') },
-                    {
-                      value: 'subscription_only',
-                      label: disableSubscriptionPreference
-                        ? `${t('仅订阅扣费')} (${t('暂无激活订阅')})`
-                        : t('仅订阅扣费'),
-                      disabled: disableSubscriptionPreference,
-                    },
-                    { value: 'wallet_only', label: t('仅钱包扣费') },
-                  ]}
-                />
-                <Button
-                  size='small'
-                  theme='light'
-                  type='tertiary'
-                  icon={
-                    <RefreshCw
-                      size={12}
-                      className={refreshing ? 'animate-spin' : ''}
-                    />
-                  }
-                  onClick={handleRefresh}
-                  loading={refreshing}
-                />
-              </div>
-            </div>
-            {disableSubscriptionPreference && isSubscriptionPreference && (
-              <Text type='tertiary' size='small'>
-                {t('当前没有可用订阅，已自动切换为')}
-                {subscriptionPreferenceLabel}
-                {t('，你也可以手动切换到钱包扣费。')}
-              </Text>
-            )}
-
-            {hasAnySubscription ? (
-              <>
-                <Divider margin={8} />
-                <div className='max-h-64 overflow-y-auto pr-1 semi-table-body'>
-                  {visibleSubscriptions.map((sub, subIndex) => {
-                    const isLast = subIndex === visibleSubscriptions.length - 1;
-                    const subscription = sub.subscription;
-                    const totalAmount = Number(subscription?.amount_total || 0);
-                    const usedAmount = Number(subscription?.amount_used || 0);
-                    const planTitle =
-                      planTitleMap.get(subscription?.plan_id) || '';
-                    const now = Date.now() / 1000;
-                    const isExpired = (subscription?.end_time || 0) < now;
-                    const isCancelled = subscription?.status === 'cancelled';
-                    const isActive =
-                      subscription?.status === 'active' && !isExpired;
-                    return (
-                      <div key={subscription?.id || subIndex}>
-                        <div className='flex items-center gap-2 text-xs mb-1 flex-wrap'>
-                          <span className='font-medium'>
-                            {planTitle
-                              ? `${planTitle} · ${t('订阅')} #${subscription?.id}`
-                              : `${t('订阅')} #${subscription?.id}`}
-                          </span>
-                          {isActive ? (
-                            <Tag
-                              color='white'
-                              size='small'
-                              shape='circle'
-                              prefixIcon={<Badge dot type='success' />}
-                            >
-                              {t('生效中')}
-                            </Tag>
-                          ) : isCancelled ? (
-                            <Tag color='white' size='small' shape='circle'>
-                              {t('已取消')}
-                            </Tag>
-                          ) : (
-                            <Tag color='white' size='small' shape='circle'>
-                              {t('已过期')}
-                            </Tag>
-                          )}
-                        </div>
-                        <div className='text-xs text-gray-500 mb-1'>
-                          {t('到期时间')}{' '}
-                          {formatSubscriptionEndTime(
-                            subscription?.end_time || 0,
-                          )}
-                        </div>
-                        {renderSubscriptionQuotaBar(usedAmount, totalAmount)}
-                        {!isLast && <Divider margin={12} />}
-                      </div>
-                    );
-                  })}
+          {showOverview && (
+            <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
+              <div className='flex items-center justify-between mb-2 gap-3'>
+                <div className='flex items-center gap-2 flex-1 min-w-0'>
+                  <Text strong>{t('我的订阅')}</Text>
+                  {hasActiveSubscription ? (
+                    <Tag
+                      color='white'
+                      size='small'
+                      shape='circle'
+                      prefixIcon={<Badge dot type='success' />}
+                    >
+                      {activeSubscriptions.length} {t('个生效中')}
+                    </Tag>
+                  ) : (
+                    <Tag color='white' size='small' shape='circle'>
+                      {t('暂无激活订阅')}
+                    </Tag>
+                  )}
+                  {visibleSubscriptions.length > activeSubscriptions.length && (
+                    <Tag color='white' size='small' shape='circle'>
+                      {visibleSubscriptions.length - activeSubscriptions.length}{' '}
+                      {t('个已结束')}
+                    </Tag>
+                  )}
                 </div>
-              </>
-            ) : (
-              <div className='text-xs text-gray-500'>
-                {t('暂无订阅记录，购买套餐后会显示在这里')}
+                <div className='flex items-center gap-2'>
+                  <Select
+                    value={displayBillingPreference}
+                    onChange={onChangeBillingPreference}
+                    size='small'
+                    optionList={[
+                      {
+                        value: 'subscription_first',
+                        label: disableSubscriptionPreference
+                          ? `${t('优先订阅扣费')} (${t('暂无激活订阅')})`
+                          : t('优先订阅扣费'),
+                        disabled: disableSubscriptionPreference,
+                      },
+                      { value: 'wallet_first', label: t('优先钱包扣费') },
+                      {
+                        value: 'subscription_only',
+                        label: disableSubscriptionPreference
+                          ? `${t('仅订阅扣费')} (${t('暂无激活订阅')})`
+                          : t('仅订阅扣费'),
+                        disabled: disableSubscriptionPreference,
+                      },
+                      { value: 'wallet_only', label: t('仅钱包扣费') },
+                    ]}
+                  />
+                  <Button
+                    size='small'
+                    theme='light'
+                    type='tertiary'
+                    icon={
+                      <RefreshCw
+                        size={12}
+                        className={refreshing ? 'animate-spin' : ''}
+                      />
+                    }
+                    onClick={handleRefresh}
+                    loading={refreshing}
+                  />
+                </div>
               </div>
-            )}
-          </Card>
+              {disableSubscriptionPreference && isSubscriptionPreference && (
+                <Text type='tertiary' size='small'>
+                  {t('当前没有可用订阅，已自动切换为')}
+                  {subscriptionPreferenceLabel}
+                  {t('，你也可以手动切换到钱包扣费。')}
+                </Text>
+              )}
+
+              {hasAnySubscription ? (
+                <>
+                  <Divider margin={8} />
+                  <div className='max-h-64 overflow-y-auto pr-1 semi-table-body'>
+                    {visibleSubscriptions.map((sub, subIndex) => {
+                      const isLast =
+                        subIndex === visibleSubscriptions.length - 1;
+                      const subscription = sub.subscription;
+                      const totalAmount = Number(
+                        subscription?.amount_total || 0,
+                      );
+                      const usedAmount = Number(subscription?.amount_used || 0);
+                      const planTitle =
+                        planTitleMap.get(subscription?.plan_id) || '';
+                      const now = Date.now() / 1000;
+                      const isExpired = (subscription?.end_time || 0) < now;
+                      const isCancelled = subscription?.status === 'cancelled';
+                      const isActive =
+                        subscription?.status === 'active' && !isExpired;
+                      return (
+                        <div key={subscription?.id || subIndex}>
+                          <div className='flex items-center gap-2 text-xs mb-1 flex-wrap'>
+                            <span className='font-medium'>
+                              {planTitle
+                                ? `${planTitle} · ${t('订阅')} #${subscription?.id}`
+                                : `${t('订阅')} #${subscription?.id}`}
+                            </span>
+                            {isActive ? (
+                              <Tag
+                                color='white'
+                                size='small'
+                                shape='circle'
+                                prefixIcon={<Badge dot type='success' />}
+                              >
+                                {t('生效中')}
+                              </Tag>
+                            ) : isCancelled ? (
+                              <Tag color='white' size='small' shape='circle'>
+                                {t('已取消')}
+                              </Tag>
+                            ) : (
+                              <Tag color='white' size='small' shape='circle'>
+                                {t('已过期')}
+                              </Tag>
+                            )}
+                          </div>
+                          <div className='text-xs text-gray-500 mb-1'>
+                            {t('到期时间')}{' '}
+                            {formatSubscriptionEndTime(
+                              subscription?.end_time || 0,
+                            )}
+                          </div>
+                          {renderSubscriptionQuotaBar(usedAmount, totalAmount)}
+                          {!isLast && <Divider margin={12} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className='text-xs text-gray-500'>
+                  {t('暂无订阅记录，购买套餐后会显示在这里')}
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Subscription plans */}
           {plans.length > 0 ? (
-            <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-5 w-full px-1'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full px-1'>
               {plans.map((p) => {
                 const plan = p?.plan;
                 const totalAmount = Number(plan?.total_amount || 0);

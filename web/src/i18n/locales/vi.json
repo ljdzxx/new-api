@@ -3861,6 +3861,13 @@
     "订阅支付和余额支付不能同时关闭": "Khong the tat dong thoi thanh toan bang dang ky va thanh toan bang so du",
     "新用户使用邀请码奖励订阅套餐": "Goi dang ky thuong cho nguoi dung moi dung ma moi",
     "未选择": "Chua chon",
-    "允许注册的邮箱域名": "Ten mien email duoc phep dang ky"
+    "允许注册的邮箱域名": "Ten mien email duoc phep dang ky",
+    "按量计费充值": "Nap theo muc su dung",
+    "活动": "Khuyen mai",
+    "已保存偏好为优先订阅，当前无生效订阅，将自动使用钱包": "Tuy chon da luu la uu tien goi dang ky. Hien khong co goi dang ky hieu luc, vi se duoc su dung tu dong.",
+    "每邀请一个新人注册，新人自动获得": "Moi nguoi moi ban moi dang ky se tu dong nhan",
+    "同时您也将获得": "Ban cung se nhan",
+    "拉新奖励": "Thuong gioi thieu",
+    "受邀奖励": "Thuong nguoi duoc moi"
   }
 }
