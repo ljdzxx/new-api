@@ -46,6 +46,7 @@ export default function SettingsHeaderNavModules(props) {
       enabled: true,
       requireAuth: false, // 默认不需要登录鉴权
     },
+    availability: true,
     lottery: true,
     docs: true,
     about: true,
@@ -87,6 +88,7 @@ export default function SettingsHeaderNavModules(props) {
         enabled: true,
         requireAuth: false,
       },
+      availability: true,
       lottery: true,
       docs: true,
       about: true,
@@ -147,6 +149,7 @@ export default function SettingsHeaderNavModules(props) {
         setHeaderNavModules({
           home: true,
           console: true,
+          availability: true,
           lottery: true,
           docs: true,
           about: true,
@@ -166,6 +169,7 @@ export default function SettingsHeaderNavModules(props) {
             enabled: true,
             requireAuth: false,
           },
+          availability: true,
           lottery: true,
           docs: true,
           about: true,
@@ -192,6 +196,11 @@ export default function SettingsHeaderNavModules(props) {
       title: t('模型广场'),
       description: t('模型定价，需要登录访问'),
       hasSubConfig: true, // 标识该模块有子配置
+    },
+    {
+      key: 'availability',
+      title: t('可用性'),
+      description: t('可用性与服务状态信息'),
     },
     {
       key: 'lottery',

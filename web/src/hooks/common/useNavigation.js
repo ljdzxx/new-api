@@ -26,6 +26,7 @@ export const useNavigation = (t, headerNavModules) => {
       home: true,
       console: true,
       pricing: true,
+      availability: true,
       lottery: true,
       docs: true,
       about: true,
@@ -52,6 +53,11 @@ export const useNavigation = (t, headerNavModules) => {
         text: t('模型广场'),
         itemKey: 'pricing',
         to: '/pricing',
+      },
+      {
+        text: t('可用性'),
+        itemKey: 'availability',
+        to: '/availability',
       },
       {
         text: t('抽奖'),

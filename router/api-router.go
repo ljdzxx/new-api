@@ -29,6 +29,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
+		apiRouter.GET("/availability", controller.GetAvailability)
 		apiRouter.GET("/docs", controller.GetDocs)
 		lotteryRoute := apiRouter.Group("/lottery")
 		{

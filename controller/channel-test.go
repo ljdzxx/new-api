@@ -244,6 +244,13 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 	testModel = info.UpstreamModelName
 	// 更新请求中的模型名称
 	request.SetModelName(testModel)
+	if err = setChannelTestRequestBody(c, request); err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeBadRequestBody),
+		}
+	}
 
 	if shouldMockTestRelay(c, info) {
 		newAPIError := handleMockTestRelay(c, info)
@@ -634,8 +641,23 @@ func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	return message
 }
 
+func setChannelTestRequestBody(c *gin.Context, request dto.Request) error {
+	if c == nil || c.Request == nil || request == nil {
+		return nil
+	}
+	body, err := common.Marshal(request)
+	if err != nil {
+		return err
+	}
+	c.Set(common.KeyRequestBody, body)
+	c.Set(common.KeyBodyStorage, nil)
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	c.Request.ContentLength = int64(len(body))
+	return nil
+}
+
 func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {
-	testResponsesInput := json.RawMessage(`[{"role":"user","content":"hi"}]`)
+	testResponsesInput := json.RawMessage(`[{"role":"user","content":[{"type":"input_text","text":"hi"}]}]`)
 
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
@@ -666,7 +688,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 			// 返回 OpenAIResponsesRequest
 			return &dto.OpenAIResponsesRequest{
 				Model:  model,
-				Input:  json.RawMessage(`[{"role":"user","content":"hi"}]`),
+				Input:  testResponsesInput,
 				Stream: lo.ToPtr(isStream),
 			}
 		case constant.EndpointTypeOpenAIResponseCompact:
@@ -732,7 +754,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	if strings.Contains(strings.ToLower(model), "codex") {
 		return &dto.OpenAIResponsesRequest{
 			Model:  model,
-			Input:  json.RawMessage(`[{"role":"user","content":"hi"}]`),
+			Input:  testResponsesInput,
 			Stream: lo.ToPtr(isStream),
 		}
 	}

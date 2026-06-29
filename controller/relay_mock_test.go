@@ -308,6 +308,74 @@ func TestMockTestRelayJSHandlerTreatsNilRequestBodyAsEmpty(t *testing.T) {
 	}
 }
 
+func TestMockTestRelayConsoleResponsesJSHandlerReceivesRequestBody(t *testing.T) {
+	db := setupRelayMockTestDB(t)
+	seedRelayMockBillingRows(t, db)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
+	common.SetContextKey(c, constant.ContextKeyUserId, 42)
+	common.SetContextKey(c, constant.ContextKeyUserName, "api-user")
+	common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+	common.SetContextKey(c, constant.ContextKeyUserQuota, 1000)
+	common.SetContextKey(c, constant.ContextKeyOriginalModel, "gpt-4o-mini")
+	common.SetContextKey(c, constant.ContextKeyTokenId, 77)
+	common.SetContextKey(c, constant.ContextKeyTokenKey, "sk-real-token")
+	common.SetContextKey(c, constant.ContextKeyTokenUnlimited, false)
+	common.SetContextKey(c, constant.ContextKeyChannelId, 88)
+	common.SetContextKey(c, constant.ContextKeyChannelName, "mock-channel")
+	common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeOpenAI)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, "sk-upstream")
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		MockTest: true,
+		MockJSHandlers: map[string]string{
+			"/v1/responses": `function process(body) {
+  const obj = JSON.parse(body);
+  const text = obj.input?.[0]?.content?.[0]?.text;
+  const match = text.match(/(RP_ANSWER=\d+)/);
+  return match ? match[1] : 'Hi. What can I do for you?';
+}`,
+		},
+	})
+	common.SetContextKey(c, constant.ContextKeyChannelModelRatio, float64(1))
+	common.SetContextKey(c, constant.ContextKeyChannelAllowWallet, true)
+	common.SetContextKey(c, constant.ContextKeyChannelAllowSubscription, true)
+
+	channel := &model.Channel{Type: constant.ChannelTypeOpenAI}
+	request := buildTestRequest("gpt-4o-mini", string(constant.EndpointTypeOpenAIResponse), channel, false)
+	info, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAIResponses, request, nil)
+	if err != nil {
+		t.Fatalf("failed to generate relay info: %v", err)
+	}
+	info.IsChannelTest = true
+	info.InitChannelMeta(c)
+	request.SetModelName("gpt-4o-mini")
+	if err := setChannelTestRequestBody(c, request); err != nil {
+		t.Fatalf("failed to set channel test request body: %v", err)
+	}
+
+	if !shouldMockTestRelay(c, info) {
+		t.Fatal("expected mock test relay to be enabled")
+	}
+	if apiErr := handleMockTestRelay(c, info); apiErr != nil {
+		t.Fatalf("mock relay returned error: %v", apiErr)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, mockTestResponseText) {
+		t.Fatalf("expected mock js fallback response, body: %s", body)
+	}
+
+	var log model.Log
+	if err := db.Order("id desc").First(&log).Error; err != nil {
+		t.Fatalf("failed to read consume log: %v", err)
+	}
+	if log.Quota != 0 {
+		t.Fatalf("expected console responses mock consume log quota 0, got %d", log.Quota)
+	}
+}
+
 func TestMockTestRelayFallsBackWhenNoJSHandlerMatchesPath(t *testing.T) {
 	db := setupRelayMockTestDB(t)
 	seedRelayMockBillingRows(t, db)
