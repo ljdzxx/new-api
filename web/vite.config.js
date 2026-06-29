@@ -68,24 +68,25 @@ export default defineConfig({
     // 降低build内存
     sourcemap: false,
     minify: 'esbuild',
+    // 路由级拆包后仍存在 Markdown/Mermaid、Lobe icons 等懒加载库级块。
+    // 默认 500KB 阈值对当前后台应用过低，避免每次构建产生误导性告警。
+    chunkSizeWarningLimit: 5000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-core': ['react', 'react-dom', 'react-router-dom'],
-          'semi-ui': ['@douyinfe/semi-icons', '@douyinfe/semi-ui'],
-          tools: ['axios', 'history', 'marked'],
-          'react-components': [
-            'react-dropzone',
-            'react-fireworks',
-            'react-telegram-login',
-            'react-toastify',
-            'react-turnstile',
-          ],
-          i18n: [
-            'i18next',
-            'react-i18next',
-            'i18next-browser-languagedetector',
-          ],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return;
+          }
+
+          const normalizedId = id.split(path.sep).join('/');
+
+          if (
+            /\/node_modules\/(react|react-dom|react-router-dom)\//.test(
+              normalizedId,
+            )
+          ) {
+            return 'react-core';
+          }
         },
       },
     },

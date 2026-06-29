@@ -18,7 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useState, useEffect, useCallback } from 'react';
-import { getTableCompactMode, setTableCompactMode } from '../../helpers';
+import {
+  getTableCompactMode,
+  setTableCompactMode,
+} from '../../helpers/utils';
 import { TABLE_COMPACT_MODES_KEY } from '../../constants';
 
 /**
