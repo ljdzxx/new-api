@@ -330,6 +330,32 @@ func AdminBindSubscription(c *gin.Context) {
 
 // ---- Admin: user subscription management ----
 
+func parseActiveUserSubscriptionFilter(c *gin.Context) model.ActiveUserSubscriptionFilter {
+	userId, _ := strconv.Atoi(c.Query("user_id"))
+	createdStartAt, _ := strconv.ParseInt(c.Query("created_start_at"), 10, 64)
+	createdEndAt, _ := strconv.ParseInt(c.Query("created_end_at"), 10, 64)
+	return model.ActiveUserSubscriptionFilter{
+		UserId:         userId,
+		Username:       c.Query("username"),
+		Email:          c.Query("email"),
+		CreatedStartAt: createdStartAt,
+		CreatedEndAt:   createdEndAt,
+	}
+}
+
+func AdminListActiveUserSubscriptions(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	filter := parseActiveUserSubscriptionFilter(c)
+	items, total, err := model.GetActiveUserSubscriptionsPage(pageInfo, filter)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
+}
+
 func AdminListUserSubscriptions(c *gin.Context) {
 	userId, _ := strconv.Atoi(c.Param("id"))
 	if userId <= 0 {
@@ -389,6 +415,36 @@ func AdminInvalidateUserSubscription(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+func AdminResetUserSubscriptionUsed(c *gin.Context) {
+	subId, _ := strconv.Atoi(c.Param("id"))
+	if subId <= 0 {
+		common.ApiErrorMsg(c, "无效的订阅ID")
+		return
+	}
+	sub, plan, err := model.AdminResetUserSubscriptionUsed(subId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"subscription": sub,
+		"plan":         plan,
+	})
+}
+
+func AdminResetActiveUserSubscriptionsUsed(c *gin.Context) {
+	filter := parseActiveUserSubscriptionFilter(c)
+	count, err := model.AdminResetActiveUserSubscriptionsUsed(filter)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"count":   count,
+		"message": "重置完成",
+	})
 }
 
 // AdminDeleteUserSubscription hard-deletes a user subscription.

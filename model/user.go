@@ -155,32 +155,34 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 	if userRole == common.RoleAdminUser {
 		// 管理员可以访问管理员区域，但不能访问系统设置
 		defaultConfig["admin"] = map[string]interface{}{
-			"enabled":           true,
-			"channel":           true,
-			"models":            true,
-			"deployment":        true,
-			"order":             true,
-			"redemption":        true,
-			"lottery_admin":     true,
-			"user":              true,
-			"subscription_rank": true,
-			"subscription":      true,
-			"setting":           false, // 管理员不能访问系统设置
+			"enabled":            true,
+			"channel":            true,
+			"models":             true,
+			"deployment":         true,
+			"order":              true,
+			"redemption":         true,
+			"lottery_admin":      true,
+			"user":               true,
+			"user_subscriptions": true,
+			"subscription_rank":  true,
+			"subscription":       true,
+			"setting":            false, // 管理员不能访问系统设置
 		}
 	} else if userRole == common.RoleRootUser {
 		// 超级管理员可以访问所有功能
 		defaultConfig["admin"] = map[string]interface{}{
-			"enabled":           true,
-			"channel":           true,
-			"models":            true,
-			"deployment":        true,
-			"order":             true,
-			"redemption":        true,
-			"lottery_admin":     true,
-			"user":              true,
-			"subscription_rank": true,
-			"subscription":      true,
-			"setting":           true,
+			"enabled":            true,
+			"channel":            true,
+			"models":             true,
+			"deployment":         true,
+			"order":              true,
+			"redemption":         true,
+			"lottery_admin":      true,
+			"user":               true,
+			"user_subscriptions": true,
+			"subscription_rank":  true,
+			"subscription":       true,
+			"setting":            true,
 		}
 	}
 	// 普通用户不包含admin区域

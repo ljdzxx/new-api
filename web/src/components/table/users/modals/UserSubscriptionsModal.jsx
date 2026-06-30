@@ -245,6 +245,30 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
     });
   };
 
+  const resetSubscriptionUsed = (sub) => {
+    Modal.confirm({
+      title: t('确认重置'),
+      content: t('将把该订阅的已用额度清零，总额度快照保持不变。是否继续？'),
+      centered: true,
+      onOk: async () => {
+        try {
+          const res = await API.post(
+            `/api/subscription/admin/user_subscriptions/${sub?.id}/reset_used`,
+          );
+          if (res.data?.success) {
+            showSuccess(t('重置成功'));
+            await loadUserSubscriptions();
+            onSuccess?.();
+          } else {
+            showError(res.data?.message || t('重置失败'));
+          }
+        } catch (e) {
+          showError(t('请求失败'));
+        }
+      },
+    });
+  };
+
   const columns = useMemo(() => {
     return [
       {
@@ -312,9 +336,15 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
         },
       },
       {
+        title: t('重置次数'),
+        key: 'reset_count',
+        width: 90,
+        render: (_, record) => record?.subscription?.reset_count || 0,
+      },
+      {
         title: '',
         key: 'operate',
-        width: 140,
+        width: 210,
         fixed: 'right',
         render: (_, record) => {
           const sub = record?.subscription;
@@ -342,6 +372,14 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
               >
                 {t('删除')}
               </Button>
+              <Button
+                size='small'
+                type='primary'
+                theme='light'
+                onClick={() => resetSubscriptionUsed(sub)}
+              >
+                {t('重置')}
+              </Button>
             </Space>
           );
         },
@@ -353,7 +391,7 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
     <SideSheet
       visible={visible}
       placement='right'
-      width={isMobile ? '100%' : 920}
+      width={isMobile ? '100%' : 980}
       bodyStyle={{ padding: 0 }}
       onCancel={onCancel}
       title={

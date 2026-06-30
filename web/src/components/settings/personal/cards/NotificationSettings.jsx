@@ -95,6 +95,7 @@ const NotificationSettings = ({
       redemption: true,
       lottery_admin: true,
       user: true,
+      user_subscriptions: true,
       setting: true,
     },
   });
@@ -192,6 +193,7 @@ const NotificationSettings = ({
         redemption: true,
         lottery_admin: true,
         user: true,
+        user_subscriptions: true,
         setting: true,
       },
     };
@@ -341,6 +343,11 @@ const NotificationSettings = ({
           key: 'subscription_rank',
           title: t('订阅使用榜'),
           description: t('查看订阅用户近 1/3/7 日使用量排行榜'),
+        },
+        {
+          key: 'user_subscriptions',
+          title: t('用户订阅'),
+          description: t('查看并重置用户有效订阅额度'),
         },
         {
           key: 'redemption',

@@ -48,7 +48,8 @@ const InvitationCard = ({
   const hasInviterReward = Boolean(inviterMoneyText);
   const highlightStyle = {
     color: 'var(--semi-color-danger)',
-    fontWeight: 700,
+    fontSize: '24px',
+    fontWeight: 600,
   };
 
   return (

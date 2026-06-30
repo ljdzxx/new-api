@@ -51,6 +51,7 @@ const ModelDeploymentPage = lazy(() => import('./pages/ModelDeployment'));
 const Playground = lazy(() => import('./pages/Playground'));
 const ImageGeneration = lazy(() => import('./pages/ImageGeneration'));
 const Subscription = lazy(() => import('./pages/Subscription'));
+const UserSubscriptions = lazy(() => import('./pages/UserSubscriptions'));
 const Order = lazy(() => import('./pages/Order'));
 const UserLevelPage = lazy(() => import('./pages/UserLevel'));
 const SubscriptionUsageRank = lazy(() => import('./pages/SubscriptionUsageRank'));
@@ -157,6 +158,10 @@ function App() {
         <Route
           path='/console/user'
           element={withAdminRoute(<User />)}
+        />
+        <Route
+          path='/console/user-subscriptions'
+          element={withAdminRoute(<UserSubscriptions />)}
         />
         <Route
           path='/console/subscription-rank'

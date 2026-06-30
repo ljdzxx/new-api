@@ -312,6 +312,9 @@ func migrateDB() error {
 	if err := backfillTopUpReconcileStatus(); err != nil {
 		return err
 	}
+	if err := ensureUserSubscriptionResetCountColumn(); err != nil {
+		return err
+	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -404,6 +407,9 @@ func migrateDBFast() error {
 	if err := backfillTopUpReconcileStatus(); err != nil {
 		return err
 	}
+	if err := ensureUserSubscriptionResetCountColumn(); err != nil {
+		return err
+	}
 	if common.UsingSQLite {
 		if err := ensureUsersTableSQLite(); err != nil {
 			return err
@@ -490,6 +496,20 @@ func backfillTopUpReconcileStatus() error {
 	return DB.Model(&TopUp{}).
 		Where("reconcile_status = '' OR reconcile_status IS NULL").
 		Update("reconcile_status", PaymentReconcileStatusUnchecked).Error
+}
+
+func ensureUserSubscriptionResetCountColumn() error {
+	if DB == nil || !DB.Migrator().HasTable(&UserSubscription{}) {
+		return nil
+	}
+	if !DB.Migrator().HasColumn(&UserSubscription{}, "reset_count") {
+		if err := DB.Migrator().AddColumn(&UserSubscription{}, "ResetCount"); err != nil {
+			return err
+		}
+	}
+	return DB.Model(&UserSubscription{}).
+		Where("reset_count IS NULL").
+		Update("reset_count", 0).Error
 }
 
 type sqliteColumnDef struct {

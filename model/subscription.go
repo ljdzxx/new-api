@@ -254,6 +254,7 @@ type UserSubscription struct {
 
 	LastResetTime int64 `json:"last_reset_time" gorm:"type:bigint;default:0"`
 	NextResetTime int64 `json:"next_reset_time" gorm:"type:bigint;default:0;index"`
+	ResetCount    int   `json:"reset_count" gorm:"type:int;not null;default:0"`
 
 	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
@@ -276,6 +277,35 @@ func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 
 type SubscriptionSummary struct {
 	Subscription *UserSubscription `json:"subscription"`
+}
+
+type ActiveUserSubscriptionUser struct {
+	Id          int    `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+	Group       string `json:"group"`
+	Role        int    `json:"role"`
+	Status      int    `json:"status"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+type ActiveUserSubscriptionItem struct {
+	User          ActiveUserSubscriptionUser `json:"user"`
+	Subscriptions []ActiveUserSubscription   `json:"subscriptions"`
+}
+
+type ActiveUserSubscription struct {
+	Subscription UserSubscription `json:"subscription"`
+	Plan         SubscriptionPlan `json:"plan"`
+}
+
+type ActiveUserSubscriptionFilter struct {
+	UserId         int
+	Username       string
+	Email          string
+	CreatedStartAt int64
+	CreatedEndAt   int64
 }
 
 type DailySubscriptionQuotaStat struct {
@@ -884,6 +914,174 @@ func GetAllUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	return buildSubscriptionSummaries(subs), nil
 }
 
+func applyActiveUserSubscriptionFilter(query *gorm.DB, filter ActiveUserSubscriptionFilter) *gorm.DB {
+	query = query.Joins("JOIN users ON users.id = user_subscriptions.user_id")
+	if filter.UserId > 0 {
+		query = query.Where("users.id = ?", filter.UserId)
+	}
+	username := strings.TrimSpace(filter.Username)
+	if username != "" {
+		query = query.Where("users.username LIKE ?", "%"+username+"%")
+	}
+	email := strings.TrimSpace(filter.Email)
+	if email != "" {
+		query = query.Where("users.email LIKE ?", "%"+email+"%")
+	}
+	if filter.CreatedStartAt > 0 {
+		query = query.Where("users.created_at >= ?", filter.CreatedStartAt)
+	}
+	if filter.CreatedEndAt > 0 {
+		query = query.Where("users.created_at <= ?", filter.CreatedEndAt)
+	}
+	return query
+}
+
+func GetActiveUserSubscriptionsPage(pageInfo *common.PageInfo, filter ActiveUserSubscriptionFilter) ([]ActiveUserSubscriptionItem, int64, error) {
+	if pageInfo == nil {
+		pageInfo = &common.PageInfo{Page: 1, PageSize: common.ItemsPerPage}
+	}
+	now := GetDBTimestamp()
+
+	base := DB.Model(&UserSubscription{}).
+		Where("user_subscriptions.status = ? AND user_subscriptions.end_time > ?", "active", now)
+	base = applyActiveUserSubscriptionFilter(base, filter)
+
+	var total int64
+	if err := base.Distinct("user_subscriptions.user_id").Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return []ActiveUserSubscriptionItem{}, 0, nil
+	}
+
+	type userIdRow struct {
+		UserId int `gorm:"column:user_id"`
+	}
+	rows := make([]userIdRow, 0, pageInfo.GetPageSize())
+	listQuery := DB.Model(&UserSubscription{}).
+		Select("user_subscriptions.user_id").
+		Where("user_subscriptions.status = ? AND user_subscriptions.end_time > ?", "active", now)
+	listQuery = applyActiveUserSubscriptionFilter(listQuery, filter)
+	if err := listQuery.
+		Group("user_subscriptions.user_id").
+		Order("user_subscriptions.user_id desc").
+		Limit(pageInfo.GetPageSize()).
+		Offset(pageInfo.GetStartIdx()).
+		Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	if len(rows) == 0 {
+		return []ActiveUserSubscriptionItem{}, total, nil
+	}
+
+	userIds := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.UserId > 0 {
+			userIds = append(userIds, row.UserId)
+		}
+	}
+
+	users := make([]User, 0, len(userIds))
+	if err := DB.Model(&User{}).
+		Select("id, username, display_name, email, "+commonGroupCol+", role, status, created_at").
+		Where("id IN ?", userIds).
+		Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+	userMap := make(map[int]ActiveUserSubscriptionUser, len(users))
+	for _, user := range users {
+		userMap[user.Id] = ActiveUserSubscriptionUser{
+			Id:          user.Id,
+			Username:    user.Username,
+			DisplayName: user.DisplayName,
+			Email:       user.Email,
+			Group:       user.Group,
+			Role:        user.Role,
+			Status:      user.Status,
+			CreatedAt:   user.CreatedAt,
+		}
+	}
+
+	subs := make([]UserSubscription, 0)
+	if err := DB.Where("user_id IN ? AND status = ? AND end_time > ?", userIds, "active", now).
+		Order("user_id desc").
+		Order("start_time desc").
+		Order("id desc").
+		Find(&subs).Error; err != nil {
+		return nil, 0, err
+	}
+
+	planIds := make([]int, 0)
+	planIdSet := make(map[int]struct{})
+	for _, sub := range subs {
+		if sub.PlanId <= 0 {
+			continue
+		}
+		if _, ok := planIdSet[sub.PlanId]; ok {
+			continue
+		}
+		planIdSet[sub.PlanId] = struct{}{}
+		planIds = append(planIds, sub.PlanId)
+	}
+	plans := make([]SubscriptionPlan, 0, len(planIds))
+	if len(planIds) > 0 {
+		if err := DB.Where("id IN ?", planIds).Find(&plans).Error; err != nil {
+			return nil, 0, err
+		}
+	}
+	planMap := make(map[int]SubscriptionPlan, len(plans))
+	for _, plan := range plans {
+		planMap[plan.Id] = plan
+	}
+
+	subMap := make(map[int][]ActiveUserSubscription, len(userIds))
+	for _, sub := range subs {
+		subMap[sub.UserId] = append(subMap[sub.UserId], ActiveUserSubscription{
+			Subscription: sub,
+			Plan:         planMap[sub.PlanId],
+		})
+	}
+
+	result := make([]ActiveUserSubscriptionItem, 0, len(userIds))
+	for _, userId := range userIds {
+		userInfo, ok := userMap[userId]
+		if !ok {
+			userInfo = ActiveUserSubscriptionUser{Id: userId}
+		}
+		result = append(result, ActiveUserSubscriptionItem{
+			User:          userInfo,
+			Subscriptions: subMap[userId],
+		})
+	}
+	return result, total, nil
+}
+
+func GetActiveUserSubscriptionIds(filter ActiveUserSubscriptionFilter) ([]int, error) {
+	now := GetDBTimestamp()
+	type subscriptionIdRow struct {
+		Id int `gorm:"column:id"`
+	}
+	rows := make([]subscriptionIdRow, 0)
+	query := DB.Model(&UserSubscription{}).
+		Select("user_subscriptions.id").
+		Where("user_subscriptions.status = ? AND user_subscriptions.end_time > ?", "active", now)
+	query = applyActiveUserSubscriptionFilter(query, filter)
+	if err := query.
+		Order("user_subscriptions.user_id desc").
+		Order("user_subscriptions.start_time desc").
+		Order("user_subscriptions.id desc").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.Id > 0 {
+			ids = append(ids, row.Id)
+		}
+	}
+	return ids, nil
+}
+
 func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
 	if len(subs) == 0 {
 		return []SubscriptionSummary{}
@@ -951,6 +1149,74 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
 	return "", nil
+}
+
+func resetUserSubscriptionUsedTx(tx *gorm.DB, userSubscriptionId int) (*UserSubscription, *SubscriptionPlan, error) {
+	if tx == nil {
+		return nil, nil, errors.New("tx is nil")
+	}
+	if userSubscriptionId <= 0 {
+		return nil, nil, errors.New("invalid userSubscriptionId")
+	}
+	now := GetDBTimestamp()
+	var updatedSub UserSubscription
+	var sub UserSubscription
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").
+		Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
+		return nil, nil, err
+	}
+	plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+	if err != nil {
+		return nil, nil, err
+	}
+	sub.AmountUsed = 0
+	sub.ResetCount++
+	sub.UpdatedAt = common.GetTimestamp()
+	if err := tx.Model(&sub).Updates(map[string]interface{}{
+		"amount_used": sub.AmountUsed,
+		"reset_count": sub.ResetCount,
+		"updated_at":  sub.UpdatedAt,
+	}).Error; err != nil {
+		return nil, nil, err
+	}
+	if err := SyncUserSubscriptionDailyStatTx(tx, &sub, plan, now); err != nil {
+		return nil, nil, err
+	}
+	updatedSub = sub
+	return &updatedSub, plan, nil
+}
+
+// ResetUserSubscriptionUsed actively clears the used amount while preserving the purchased total amount snapshot.
+func ResetUserSubscriptionUsed(userSubscriptionId int) (*UserSubscription, *SubscriptionPlan, error) {
+	var updatedSub *UserSubscription
+	var plan *SubscriptionPlan
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		updatedSub, plan, err = resetUserSubscriptionUsedTx(tx, userSubscriptionId)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return updatedSub, plan, nil
+}
+
+// AdminResetUserSubscriptionUsed clears the used amount for admin-triggered resets.
+func AdminResetUserSubscriptionUsed(userSubscriptionId int) (*UserSubscription, *SubscriptionPlan, error) {
+	return ResetUserSubscriptionUsed(userSubscriptionId)
+}
+
+func AdminResetActiveUserSubscriptionsUsed(filter ActiveUserSubscriptionFilter) (int, error) {
+	ids, err := GetActiveUserSubscriptionIds(filter)
+	if err != nil {
+		return 0, err
+	}
+	for idx, id := range ids {
+		if _, _, err := ResetUserSubscriptionUsed(id); err != nil {
+			return idx, err
+		}
+	}
+	return len(ids), nil
 }
 
 // AdminDeleteUserSubscription hard-deletes a user subscription.
