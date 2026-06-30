@@ -32,6 +32,8 @@ func normalizeSubscriptionSourceLabel(source string) string {
 		return "redemption"
 	case "order":
 		return "order"
+	case "balance":
+		return "balance"
 	default:
 		return "unknown"
 	}
@@ -46,6 +48,8 @@ func buildSubscriptionSourceDetail(source string, sub *UserSubscription) string 
 		return ""
 	case "invitee":
 		return ""
+	case "balance":
+		return PaymentMethodBalance
 	case "redemption":
 		if sub.RedemptionId > 0 {
 			var redemption Redemption

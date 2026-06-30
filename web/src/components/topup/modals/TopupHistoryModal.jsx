@@ -53,6 +53,7 @@ const PAYMENT_METHOD_MAP = {
   alipay: '支付宝',
   wxpay: '微信',
   mall: '商城',
+  balance: '余额',
   redemption: '兑换码',
   aff: '邀请奖励',
   aff_inviter: '拉新奖励',
@@ -64,6 +65,7 @@ const PAYMENT_PROVIDER_MAP = {
   stripe: 'Stripe',
   creem: 'Creem',
   mall: '商城',
+  balance: '余额',
   promotion: '活动',
 };
 

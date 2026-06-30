@@ -35,6 +35,7 @@ const (
 	PaymentProviderStripe    = "stripe"
 	PaymentProviderCreem     = "creem"
 	PaymentProviderMall      = "mall"
+	PaymentProviderBalance   = "balance"
 	PaymentProviderPromotion = "promotion"
 )
 
@@ -42,6 +43,7 @@ const (
 	PaymentMethodAffLegacy  = "aff"
 	PaymentMethodAffInviter = "aff_inviter"
 	PaymentMethodAffInvitee = "aff_invitee"
+	PaymentMethodBalance    = "balance"
 )
 
 const (

@@ -18,7 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Empty, Modal, Space, Tag, Typography } from '@douyinfe/semi-ui';
+import {
+  Badge,
+  Button,
+  Empty,
+  Modal,
+  Space,
+  Tag,
+  Typography,
+} from '@douyinfe/semi-ui';
 import {
   IllustrationNoResult,
   IllustrationNoResultDark,
@@ -56,6 +64,12 @@ const renderSourceTag = (source, t) => {
       return (
         <Tag color='white' shape='circle' size='small'>
           {t('支付购买')}
+        </Tag>
+      );
+    case 'balance':
+      return (
+        <Tag color='white' shape='circle' size='small'>
+          {t('余额购买')}
         </Tag>
       );
     default:
@@ -175,7 +189,8 @@ const UserSubscriptionSourcesModal = ({ visible, onCancel, user, t }) => {
         title: t('套餐'),
         key: 'plan_title',
         width: 180,
-        render: (_, record) => record?.plan_title || `#${record?.plan_id || '-'}`,
+        render: (_, record) =>
+          record?.plan_title || `#${record?.plan_id || '-'}`,
       },
       {
         title: t('套餐开始时间'),
@@ -228,7 +243,9 @@ const UserSubscriptionSourcesModal = ({ visible, onCancel, user, t }) => {
     >
       <div className='flex items-center justify-between gap-3 flex-wrap mb-3'>
         <Text type='tertiary'>
-          {t('展示该用户全部订阅的开通来源，包括管理员赠送、兑换码开通和支付购买')}
+          {t(
+            '展示该用户全部订阅的开通来源，包括管理员赠送、兑换码开通和支付购买',
+          )}
         </Text>
         <Button
           icon={<IconRefresh />}

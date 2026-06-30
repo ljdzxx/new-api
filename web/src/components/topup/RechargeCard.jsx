@@ -113,6 +113,7 @@ const RechargeCard = ({
   activeSubscriptions = [],
   allSubscriptions = [],
   reloadSubscriptionSelf,
+  onSubscriptionPurchaseSuccess,
   affLink,
   handleAffLinkClick,
   invitationRewardInfo,
@@ -875,6 +876,8 @@ const RechargeCard = ({
                   activeSubscriptions={activeSubscriptions}
                   allSubscriptions={allSubscriptions}
                   reloadSubscriptionSelf={reloadSubscriptionSelf}
+                  userQuota={userState?.user?.quota}
+                  onPurchaseSuccess={onSubscriptionPurchaseSuccess}
                   withCard={false}
                   showOverview={false}
                 />

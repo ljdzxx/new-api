@@ -28,9 +28,15 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import { IconCreditCard } from '@douyinfe/semi-icons';
-import { CalendarClock, CreditCard, Crown, Package } from 'lucide-react';
+import {
+  CalendarClock,
+  CreditCard,
+  Crown,
+  Package,
+  Wallet,
+} from 'lucide-react';
 import { SiAlipay, SiStripe, SiWechat } from 'react-icons/si';
-import { renderQuota } from '../../../helpers';
+import { getQuotaPerUnit, renderQuota } from '../../../helpers';
 import { convertUSDToPaymentCurrency } from '../../../helpers/render';
 import { formatSubscriptionDuration } from '../../../helpers/subscriptionFormat';
 
@@ -151,17 +157,26 @@ const SubscriptionPurchaseModal = ({
   enableOnlineTopUp = false,
   enableStripeTopUp = false,
   enableCreemTopUp = false,
+  userQuota = 0,
   purchaseLimitInfo = null,
   onPayStripe,
   onPayCreem,
   onPayEpay,
   onPayMall,
+  onPayBalance,
 }) => {
   const plan = selectedPlan?.plan;
   const totalAmount = Number(plan?.total_amount || 0);
   const price = plan ? Number(plan.price_amount || 0) : 0;
   const displayPrice = convertUSDToPaymentCurrency(price);
   const periodicQuotaLabels = getPeriodicQuotaLabels(plan, t);
+  const quotaPerUnit = Number(getQuotaPerUnit());
+  const balanceQuotaPerUnit =
+    Number.isFinite(quotaPerUnit) && quotaPerUnit > 0 ? quotaPerUnit : 1;
+  const balanceCost = Math.max(0, Math.ceil(price * balanceQuotaPerUnit));
+  const availableQuota = Math.max(0, Number(userQuota || 0));
+  const allowBalancePay = plan?.allow_balance_pay !== false;
+  const insufficientBalance = availableQuota < balanceCost;
 
   const explicitRouting = !!providerMeta && !providerMeta?.legacy_auto;
   const providerName = providerMeta?.provider || '';
@@ -189,7 +204,9 @@ const SubscriptionPurchaseModal = ({
   const hasMall = explicitRouting
     ? providerName === 'mall' && providerReady
     : !!plan?.mall_link;
-  const hasAnyPayment = hasStripe || hasCreem || hasEpay || hasMall;
+  const hasBalance = allowBalancePay;
+  const hasAnyPayment =
+    hasBalance || hasStripe || hasCreem || hasEpay || hasMall;
 
   const purchaseLimit = Number(purchaseLimitInfo?.limit || 0);
   const purchaseCount = Number(purchaseLimitInfo?.count || 0);
@@ -197,6 +214,16 @@ const SubscriptionPurchaseModal = ({
     purchaseLimit > 0 && purchaseCount >= purchaseLimit;
 
   const paymentOptions = [];
+  if (hasBalance) {
+    paymentOptions.push({
+      key: 'balance',
+      label: t('余额支付'),
+      active: false,
+      icon: <Wallet size={20} color='var(--semi-color-success)' />,
+      onClick: onPayBalance,
+      disabled: insufficientBalance,
+    });
+  }
   if (hasEpay) {
     modalEpayMethods.forEach((method) => {
       paymentOptions.push({
@@ -364,6 +391,34 @@ const SubscriptionPurchaseModal = ({
             />
           )}
 
+          <Card className='!rounded-xl !border border-dashed border-slate-200 bg-white dark:bg-slate-900'>
+            <div className='space-y-2 text-xs'>
+              <div className='flex items-center justify-between gap-3'>
+                <Text type='tertiary'>{t('余额支付所需')}</Text>
+                <Text>{renderQuota(balanceCost)}</Text>
+              </div>
+              <div className='flex items-center justify-between gap-3'>
+                <Text type='tertiary'>{t('当前余额')}</Text>
+                <Text>{renderQuota(availableQuota)}</Text>
+              </div>
+              {!allowBalancePay ? (
+                <Banner
+                  type='warning'
+                  description={t('该套餐不允许使用余额购买')}
+                  className='!rounded-lg'
+                  closeIcon={null}
+                />
+              ) : insufficientBalance ? (
+                <Banner
+                  type='danger'
+                  description={t('余额不足')}
+                  className='!rounded-lg'
+                  closeIcon={null}
+                />
+              ) : null}
+            </div>
+          </Card>
+
           {hasAnyPayment ? (
             <div className='space-y-3'>
               <Text size='small' type='tertiary'>
@@ -380,9 +435,11 @@ const SubscriptionPurchaseModal = ({
                     onClick={option.onClick}
                     loading={
                       paying &&
-                      (!selectedEpayMethod || selectedEpayMethod === option.key)
+                      (option.key === 'balance' ||
+                        !selectedEpayMethod ||
+                        selectedEpayMethod === option.key)
                     }
-                    disabled={purchaseLimitReached || paying}
+                    disabled={purchaseLimitReached || paying || option.disabled}
                     style={{
                       border: '1px solid #000',
                       borderRadius: 10,
@@ -396,7 +453,9 @@ const SubscriptionPurchaseModal = ({
                       boxShadow: 'none',
                     }}
                   >
-                    <span className='text-sm font-semibold'>{option.label}</span>
+                    <span className='text-sm font-semibold'>
+                      {option.label}
+                    </span>
                   </Button>
                 ))}
               </div>
@@ -404,9 +463,7 @@ const SubscriptionPurchaseModal = ({
           ) : (
             <Banner
               type='info'
-              description={t(
-                '管理员未开启在线充值功能，请联系管理员配置。',
-              )}
+              description={t('管理员未开启在线充值功能，请联系管理员配置。')}
               className='!rounded-xl'
               closeIcon={null}
             />

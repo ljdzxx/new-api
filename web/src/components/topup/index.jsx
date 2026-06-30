@@ -444,6 +444,10 @@ const TopUp = () => {
     }
   };
 
+  const handleSubscriptionPurchaseSuccess = async () => {
+    await Promise.all([getUserQuota(), getSubscriptionSelf()]);
+  };
+
   const updateBillingPreference = async (pref) => {
     const previousPref = billingPreference;
     setBillingPreference(pref);
@@ -875,6 +879,7 @@ const TopUp = () => {
           activeSubscriptions={activeSubscriptions}
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={getSubscriptionSelf}
+          onSubscriptionPurchaseSuccess={handleSubscriptionPurchaseSuccess}
           affLink={affLink}
           handleAffLinkClick={handleAffLinkClick}
           invitationRewardInfo={invitationRewardInfo}

@@ -100,6 +100,8 @@ const SubscriptionPlansCard = ({
   activeSubscriptions = [],
   allSubscriptions = [],
   reloadSubscriptionSelf,
+  userQuota = 0,
+  onPurchaseSuccess,
   withCard = true,
   showOverview = true,
 }) => {
@@ -271,6 +273,38 @@ const SubscriptionPlansCard = ({
       await paySubscriptionWithUnifiedCheckout('mall');
     } catch (e) {
       showError(e.message || t('发起支付失败'));
+    } finally {
+      setPaying(false);
+    }
+  };
+  const payBalance = async () => {
+    const planId = selectedPlan?.plan?.id;
+    if (!planId) {
+      showError(t('请选择订阅套餐'));
+      return;
+    }
+    if (selectedPlan?.plan?.allow_balance_pay === false) {
+      showError(t('该套餐不允许使用余额购买'));
+      return;
+    }
+    setPaying(true);
+    try {
+      const res = await API.post('/api/subscription/balance/pay', {
+        plan_id: planId,
+      });
+      if (res.data?.success) {
+        showSuccess(t('订阅购买成功'));
+        closeBuy();
+        if (onPurchaseSuccess) {
+          await onPurchaseSuccess();
+        } else {
+          await reloadSubscriptionSelf?.();
+        }
+      } else {
+        showError(res.data?.message || t('购买失败'));
+      }
+    } catch (e) {
+      showError(t('购买失败'));
     } finally {
       setPaying(false);
     }
@@ -948,6 +982,7 @@ const SubscriptionPlansCard = ({
         enableOnlineTopUp={enableOnlineTopUp}
         enableStripeTopUp={enableStripeTopUp}
         enableCreemTopUp={enableCreemTopUp}
+        userQuota={userQuota}
         purchaseLimitInfo={
           selectedPlan?.plan?.id
             ? {
@@ -960,6 +995,7 @@ const SubscriptionPlansCard = ({
         onPayCreem={payCreem}
         onPayEpay={payEpay}
         onPayMall={payMall}
+        onPayBalance={payBalance}
       />
     </>
   );
