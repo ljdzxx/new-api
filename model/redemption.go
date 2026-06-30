@@ -16,18 +16,23 @@ import (
 var ErrRedeemFailed = errors.New("redeem.failed")
 
 var (
-	ErrRedemptionAlreadyRedeemed = errors.New("已兑换")
-	ErrRedemptionExpired         = errors.New("兑换码已过期")
+	ErrRedemptionAlreadyRedeemed         = errors.New("已兑换")
+	ErrRedemptionExpired                 = errors.New("兑换码已过期")
+	ErrRedemptionSubscriptionUnavailable = errors.New("订阅不存在或不可用")
+	ErrRedemptionBoundToExclusiveUser    = errors.New("该兑换码已绑定了专属用户。")
 )
 
 func isRedemptionBusinessError(err error) bool {
 	return errors.Is(err, ErrRedemptionAlreadyRedeemed) ||
-		errors.Is(err, ErrRedemptionExpired)
+		errors.Is(err, ErrRedemptionExpired) ||
+		errors.Is(err, ErrRedemptionSubscriptionUnavailable) ||
+		errors.Is(err, ErrRedemptionBoundToExclusiveUser)
 }
 
 type Redemption struct {
 	Id           int            `json:"id"`
 	UserId       int            `json:"user_id"`
+	BoundUserId  int            `json:"bound_user_id" gorm:"type:int;default:0;index"`
 	Key          string         `json:"key" gorm:"type:char(32);uniqueIndex"`
 	Status       int            `json:"status" gorm:"default:1"`
 	CodeType     int            `json:"code_type" gorm:"type:int;default:1;index"`
@@ -143,10 +148,12 @@ func GetRedemptionById(id int) (*Redemption, error) {
 }
 
 type RedeemResult struct {
-	RewardType int    `json:"reward_type"`
-	Quota      int    `json:"quota"`
-	PlanId     int    `json:"plan_id"`
-	PlanTitle  string `json:"plan_title"`
+	RewardType     int    `json:"reward_type"`
+	Quota          int    `json:"quota"`
+	PlanId         int    `json:"plan_id"`
+	PlanTitle      string `json:"plan_title"`
+	SubscriptionId int    `json:"subscription_id"`
+	ResetCount     int    `json:"reset_count"`
 }
 
 type redemptionRewardApplyResult struct {
@@ -157,11 +164,24 @@ type redemptionRewardApplyResult struct {
 	subscriptionId            int
 }
 
-func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, result *RedeemResult, tradeNo string) (*redemptionRewardApplyResult, error) {
+func redemptionKeyColumn() string {
+	if commonKeyCol != "" {
+		return commonKeyCol
+	}
+	if common.UsingPostgreSQL {
+		return `"key"`
+	}
+	return "`key`"
+}
+
+func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, userSubscriptionId int, result *RedeemResult, tradeNo string) (*redemptionRewardApplyResult, error) {
 	applyResult := &redemptionRewardApplyResult{}
 	rewardType := redemption.RewardType
 	if rewardType == 0 {
 		rewardType = common.RedemptionRewardTypeQuota
+	}
+	if redemption.CodeType == common.RedemptionCodeTypeReset {
+		rewardType = common.RedemptionRewardTypeReset
 	}
 	if redemption.PayMoney < 0 {
 		return nil, errors.New("兑换码实付金额无效")
@@ -232,6 +252,29 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, re
 		if err = tx.Create(&topup).Error; err != nil {
 			return nil, err
 		}
+	case common.RedemptionRewardTypeReset:
+		if userSubscriptionId <= 0 {
+			return nil, ErrRedemptionSubscriptionUnavailable
+		}
+		now := getDBTimestampTx(tx)
+		var activeCount int64
+		if err := tx.Model(&UserSubscription{}).
+			Where("id = ? AND user_id = ? AND status = ? AND end_time > ?", userSubscriptionId, userId, "active", now).
+			Count(&activeCount).Error; err != nil {
+			return nil, err
+		}
+		if activeCount == 0 {
+			return nil, ErrRedemptionSubscriptionUnavailable
+		}
+		sub, _, err := resetUserSubscriptionUsedTx(tx, userSubscriptionId)
+		if err != nil {
+			return nil, err
+		}
+		applyResult.subscriptionId = sub.Id
+		result.SubscriptionId = sub.Id
+		result.PlanId = sub.PlanId
+		result.ResetCount = sub.ResetCount
+		return applyResult, nil
 	default:
 		return nil, errors.New("不支持的兑换码奖励类型")
 	}
@@ -252,7 +295,7 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, re
 	return applyResult, nil
 }
 
-func Redeem(key string, userId int) (result *RedeemResult, err error) {
+func Redeem(key string, userId int, userSubscriptionId int) (result *RedeemResult, err error) {
 	if key == "" {
 		return nil, errors.New("未提供兑换码")
 	}
@@ -263,15 +306,19 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 	var applyResult *redemptionRewardApplyResult
 	result = &RedeemResult{}
 
-	keyCol := "`key`"
-	if common.UsingPostgreSQL {
-		keyCol = `"key"`
-	}
+	keyCol := redemptionKeyColumn()
 	common.RandomSleep()
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(keyCol+" = ?", key).First(redemption).Error
 		if err != nil {
 			return errors.New("无效的兑换码")
+		}
+		codeType := redemption.CodeType
+		if codeType == 0 {
+			codeType = common.RedemptionCodeTypeNormal
+		}
+		if codeType != common.RedemptionCodeTypeWelfare && redemption.BoundUserId > 0 && redemption.BoundUserId != userId {
+			return ErrRedemptionBoundToExclusiveUser
 		}
 		if redemption.Status != common.RedemptionCodeStatusEnabled {
 			return ErrRedemptionAlreadyRedeemed
@@ -280,9 +327,8 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 			return ErrRedemptionExpired
 		}
 
-		codeType := redemption.CodeType
-		if codeType == 0 {
-			codeType = common.RedemptionCodeTypeNormal
+		if codeType == common.RedemptionCodeTypeReset {
+			redemption.RewardType = common.RedemptionRewardTypeReset
 		}
 		redeemedAt := common.GetTimestamp()
 		if codeType == common.RedemptionCodeTypeWelfare {
@@ -294,7 +340,7 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 				return ErrRedemptionAlreadyRedeemed
 			}
 			tradeNo := fmt.Sprintf("redeem-%d-u%d", redemption.Id, userId)
-			applyResult, err = applyRedemptionRewardTx(tx, redemption, userId, result, tradeNo)
+			applyResult, err = applyRedemptionRewardTx(tx, redemption, userId, userSubscriptionId, result, tradeNo)
 			if err != nil {
 				return err
 			}
@@ -315,7 +361,7 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 			return tx.Model(redemption).Select("redeemed_time").Updates(redemption).Error
 		}
 
-		applyResult, err = applyRedemptionRewardTx(tx, redemption, userId, result, fmt.Sprintf("redeem-%d", redemption.Id))
+		applyResult, err = applyRedemptionRewardTx(tx, redemption, userId, userSubscriptionId, result, fmt.Sprintf("redeem-%d", redemption.Id))
 		if err != nil {
 			return err
 		}
@@ -337,7 +383,9 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 	if result.RewardType == common.RedemptionRewardTypeSubscription && applyResult.upgradedSubscriptionGroup != "" {
 		_ = UpdateUserGroupCache(userId, applyResult.upgradedSubscriptionGroup)
 	}
-	if result.RewardType == common.RedemptionRewardTypeSubscription {
+	if result.RewardType == common.RedemptionRewardTypeReset {
+		RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过重置兑换码重置订阅 #%d，兑换码ID %d", result.SubscriptionId, redemption.Id))
+	} else if result.RewardType == common.RedemptionRewardTypeSubscription {
 		if result.PlanTitle != "" {
 			RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码开通订阅，套餐 %s，兑换码ID %d", result.PlanTitle, redemption.Id))
 		} else {
@@ -351,6 +399,35 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 		RecordLog(userId, LogTypeManage, fmt.Sprintf("累计充值达标，用户等级自动升级为 %s (#%d)", applyResult.upgradedGroup, applyResult.upgradedLevelID))
 	}
 	return result, nil
+}
+
+func BindRedemptionExclusiveUserTx(tx *gorm.DB, key string, userId int) error {
+	key = strings.TrimSpace(key)
+	if tx == nil || key == "" || userId <= 0 {
+		return nil
+	}
+	redemption := &Redemption{}
+	err := tx.Set("gorm:query_option", "FOR UPDATE").Where(redemptionKeyColumn()+" = ?", key).First(redemption).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	codeType := redemption.CodeType
+	if codeType == 0 {
+		codeType = common.RedemptionCodeTypeNormal
+	}
+	if codeType == common.RedemptionCodeTypeWelfare {
+		return nil
+	}
+	if redemption.BoundUserId > 0 {
+		if redemption.BoundUserId != userId {
+			return ErrRedemptionBoundToExclusiveUser
+		}
+		return nil
+	}
+	return tx.Model(redemption).Update("bound_user_id", userId).Error
 }
 
 func (redemption *Redemption) Insert() error {

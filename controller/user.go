@@ -1101,7 +1101,8 @@ func EmailBind(c *gin.Context) {
 }
 
 type topUpRequest struct {
-	Key string `json:"key"`
+	Key                string `json:"key"`
+	UserSubscriptionId int    `json:"user_subscription_id"`
 }
 
 var topUpLocks sync.Map
@@ -1159,7 +1160,7 @@ func TopUp(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	redeemResult, err := model.Redeem(req.Key, id)
+	redeemResult, err := model.Redeem(req.Key, id, req.UserSubscriptionId)
 	if err != nil {
 		if errors.Is(err, model.ErrRedeemFailed) {
 			common.ApiErrorI18n(c, i18n.MsgRedeemFailed)

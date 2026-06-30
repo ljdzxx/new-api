@@ -93,6 +93,19 @@ type LotteryPublicPeriod struct {
 	CurrentTime int64           `json:"current_time"`
 }
 
+type LotteryPrizeRecord struct {
+	Id               int    `json:"id"`
+	PeriodId         int    `json:"period_id"`
+	Issue            int    `json:"issue"`
+	Title            string `json:"title"`
+	PrizeName        string `json:"prize_name"`
+	CodeType         int    `json:"code_type"`
+	Code             string `json:"code"`
+	RedemptionStatus int    `json:"redemption_status"`
+	WonTime          int64  `json:"won_time"`
+	ExpiredTime      int64  `json:"expired_time"`
+}
+
 func (p *LotteryPeriod) BeforeCreate(tx *gorm.DB) error {
 	now := common.GetTimestamp()
 	if p.CreatedAt == 0 {
@@ -259,6 +272,47 @@ func GetLotteryPublicPeriod(periodId int, userId int) (*LotteryPublicPeriod, err
 		}
 	}
 	return result, nil
+}
+
+func GetUserLotteryPrizeRecords(userId int, pageInfo *common.PageInfo) ([]LotteryPrizeRecord, int64, error) {
+	if pageInfo == nil {
+		pageInfo = &common.PageInfo{Page: 1, PageSize: common.ItemsPerPage}
+	}
+	if userId <= 0 {
+		return nil, 0, gorm.ErrRecordNotFound
+	}
+
+	base := DB.Table("lottery_winners AS lw").
+		Joins("JOIN lottery_periods AS lp ON lp.id = lw.period_id").
+		Joins("LEFT JOIN redemptions AS r ON r."+redemptionKeyColumn()+" = lw.code AND r.deleted_at IS NULL").
+		Where("lw.user_id = ?", userId).
+		Where("(r.id IS NULL OR COALESCE(r.code_type, ?) <> ?)", common.RedemptionCodeTypeNormal, common.RedemptionCodeTypeWelfare)
+
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]LotteryPrizeRecord, 0)
+	err := base.Select(`lw.id,
+lw.period_id,
+lp.issue,
+lp.title,
+lw.prize_name,
+COALESCE(r.code_type, 1) AS code_type,
+lw.code,
+COALESCE(r.status, 0) AS redemption_status,
+lw.created_at AS won_time,
+COALESCE(r.expired_time, 0) AS expired_time`).
+		Order("lw.created_at desc").
+		Order("lw.id desc").
+		Limit(pageInfo.GetPageSize()).
+		Offset(pageInfo.GetStartIdx()).
+		Scan(&items).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func NormalizeLotteryCodes(raw string) []string {

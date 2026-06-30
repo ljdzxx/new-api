@@ -23,6 +23,8 @@ import {
   Button,
   Card,
   Divider,
+  Input,
+  Modal,
   Select,
   Skeleton,
   Space,
@@ -107,6 +109,10 @@ const SubscriptionPlansCard = ({
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProviderMeta, setSelectedProviderMeta] = useState(null);
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetTargetSubscription, setResetTargetSubscription] = useState(null);
+  const [resetRedemptionCode, setResetRedemptionCode] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
 
   const epayMethods = useMemo(() => getEpayMethods(payMethods), [payMethods]);
 
@@ -152,6 +158,50 @@ const SubscriptionPlansCard = ({
       await reloadSubscriptionSelf?.();
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const openResetModal = (subscription) => {
+    setResetTargetSubscription(subscription);
+    setResetRedemptionCode('');
+    setResetModalVisible(true);
+  };
+
+  const closeResetModal = () => {
+    if (resetSubmitting) return;
+    setResetModalVisible(false);
+  };
+
+  const submitResetRedemption = async () => {
+    const code = resetRedemptionCode.trim();
+    const subscriptionId = Number(resetTargetSubscription?.id || 0);
+    if (!code) {
+      showError(t('请输入兑换码'));
+      return;
+    }
+    if (!subscriptionId) {
+      showError(t('请选择订阅套餐'));
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      const res = await API.post('/api/user/topup', {
+        key: code,
+        user_subscription_id: subscriptionId,
+      });
+      if (!res.data?.success) {
+        showError(res.data?.message || t('兑换失败'));
+        return;
+      }
+      showSuccess(t('重置成功'));
+      setResetModalVisible(false);
+      setResetTargetSubscription(null);
+      setResetRedemptionCode('');
+      await reloadSubscriptionSelf?.();
+    } catch (e) {
+      showError(t('兑换失败'));
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -405,7 +455,10 @@ const SubscriptionPlansCard = ({
         <div className='space-y-4'>
           {/* Subscription overview */}
           {showOverview && (
-            <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
+            <Card
+              className='!rounded-xl w-full'
+              bodyStyle={{ padding: '12px' }}
+            >
               <div className='flex items-center justify-between mb-3'>
                 <Skeleton.Title active style={{ width: 100, height: 20 }} />
                 <Skeleton.Button active style={{ width: 24, height: 24 }} />
@@ -452,7 +505,10 @@ const SubscriptionPlansCard = ({
         <Space vertical style={{ width: '100%' }} spacing={8}>
           {/* Subscription list */}
           {showOverview && (
-            <Card className='!rounded-xl w-full' bodyStyle={{ padding: '12px' }}>
+            <Card
+              className='!rounded-xl w-full'
+              bodyStyle={{ padding: '12px' }}
+            >
               <div className='flex items-center justify-between mb-2 gap-3'>
                 <div className='flex items-center gap-2 flex-1 min-w-0'>
                   <Text strong>{t('我的订阅')}</Text>
@@ -568,6 +624,18 @@ const SubscriptionPlansCard = ({
                               <Tag color='white' size='small' shape='circle'>
                                 {t('已过期')}
                               </Tag>
+                            )}
+                            {isActive && (
+                              <Tooltip content={t('使用重置兑换码')}>
+                                <Button
+                                  size='small'
+                                  theme='borderless'
+                                  type='tertiary'
+                                  icon={<RefreshCw size={12} />}
+                                  aria-label={t('使用重置兑换码')}
+                                  onClick={() => openResetModal(subscription)}
+                                />
+                              </Tooltip>
                             )}
                           </div>
                           <div className='text-xs text-gray-500 mb-1'>
@@ -842,6 +910,28 @@ const SubscriptionPlansCard = ({
       ) : (
         <div className='space-y-3'>{cardContent}</div>
       )}
+
+      <Modal
+        title={t('使用重置兑换码')}
+        visible={resetModalVisible}
+        onCancel={closeResetModal}
+        onOk={submitResetRedemption}
+        confirmLoading={resetSubmitting}
+        okText={t('重置')}
+        cancelText={t('取消')}
+        centered
+        closeOnEsc={!resetSubmitting}
+        maskClosable={!resetSubmitting}
+      >
+        <Input
+          value={resetRedemptionCode}
+          onChange={setResetRedemptionCode}
+          placeholder={t('请输入兑换码')}
+          disabled={resetSubmitting}
+          onEnterPress={submitResetRedemption}
+          showClear
+        />
+      </Modal>
 
       {/* Purchase modal */}
       <SubscriptionPurchaseModal

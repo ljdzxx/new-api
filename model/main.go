@@ -680,6 +680,7 @@ func ensureRedemptionsTableSQLite() error {
 		existing[c.Name] = struct{}{}
 	}
 	required := []sqliteRedemptionColumnDef{
+		{Name: "bound_user_id", DDL: "`bound_user_id` integer DEFAULT 0"},
 		{Name: "code_type", DDL: "`code_type` integer DEFAULT 1"},
 		{Name: "reward_type", DDL: "`reward_type` integer DEFAULT 1"},
 		{Name: "plan_id", DDL: "`plan_id` integer DEFAULT 0"},

@@ -40,11 +40,13 @@ import {
   Sparkles,
   Gift,
   FileText,
+  Trophy,
   RefreshCw,
   Activity,
   ChevronRight,
 } from 'lucide-react';
 import { IconGift } from '@douyinfe/semi-icons';
+import { API, showError, showSuccess } from '../../helpers';
 import { convertTopupBaseToPaymentCurrency } from '../../helpers/render';
 import SubscriptionPlansCard from './SubscriptionPlansCard';
 import InvitationCard from './InvitationCard';
@@ -103,6 +105,7 @@ const RechargeCard = ({
   statusLoading,
   topupInfo,
   onOpenHistory,
+  onOpenLotteryPrizes,
   subscriptionLoading = false,
   subscriptionPlans = [],
   billingPreference,
@@ -116,6 +119,10 @@ const RechargeCard = ({
 }) => {
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [refreshingSubscriptions, setRefreshingSubscriptions] = useState(false);
+  const [resetRedeemOpen, setResetRedeemOpen] = useState(false);
+  const [resetTargetSubscription, setResetTargetSubscription] = useState(null);
+  const [resetRedemptionCode, setResetRedemptionCode] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
   const shouldShowSubscription =
     !subscriptionLoading && subscriptionPlans.length > 0;
 
@@ -157,7 +164,10 @@ const RechargeCard = ({
     return {
       discount,
       quotaAmountCompact: formatUsdAmount(preset.value),
-      paymentAmountText: convertTopupBaseToPaymentCurrency(actualPay, topupRate),
+      paymentAmountText: convertTopupBaseToPaymentCurrency(
+        actualPay,
+        topupRate,
+      ),
       quotaAmountText: formatUsdAmount(preset.value),
     };
   };
@@ -189,6 +199,50 @@ const RechargeCard = ({
     const success = await topUp();
     if (success) {
       setRedeemOpen(false);
+    }
+  };
+
+  const openResetRedeem = (subscription) => {
+    setResetTargetSubscription(subscription);
+    setResetRedemptionCode('');
+    setResetRedeemOpen(true);
+  };
+
+  const closeResetRedeem = () => {
+    if (resetSubmitting) return;
+    setResetRedeemOpen(false);
+  };
+
+  const submitResetRedeem = async () => {
+    const code = resetRedemptionCode.trim();
+    const subscriptionId = Number(resetTargetSubscription?.id || 0);
+    if (!code) {
+      showError(t('请输入兑换码'));
+      return;
+    }
+    if (!subscriptionId) {
+      showError(t('请选择订阅套餐'));
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      const res = await API.post('/api/user/topup', {
+        key: code,
+        user_subscription_id: subscriptionId,
+      });
+      if (!res.data?.success) {
+        showError(res.data?.message || t('兑换失败'));
+        return;
+      }
+      showSuccess(t('重置成功'));
+      setResetRedeemOpen(false);
+      setResetTargetSubscription(null);
+      setResetRedemptionCode('');
+      await reloadSubscriptionSelf?.();
+    } catch (e) {
+      showError(t('兑换失败'));
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -382,12 +436,53 @@ const RechargeCard = ({
           return (
             <div key={subscription.id || index} className='min-w-0'>
               <div className='mb-1 flex flex-wrap items-center justify-between gap-2'>
-                <span className='text-xs font-medium'>{planTitle}</span>
+                <div className='flex min-w-0 items-center gap-1.5'>
+                  <span className='truncate text-xs font-medium'>
+                    {planTitle}
+                  </span>
+                  {/* <Tooltip content={t('使用重置兑换码')}>
+                    <Button
+                      size='small'
+                      theme='borderless'
+                      type='tertiary'
+                      icon={<RefreshCw size={12} />}
+                      aria-label={t('使用重置兑换码')}
+                      onClick={() => openResetRedeem(subscription)}
+                      style={{
+                        width: 24,
+                        height: 24,
+                        minWidth: 24,
+                        padding: 0,
+                        flexShrink: 0,
+                      }}
+                    />
+                  </Tooltip> */}
+                  <Tooltip content={t('使用重置兑换码')}>
+                    <Button
+                      size='small'
+                      theme='light'
+                      type='primary'
+                      onClick={() => openResetRedeem(subscription)}
+                      style={{
+                        height: 24,
+                        minWidth: 42,
+                        padding: '0 8px',
+                        flexShrink: 0,
+                        fontSize: 12,
+                        background: 'var(--semi-color-primary-light-default)',
+                        border: '1px solid var(--semi-color-primary)',
+                      }}
+                    >
+                      {t('重置')}
+                    </Button>
+                  </Tooltip>
+                </div>
                 <span
                   className='text-[11px]'
                   style={{ color: 'var(--semi-color-text-2)' }}
                 >
-                  {t('到期时间')} {formatSubscriptionEndTime(subscription.end_time)}
+                  {t('到期时间')}{' '}
+                  {formatSubscriptionEndTime(subscription.end_time)}
                 </span>
               </div>
               {total > 0 ? (
@@ -689,7 +784,9 @@ const RechargeCard = ({
                     icon={
                       <RefreshCw
                         size={12}
-                        className={refreshingSubscriptions ? 'animate-spin' : ''}
+                        className={
+                          refreshingSubscriptions ? 'animate-spin' : ''
+                        }
                       />
                     }
                     onClick={handleRefreshSubscriptions}
@@ -718,6 +815,15 @@ const RechargeCard = ({
                 >
                   {t('账单')}
                 </Button>
+                <Button
+                  size='small'
+                  theme='outline'
+                  type='tertiary'
+                  icon={<Trophy size={12} />}
+                  onClick={onOpenLotteryPrizes}
+                >
+                  {t('我的奖品')}
+                </Button>
               </div>
             </div>
             {renderSubscriptionUsage()}
@@ -739,7 +845,9 @@ const RechargeCard = ({
 
           {shouldShowSubscription && (
             <>
-              <div style={{ height: 1, background: 'var(--semi-color-border)' }} />
+              <div
+                style={{ height: 1, background: 'var(--semi-color-border)' }}
+              />
               <div>
                 <div className='mb-3 flex items-center gap-2'>
                   <Sparkles size={14} color='var(--semi-color-primary)' />
@@ -805,6 +913,29 @@ const RechargeCard = ({
             </Text>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title={t('使用重置兑换码')}
+        visible={resetRedeemOpen}
+        onCancel={closeResetRedeem}
+        onOk={submitResetRedeem}
+        okText={t('重置')}
+        cancelText={t('取消')}
+        confirmLoading={resetSubmitting}
+        centered
+        closeOnEsc={!resetSubmitting}
+        maskClosable={!resetSubmitting}
+      >
+        <Input
+          placeholder={t('请输入兑换码')}
+          value={resetRedemptionCode}
+          onChange={setResetRedemptionCode}
+          prefix={<IconGift />}
+          disabled={resetSubmitting}
+          onEnterPress={submitResetRedeem}
+          showClear
+        />
       </Modal>
     </>
   );

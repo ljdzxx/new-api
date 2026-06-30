@@ -210,11 +210,13 @@ const (
 const (
 	RedemptionRewardTypeQuota        = 1 // 兑换额度
 	RedemptionRewardTypeSubscription = 2 // 兑换订阅套餐
+	RedemptionRewardTypeReset        = 3 // 重置订阅已用额度
 )
 
 const (
 	RedemptionCodeTypeNormal  = 1 // 普通兑换码，一码一用
 	RedemptionCodeTypeWelfare = 2 // 福利兑换码，多用户共用，每用户一次
+	RedemptionCodeTypeReset   = 3 // 重置兑换码，一码一用
 )
 
 const (

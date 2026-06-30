@@ -1158,7 +1158,7 @@ func resetUserSubscriptionUsedTx(tx *gorm.DB, userSubscriptionId int) (*UserSubs
 	if userSubscriptionId <= 0 {
 		return nil, nil, errors.New("invalid userSubscriptionId")
 	}
-	now := GetDBTimestamp()
+	now := getDBTimestampTx(tx)
 	var updatedSub UserSubscription
 	var sub UserSubscription
 	if err := tx.Set("gorm:query_option", "FOR UPDATE").

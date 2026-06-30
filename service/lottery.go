@@ -112,6 +112,9 @@ func DrawLotteryPeriod(periodId int) ([]model.LotteryWinner, error) {
 				}).Error; err != nil {
 				return err
 			}
+			if err := model.BindRedemptionExclusiveUserTx(tx, winner.Code, winner.UserId); err != nil {
+				return err
+			}
 		}
 
 		return tx.Model(&model.LotteryPeriod{}).

@@ -101,6 +101,9 @@ export const getRedemptionsColumns = ({
       }
       return t('订阅套餐');
     }
+    if (rewardType === REDEMPTION_REWARD_TYPES.RESET) {
+      return t('重置已用额度');
+    }
     return renderQuota(parseInt(record?.quota || 0, 10));
   };
   const renderCodeType = (record) => {

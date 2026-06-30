@@ -108,6 +108,9 @@ const EditRedemptionModal = (props) => {
       if (!data.code_type) {
         data.code_type = REDEMPTION_CODE_TYPES.NORMAL;
       }
+      if (data.code_type === REDEMPTION_CODE_TYPES.RESET) {
+        data.reward_type = REDEMPTION_REWARD_TYPES.RESET;
+      }
       setFixedRedemptionKey(data.key || '');
       formApiRef.current?.setValues({ ...getInitValues(), ...data });
     } else {
@@ -159,6 +162,16 @@ const EditRedemptionModal = (props) => {
     localInputs.plan_id = parseInt(localInputs.plan_id, 10) || 0;
     localInputs.pay_money = Number(localInputs.pay_money || 0);
 
+    if (localInputs.code_type === REDEMPTION_CODE_TYPES.RESET) {
+      localInputs.reward_type = REDEMPTION_REWARD_TYPES.RESET;
+      localInputs.quota = 0;
+      localInputs.plan_id = 0;
+      localInputs.pay_money = 0;
+    } else if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.RESET) {
+      showError(t('重置奖励只能用于重置兑换码'));
+      return;
+    }
+
     if (!localInputs.expired_time) {
       localInputs.expired_time = 0;
     } else {
@@ -206,6 +219,8 @@ const EditRedemptionModal = (props) => {
     if (!localInputs.name || localInputs.name.trim() === '') {
       if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.QUOTA) {
         localInputs.name = renderQuota(localInputs.quota);
+      } else if (localInputs.reward_type === REDEMPTION_REWARD_TYPES.RESET) {
+        localInputs.name = t('重置兑换码');
       } else {
         const matched = planOptions.find(
           (p) => p.value === localInputs.plan_id,
@@ -325,6 +340,11 @@ const EditRedemptionModal = (props) => {
               const currentCodeType = Number(
                 values.code_type || REDEMPTION_CODE_TYPES.NORMAL,
               );
+              const currentRewardType = Number(
+                values.reward_type || REDEMPTION_REWARD_TYPES.QUOTA,
+              );
+              const isResetRedemption =
+                currentCodeType === REDEMPTION_CODE_TYPES.RESET;
               return (
                 <div className='p-2'>
                   <Card className='!rounded-2xl shadow-sm border-0 mb-6'>
@@ -375,7 +395,37 @@ const EditRedemptionModal = (props) => {
                               label: t('福利兑换码'),
                               value: REDEMPTION_CODE_TYPES.WELFARE,
                             },
+                            {
+                              label: t('重置兑换码'),
+                              value: REDEMPTION_CODE_TYPES.RESET,
+                            },
                           ]}
+                          onChange={(value) => {
+                            const nextCodeType = Number(value);
+                            if (nextCodeType === REDEMPTION_CODE_TYPES.RESET) {
+                              formApiRef.current?.setValue(
+                                'reward_type',
+                                REDEMPTION_REWARD_TYPES.RESET,
+                              );
+                              formApiRef.current?.setValue('quota', 0);
+                              formApiRef.current?.setValue(
+                                'plan_id',
+                                undefined,
+                              );
+                              formApiRef.current?.setValue('pay_money', 0);
+                              return;
+                            }
+                            if (
+                              Number(values.reward_type) ===
+                              REDEMPTION_REWARD_TYPES.RESET
+                            ) {
+                              formApiRef.current?.setValue(
+                                'reward_type',
+                                REDEMPTION_REWARD_TYPES.QUOTA,
+                              );
+                              formApiRef.current?.setValue('quota', 100000);
+                            }
+                          }}
                         />
                       </Col>
                       {currentCodeType === REDEMPTION_CODE_TYPES.WELFARE && (
@@ -427,19 +477,29 @@ const EditRedemptionModal = (props) => {
                         <Form.Select
                           field='reward_type'
                           label={t('奖励类型')}
-                          optionList={[
-                            {
-                              label: t('额度'),
-                              value: REDEMPTION_REWARD_TYPES.QUOTA,
-                            },
-                            {
-                              label: t('订阅套餐'),
-                              value: REDEMPTION_REWARD_TYPES.SUBSCRIPTION,
-                            },
-                          ]}
+                          disabled={isResetRedemption}
+                          optionList={
+                            isResetRedemption
+                              ? [
+                                  {
+                                    label: t('重置已用额度'),
+                                    value: REDEMPTION_REWARD_TYPES.RESET,
+                                  },
+                                ]
+                              : [
+                                  {
+                                    label: t('额度'),
+                                    value: REDEMPTION_REWARD_TYPES.QUOTA,
+                                  },
+                                  {
+                                    label: t('订阅套餐'),
+                                    value: REDEMPTION_REWARD_TYPES.SUBSCRIPTION,
+                                  },
+                                ]
+                          }
                         />
                       </Col>
-                      {values.reward_type ===
+                      {currentRewardType ===
                         REDEMPTION_REWARD_TYPES.SUBSCRIPTION && (
                         <Col span={24}>
                           <Form.Select
@@ -490,7 +550,7 @@ const EditRedemptionModal = (props) => {
                     </div>
 
                     <Row gutter={12}>
-                      {values.reward_type === REDEMPTION_REWARD_TYPES.QUOTA && (
+                      {currentRewardType === REDEMPTION_REWARD_TYPES.QUOTA && (
                         <Col span={isMobile ? 24 : !isEdit ? 8 : 12}>
                           <Form.AutoComplete
                             field='quota'
@@ -524,47 +584,49 @@ const EditRedemptionModal = (props) => {
                           />
                         </Col>
                       )}
-                      <Col
-                        span={
-                          isMobile
-                            ? 24
-                            : values.reward_type ===
-                                REDEMPTION_REWARD_TYPES.QUOTA
-                              ? !isEdit
-                                ? 8
-                                : 12
-                              : !isEdit
-                                ? 12
-                                : 24
-                        }
-                      >
-                        <Form.InputNumber
-                          field='pay_money'
-                          label={t('实付金额')}
-                          min={0}
-                          precision={2}
-                          step={1}
-                          rules={[
-                            {
-                              validator: (rule, v) => {
-                                const num = Number(v || 0);
-                                return num >= 0
-                                  ? Promise.resolve()
-                                  : Promise.reject(t('实付金额不能小于0'));
+                      {currentRewardType !== REDEMPTION_REWARD_TYPES.RESET && (
+                        <Col
+                          span={
+                            isMobile
+                              ? 24
+                              : currentRewardType ===
+                                  REDEMPTION_REWARD_TYPES.QUOTA
+                                ? !isEdit
+                                  ? 8
+                                  : 12
+                                : !isEdit
+                                  ? 12
+                                  : 24
+                          }
+                        >
+                          <Form.InputNumber
+                            field='pay_money'
+                            label={t('实付金额')}
+                            min={0}
+                            precision={2}
+                            step={1}
+                            rules={[
+                              {
+                                validator: (rule, v) => {
+                                  const num = Number(v || 0);
+                                  return num >= 0
+                                    ? Promise.resolve()
+                                    : Promise.reject(t('实付金额不能小于0'));
+                                },
                               },
-                            },
-                          ]}
-                          style={{ width: '100%' }}
-                          showClear
-                        />
-                      </Col>
+                            ]}
+                            style={{ width: '100%' }}
+                            showClear
+                          />
+                        </Col>
+                      )}
                       {!isEdit &&
                         currentCodeType !== REDEMPTION_CODE_TYPES.WELFARE && (
                           <Col
                             span={
                               isMobile
                                 ? 24
-                                : values.reward_type ===
+                                : currentRewardType ===
                                     REDEMPTION_REWARD_TYPES.QUOTA
                                   ? 8
                                   : 12

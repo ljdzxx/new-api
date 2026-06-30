@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sync/atomic"
@@ -19,6 +20,7 @@ func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	t.Helper()
 	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &RedemptionUsage{}, &UserSubscription{}, &UserSubscriptionDailyStat{}))
 	if common.UsingSQLite {
+		require.NoError(t, ensureRedemptionsTableSQLite())
 		require.NoError(t, ensureSubscriptionPlanTableSQLite())
 	} else {
 		require.NoError(t, DB.AutoMigrate(&SubscriptionPlan{}))
@@ -156,7 +158,7 @@ func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 	}
 	require.NoError(t, redemption.Insert())
 
-	redeemResult, err := Redeem(redeemKey, user.Id)
+	redeemResult, err := Redeem(redeemKey, user.Id, 0)
 	require.NoError(t, err)
 	require.NotNil(t, redeemResult)
 	assert.Equal(t, common.RedemptionRewardTypeQuota, redeemResult.RewardType)
@@ -296,7 +298,7 @@ func TestAutoUpgradeByRecharge_SubscriptionRedemptionAlsoEffective(t *testing.T)
 	}
 	require.NoError(t, redemption.Insert())
 
-	redeemResult, err := Redeem(redeemKey, user.Id)
+	redeemResult, err := Redeem(redeemKey, user.Id, 0)
 	require.NoError(t, err)
 	require.NotNil(t, redeemResult)
 	assert.Equal(t, common.RedemptionRewardTypeSubscription, redeemResult.RewardType)
@@ -326,6 +328,7 @@ func TestRedeem_WelfareCodeCanBeUsedOncePerUser(t *testing.T) {
 		Key:         redeemKey,
 		Status:      common.RedemptionCodeStatusEnabled,
 		CodeType:    common.RedemptionCodeTypeWelfare,
+		BoundUserId: userA.Id,
 		Name:        "welfare_redeem",
 		Quota:       5000,
 		PayMoney:    0,
@@ -334,18 +337,18 @@ func TestRedeem_WelfareCodeCanBeUsedOncePerUser(t *testing.T) {
 	}
 	require.NoError(t, redemption.Insert())
 
-	firstResult, err := Redeem(redeemKey, userA.Id)
+	firstResult, err := Redeem(redeemKey, userA.Id, 0)
 	require.NoError(t, err)
 	require.NotNil(t, firstResult)
 	assert.Equal(t, common.RedemptionRewardTypeQuota, firstResult.RewardType)
 	assert.Equal(t, 5000, firstResult.Quota)
 
-	secondResult, err := Redeem(redeemKey, userB.Id)
+	secondResult, err := Redeem(redeemKey, userB.Id, 0)
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	assert.Equal(t, 5000, secondResult.Quota)
 
-	duplicateResult, err := Redeem(redeemKey, userA.Id)
+	duplicateResult, err := Redeem(redeemKey, userA.Id, 0)
 	require.Error(t, err)
 	assert.Nil(t, duplicateResult)
 	assert.Equal(t, "已兑换", err.Error())
@@ -367,6 +370,106 @@ func TestRedeem_WelfareCodeCanBeUsedOncePerUser(t *testing.T) {
 	assert.Equal(t, 5000, reloadedB.Quota)
 }
 
+func TestRedeem_BoundNormalCodeRejectsOtherUser(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+
+	owner := createRegisteredUser(t, "bound_owner")
+	other := createRegisteredUser(t, "bound_other")
+	now := common.GetTimestamp()
+	redeemKey := fmt.Sprintf("B%031d", time.Now().UnixNano()%1_000_000_000_000_000_000)
+	redemption := &Redemption{
+		Key:         redeemKey,
+		Status:      common.RedemptionCodeStatusEnabled,
+		CodeType:    common.RedemptionCodeTypeNormal,
+		BoundUserId: owner.Id,
+		Name:        "bound_redeem",
+		Quota:       5000,
+		CreatedTime: now,
+		ExpiredTime: 0,
+	}
+	require.NoError(t, redemption.Insert())
+
+	otherResult, err := Redeem(redeemKey, other.Id, 0)
+	require.Error(t, err)
+	assert.Nil(t, otherResult)
+	assert.True(t, errors.Is(err, ErrRedemptionBoundToExclusiveUser))
+	assert.Equal(t, "该兑换码已绑定了专属用户。", err.Error())
+
+	ownerResult, err := Redeem(redeemKey, owner.Id, 0)
+	require.NoError(t, err)
+	require.NotNil(t, ownerResult)
+	assert.Equal(t, 5000, ownerResult.Quota)
+
+	reloadedOwner, err := GetUserById(owner.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 5000, reloadedOwner.Quota)
+
+	reloadedOther, err := GetUserById(other.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 0, reloadedOther.Quota)
+}
+
+func TestRedeem_ResetCodeClearsUsedAmountOnly(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+
+	user := createRegisteredUser(t, "reset_redeem")
+	plan := &SubscriptionPlan{
+		Title:         "reset plan",
+		PriceAmount:   0,
+		Currency:      "USD",
+		DurationUnit:  "month",
+		DurationValue: 1,
+		Enabled:       true,
+		TotalAmount:   10000,
+	}
+	require.NoError(t, DB.Create(plan).Error)
+
+	now := common.GetTimestamp()
+	subscription := &UserSubscription{
+		UserId:      user.Id,
+		PlanId:      plan.Id,
+		AmountTotal: 10000,
+		AmountUsed:  4321,
+		StartTime:   now - 60,
+		EndTime:     now + 3600,
+		Status:      "active",
+		Source:      "order",
+		ResetCount:  2,
+	}
+	require.NoError(t, DB.Create(subscription).Error)
+
+	redeemKey := fmt.Sprintf("R%031d", time.Now().UnixNano()%1_000_000_000_000_000_000)
+	redemption := &Redemption{
+		Key:         redeemKey,
+		Status:      common.RedemptionCodeStatusEnabled,
+		CodeType:    common.RedemptionCodeTypeReset,
+		RewardType:  common.RedemptionRewardTypeReset,
+		Name:        "reset_redeem",
+		CreatedTime: now,
+		ExpiredTime: 0,
+	}
+	require.NoError(t, redemption.Insert())
+
+	result, err := Redeem(redeemKey, user.Id, subscription.Id)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, common.RedemptionRewardTypeReset, result.RewardType)
+	assert.Equal(t, subscription.Id, result.SubscriptionId)
+	assert.Equal(t, 3, result.ResetCount)
+
+	var reloadedSub UserSubscription
+	require.NoError(t, DB.First(&reloadedSub, subscription.Id).Error)
+	assert.Equal(t, int64(10000), reloadedSub.AmountTotal)
+	assert.Equal(t, int64(0), reloadedSub.AmountUsed)
+	assert.Equal(t, 3, reloadedSub.ResetCount)
+
+	reloadedCode, err := GetRedemptionById(redemption.Id)
+	require.NoError(t, err)
+	assert.Equal(t, common.RedemptionCodeStatusUsed, reloadedCode.Status)
+	assert.Equal(t, user.Id, reloadedCode.UsedUserId)
+}
+
 func TestRedeem_ExpiredCodeReturnsSpecificError(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[]`)
 
@@ -383,7 +486,7 @@ func TestRedeem_ExpiredCodeReturnsSpecificError(t *testing.T) {
 	}
 	require.NoError(t, redemption.Insert())
 
-	result, err := Redeem(redeemKey, user.Id)
+	result, err := Redeem(redeemKey, user.Id, 0)
 	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Equal(t, "兑换码已过期", err.Error())

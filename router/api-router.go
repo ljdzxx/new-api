@@ -34,6 +34,7 @@ func SetApiRouter(router *gin.Engine) {
 		lotteryRoute := apiRouter.Group("/lottery")
 		{
 			lotteryRoute.GET("/periods", controller.ListLotteryPeriods)
+			lotteryRoute.GET("/prizes", middleware.UserAuth(), controller.GetMyLotteryPrizes)
 			lotteryRoute.GET("/periods/:id", middleware.TryUserAuth(), controller.GetLotteryPeriod)
 			lotteryRoute.POST("/periods/:id/join", middleware.UserAuth(), controller.JoinLotteryPeriod)
 			lotteryRoute.POST("/periods/:id/scratch", middleware.UserAuth(), controller.ScratchLotteryWinnerCode)

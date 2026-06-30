@@ -20,14 +20,23 @@ func normalizeAndValidateRedemptionReward(c *gin.Context, redemption *model.Rede
 	if redemption.CodeType == 0 {
 		redemption.CodeType = common.RedemptionCodeTypeNormal
 	}
-	if redemption.CodeType != common.RedemptionCodeTypeNormal && redemption.CodeType != common.RedemptionCodeTypeWelfare {
+	if redemption.CodeType != common.RedemptionCodeTypeNormal &&
+		redemption.CodeType != common.RedemptionCodeTypeWelfare &&
+		redemption.CodeType != common.RedemptionCodeTypeReset {
 		return false, "不支持的兑换码类型"
+	}
+	if redemption.CodeType == common.RedemptionCodeTypeReset {
+		redemption.RewardType = common.RedemptionRewardTypeReset
 	}
 	if redemption.RewardType == 0 {
 		redemption.RewardType = common.RedemptionRewardTypeQuota
 	}
 	if redemption.PayMoney < 0 {
 		return false, "实付金额不能小于 0"
+	}
+	if redemption.RewardType == common.RedemptionRewardTypeReset &&
+		redemption.CodeType != common.RedemptionCodeTypeReset {
+		return false, "重置奖励只能用于重置兑换码"
 	}
 
 	switch redemption.RewardType {
@@ -49,6 +58,11 @@ func normalizeAndValidateRedemptionReward(c *gin.Context, redemption *model.Rede
 			return false, "订阅套餐未启用"
 		}
 		redemption.Quota = 0
+		return true, ""
+	case common.RedemptionRewardTypeReset:
+		redemption.Quota = 0
+		redemption.PlanId = 0
+		redemption.PayMoney = 0
 		return true, ""
 	default:
 		return false, "不支持的兑换码奖励类型"

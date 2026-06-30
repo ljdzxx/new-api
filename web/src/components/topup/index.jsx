@@ -37,6 +37,7 @@ import { REDEMPTION_REWARD_TYPES } from '../../constants/redemption.constants';
 import RechargeCard from './RechargeCard';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
+import LotteryPrizesModal from './modals/LotteryPrizesModal';
 
 const TOPUP_PROVIDER_METHODS = {
   stripe: {
@@ -176,6 +177,7 @@ const TopUp = () => {
   const [affLink, setAffLink] = useState('');
 
   const [openHistory, setOpenHistory] = useState(false);
+  const [openLotteryPrizes, setOpenLotteryPrizes] = useState(false);
 
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
@@ -731,6 +733,14 @@ const TopUp = () => {
     setOpenHistory(false);
   };
 
+  const handleOpenLotteryPrizes = () => {
+    setOpenLotteryPrizes(true);
+  };
+
+  const handleLotteryPrizesCancel = () => {
+    setOpenLotteryPrizes(false);
+  };
+
   const handleCreemCancel = () => {
     setCreemOpen(false);
     setSelectedCreemProduct(null);
@@ -779,6 +789,12 @@ const TopUp = () => {
       <TopupHistoryModal
         visible={openHistory}
         onCancel={handleHistoryCancel}
+        t={t}
+      />
+
+      <LotteryPrizesModal
+        visible={openLotteryPrizes}
+        onCancel={handleLotteryPrizesCancel}
         t={t}
       />
 
@@ -851,6 +867,7 @@ const TopUp = () => {
           statusLoading={statusLoading}
           topupInfo={topupInfo}
           onOpenHistory={handleOpenHistory}
+          onOpenLotteryPrizes={handleOpenLotteryPrizes}
           subscriptionLoading={subscriptionLoading}
           subscriptionPlans={subscriptionPlans}
           billingPreference={billingPreference}

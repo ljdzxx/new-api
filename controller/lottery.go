@@ -64,6 +64,23 @@ func GetLotteryPeriod(c *gin.Context) {
 	common.ApiSuccess(c, result)
 }
 
+func GetMyLotteryPrizes(c *gin.Context) {
+	userId := c.GetInt("id")
+	if userId <= 0 {
+		common.ApiErrorMsg(c, "请先登录后再查看奖品")
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	items, total, err := model.GetUserLotteryPrizeRecords(userId, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
+}
+
 func JoinLotteryPeriod(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	if id <= 0 {
