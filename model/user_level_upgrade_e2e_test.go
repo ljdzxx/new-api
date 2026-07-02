@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 var e2eTopUpSeq int64
@@ -213,6 +214,51 @@ func TestInviteRewardsWritePromotionTopUpsForBothUsersWithScaledAmount(t *testin
 	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", inviter.Id, PaymentMethodAffInviter, PaymentProviderPromotion).First(&inviterTopUp).Error)
 	assert.Equal(t, int64(120), inviterTopUp.Amount)
 	assert.InDelta(t, 0.0, inviterTopUp.Money, 0.0001)
+	assert.Equal(t, common.TopUpStatusSuccess, inviterTopUp.Status)
+}
+
+func TestOAuthStyleInviteRegistrationPersistsInviterId(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+
+	originQuotaForNewUser := common.QuotaForNewUser
+	originQuotaForInvitee := common.QuotaForInvitee
+	originQuotaForInviter := common.QuotaForInviter
+	t.Cleanup(func() {
+		common.QuotaForNewUser = originQuotaForNewUser
+		common.QuotaForInvitee = originQuotaForInvitee
+		common.QuotaForInviter = originQuotaForInviter
+	})
+
+	common.QuotaPerUnit = 100
+	common.QuotaForNewUser = 0
+	common.QuotaForInvitee = 5000
+	common.QuotaForInviter = 12000
+
+	inviter := createRegisteredUser(t, "oauth_inviter")
+	invitee := &User{
+		Username:    fmt.Sprintf("oauth_invitee_%d", time.Now().UnixNano()),
+		DisplayName: "oauth invitee",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+	}
+
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return invitee.InsertWithTx(tx, inviter.Id)
+	}))
+	invitee.FinalizeOAuthUserCreation(inviter.Id)
+
+	reloaded, err := GetUserById(invitee.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, inviter.Id, reloaded.InviterId)
+
+	var inviteeTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", invitee.Id, PaymentMethodAffInvitee, PaymentProviderPromotion).First(&inviteeTopUp).Error)
+	assert.Equal(t, int64(50), inviteeTopUp.Amount)
+	assert.Equal(t, common.TopUpStatusSuccess, inviteeTopUp.Status)
+
+	var inviterTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", inviter.Id, PaymentMethodAffInviter, PaymentProviderPromotion).First(&inviterTopUp).Error)
+	assert.Equal(t, int64(120), inviterTopUp.Amount)
 	assert.Equal(t, common.TopUpStatusSuccess, inviterTopUp.Status)
 }
 

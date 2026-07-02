@@ -620,6 +620,9 @@ func (user *User) Insert(inviterId int) error {
 			return err
 		}
 	}
+	if inviterId > 0 {
+		user.InviterId = inviterId
+	}
 	user.Quota = common.QuotaForNewUser
 	if user.UserLevelId <= 0 {
 		user.UserLevelId = 1
@@ -684,6 +687,9 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		if err != nil {
 			return err
 		}
+	}
+	if inviterId > 0 {
+		user.InviterId = inviterId
 	}
 	user.Quota = common.QuotaForNewUser
 	if user.UserLevelId <= 0 {
