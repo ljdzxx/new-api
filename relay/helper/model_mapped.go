@@ -1,17 +1,20 @@
 package helper
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	appcommon "github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
+
+const conditionalModelMappingPrefix = "!"
 
 func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Request) error {
 	if info.ChannelMeta == nil {
@@ -29,40 +32,22 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	modelMapping := c.GetString("model_mapping")
 	if modelMapping != "" && modelMapping != "{}" {
 		modelMap := make(map[string]string)
-		err := json.Unmarshal([]byte(modelMapping), &modelMap)
+		err := appcommon.UnmarshalJsonStr(modelMapping, &modelMap)
 		if err != nil {
 			return fmt.Errorf("unmarshal_model_mapping_failed")
 		}
+		if err := validateConditionalModelMappingConflicts(modelMap); err != nil {
+			return err
+		}
 
-		// 支持链式模型重定向，最终使用链尾的模型
-		currentModel := mappingModelName
-		visitedModels := map[string]bool{
-			currentModel: true,
-		}
-		for {
-			if mappedModel, exists := modelMap[currentModel]; exists && mappedModel != "" {
-				// 模型重定向循环检测，避免无限循环
-				if visitedModels[mappedModel] {
-					if mappedModel == currentModel {
-						if currentModel == info.OriginModelName {
-							info.IsModelMapped = false
-							return nil
-						} else {
-							info.IsModelMapped = true
-							break
-						}
-					}
-					return errors.New("model_mapping_contains_cycle")
-				}
-				visitedModels[mappedModel] = true
-				currentModel = mappedModel
+		// 模型重定向只执行单跳，命中后不再继续判断目标模型是否还有映射规则。
+		requestNeedsImageInput := requestRequiresImageInput(request)
+		mappedModel, conditional, exists := getMappedModel(modelMap, mappingModelName)
+		if exists && mappedModel != "" && mappedModel != mappingModelName {
+			if !(conditional && requestNeedsImageInput) {
 				info.IsModelMapped = true
-			} else {
-				break
+				info.UpstreamModelName = mappedModel
 			}
-		}
-		if info.IsModelMapped {
-			info.UpstreamModelName = currentModel
 		}
 	}
 
@@ -78,4 +63,49 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 		request.SetModelName(info.UpstreamModelName)
 	}
 	return nil
+}
+
+func validateConditionalModelMappingConflicts(modelMap map[string]string) error {
+	for model := range modelMap {
+		if !strings.HasPrefix(model, conditionalModelMappingPrefix) {
+			if _, exists := modelMap[conditionalModelMappingPrefix+model]; exists {
+				return errors.New("model_mapping_contains_conditional_conflict")
+			}
+			continue
+		}
+		plainModel := strings.TrimPrefix(model, conditionalModelMappingPrefix)
+		if plainModel == "" {
+			continue
+		}
+		if _, exists := modelMap[plainModel]; exists {
+			return errors.New("model_mapping_contains_conditional_conflict")
+		}
+	}
+	return nil
+}
+
+func getMappedModel(modelMap map[string]string, model string) (mappedModel string, conditional bool, exists bool) {
+	if mappedModel, exists = modelMap[model]; exists {
+		return mappedModel, false, true
+	}
+	if mappedModel, exists = modelMap[conditionalModelMappingPrefix+model]; exists {
+		return mappedModel, true, true
+	}
+	return "", false, false
+}
+
+func requestRequiresImageInput(request dto.Request) bool {
+	if request == nil {
+		return false
+	}
+	meta := request.GetTokenCountMeta()
+	if meta == nil {
+		return false
+	}
+	for _, file := range meta.Files {
+		if file != nil && file.FileType == types.FileTypeImage {
+			return true
+		}
+	}
+	return false
 }

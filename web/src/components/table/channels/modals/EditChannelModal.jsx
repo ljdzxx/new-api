@@ -88,6 +88,12 @@ const { Text, Title } = Typography;
 
 const MODEL_MAPPING_EXAMPLE = {
   'gpt-3.5-turbo': 'gpt-3.5-turbo-0125',
+  '!gpt-4o': 'gpt-4o-mini',
+};
+
+const normalizeModelMappingSourceModel = (model) => {
+  const normalized = String(model || '').trim();
+  return normalized.startsWith('!') ? normalized.slice(1).trim() : normalized;
 };
 
 const STATUS_CODE_MAPPING_EXAMPLE = {
@@ -1847,9 +1853,13 @@ const EditChannelModal = (props) => {
       !Array.isArray(parsedModelMapping)
     ) {
       const modelSet = new Set(normalizedModels);
-      const missingModels = Object.keys(parsedModelMapping)
-        .map((key) => (key || '').trim())
-        .filter((key) => key && !modelSet.has(key));
+      const missingModels = Array.from(
+        new Set(
+          Object.keys(parsedModelMapping)
+            .map((key) => normalizeModelMappingSourceModel(key))
+            .filter((key) => key && !modelSet.has(key)),
+        ),
+      );
       const shouldPromptMissing =
         missingModels.length > 0 &&
         hasModelConfigChanged(normalizedModels, localInputs.model_mapping);
@@ -3682,7 +3692,7 @@ const EditChannelModal = (props) => {
                         );
                       }}
                       extraText={t(
-                        '键为请求中的模型名称，值为要替换的模型名称',
+                        '键为请求中的模型名称(首字母"!"表示忽略带图请求)，值为要替换的模型名称',
                       )}
                     />
                   </Card>
