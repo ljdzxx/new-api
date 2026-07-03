@@ -37,6 +37,8 @@ const OperationSetting = () => {
     QuotaForInviter: 0,
     QuotaForInvitee: 0,
     InviteeSubscriptionPlanId: '0',
+    InviteRewardEmailOnly: false,
+    InviteRewardEmailRegex: '',
     'quota_setting.enable_free_model_pre_consume': true,
 
     /* 通用设置 */

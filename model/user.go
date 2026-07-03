@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,6 +24,7 @@ type User struct {
 	Username                 string         `json:"username" gorm:"unique;index" validate:"max=20"`
 	Password                 string         `json:"password" gorm:"not null;" validate:"min=8,max=20"`
 	OriginalPassword         string         `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
+	IsEmailRegistration      bool           `json:"-" gorm:"-:all"`
 	DisplayName              string         `json:"display_name" gorm:"index" validate:"max=20"`
 	Role                     int            `json:"role" gorm:"type:int;default:1"`   // admin, common
 	Status                   int            `json:"status" gorm:"type:int;default:1"` // enabled, disabled
@@ -567,6 +569,52 @@ func grantInviteeSubscription(userId int) {
 	RecordLog(userId, LogTypeSystem, fmt.Sprintf("使用邀请码赠送订阅套餐 %s (#%d)", plan.Title, plan.Id))
 }
 
+func eligibleForInviteReward(user *User) bool {
+	if user == nil {
+		return false
+	}
+	email := strings.TrimSpace(user.Email)
+	emailRegex := strings.TrimSpace(common.InviteRewardEmailRegex)
+	if !common.InviteRewardEmailOnly && emailRegex == "" {
+		return true
+	}
+	if common.InviteRewardEmailOnly && !user.IsEmailRegistration {
+		return false
+	}
+	if email == "" {
+		return false
+	}
+	if emailRegex == "" {
+		return true
+	}
+	matched, err := regexp.MatchString(emailRegex, email)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("invite reward email regex is invalid: %s", err.Error()))
+		return false
+	}
+	return matched
+}
+
+func grantInviteRewardsAfterRegistration(user *User, inviterId int) {
+	if user == nil || inviterId == 0 {
+		return
+	}
+	if !eligibleForInviteReward(user) {
+		return
+	}
+	if common.QuotaForInvitee > 0 {
+		if err := grantInviteeQuota(user.Id); err != nil {
+			common.SysLog(fmt.Sprintf("failed to grant invitee quota to user #%d: %s", user.Id, err.Error()))
+		}
+		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
+	}
+	grantInviteeSubscription(user.Id)
+	if common.QuotaForInviter > 0 {
+		RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
+		_ = inviteUser(inviterId)
+	}
+}
+
 func (user *User) TransferAffQuotaToQuota(quota int) error {
 	// 检查quota是否小于最小额度
 	if float64(quota) < common.QuotaPerUnit {
@@ -660,20 +708,7 @@ func (user *User) Insert(inviterId int) error {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 {
-		if common.QuotaForInvitee > 0 {
-			if err := grantInviteeQuota(user.Id); err != nil {
-				common.SysLog(fmt.Sprintf("failed to grant invitee quota to user #%d: %s", user.Id, err.Error()))
-			}
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		grantInviteeSubscription(user.Id)
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
+	grantInviteRewardsAfterRegistration(user, inviterId)
 	return nil
 }
 
@@ -730,19 +765,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 	if common.QuotaForNewUser > 0 {
 		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
 	}
-	if inviterId != 0 {
-		if common.QuotaForInvitee > 0 {
-			if err := grantInviteeQuota(user.Id); err != nil {
-				common.SysLog(fmt.Sprintf("failed to grant invitee quota to user #%d: %s", user.Id, err.Error()))
-			}
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		grantInviteeSubscription(user.Id)
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
+	grantInviteRewardsAfterRegistration(user, inviterId)
 }
 
 func (user *User) Update(updatePassword bool) error {

@@ -3900,6 +3900,11 @@
     "Deploy your own gateway and start routing requests through your configured upstream services.": "Triển khai cổng riêng của bạn và bắt đầu định tuyến yêu cầu qua các dịch vụ thượng nguồn đã cấu hình.",
     "Failed to load home page content...": "Tải nội dung trang chủ thất bại...",
     "Copied to clipboard": "Đã sao chép vào khay nhớ tạm",
+    "仅邮箱注册有奖": "Chỉ đăng ký bằng email mới có thưởng",
+    "开启后，仅邮箱注册用户可触发邀请人奖励和被邀请人奖励": "Khi bật, chỉ người dùng đăng ký bằng email mới kích hoạt thưởng cho người mời và người được mời",
+    "邮箱限定正则": "Regex giới hạn email",
+    "例如：^[^@]+@example\\.com$": "Ví dụ: ^[^@]+@example\\.com$",
+    "为空则不限制；填写后，仅邮箱匹配的新用户可触发邀请奖励": "Để trống nếu không giới hạn; khi nhập, chỉ người dùng mới có email khớp mới kích hoạt thưởng mời",
     "Custom Home Page": "Trang chủ tùy chỉnh"
   }
 }

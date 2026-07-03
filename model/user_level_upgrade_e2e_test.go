@@ -78,6 +78,35 @@ func createTopUp(t *testing.T, userId int, money float64) {
 	require.NoError(t, topup.Insert())
 }
 
+func setInviteRewardConfig(t *testing.T, quotaForNewUser, quotaForInvitee, quotaForInviter int, emailOnly bool, emailRegex string) {
+	t.Helper()
+	originQuotaForNewUser := common.QuotaForNewUser
+	originQuotaForInvitee := common.QuotaForInvitee
+	originQuotaForInviter := common.QuotaForInviter
+	originInviteRewardEmailOnly := common.InviteRewardEmailOnly
+	originInviteRewardEmailRegex := common.InviteRewardEmailRegex
+	t.Cleanup(func() {
+		common.QuotaForNewUser = originQuotaForNewUser
+		common.QuotaForInvitee = originQuotaForInvitee
+		common.QuotaForInviter = originQuotaForInviter
+		common.InviteRewardEmailOnly = originInviteRewardEmailOnly
+		common.InviteRewardEmailRegex = originInviteRewardEmailRegex
+	})
+
+	common.QuotaForNewUser = quotaForNewUser
+	common.QuotaForInvitee = quotaForInvitee
+	common.QuotaForInviter = quotaForInviter
+	common.InviteRewardEmailOnly = emailOnly
+	common.InviteRewardEmailRegex = emailRegex
+}
+
+func requireNoPromotionTopUp(t *testing.T, userId int, paymentMethod string) {
+	t.Helper()
+	var count int64
+	require.NoError(t, DB.Model(&TopUp{}).Where("user_id = ? AND payment_method = ? AND payment_provider = ?", userId, paymentMethod, PaymentProviderPromotion).Count(&count).Error)
+	assert.Equal(t, int64(0), count)
+}
+
 func TestUserRegister_DefaultUserLevelIDIsOne(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[]`)
 
@@ -215,6 +244,124 @@ func TestInviteRewardsWritePromotionTopUpsForBothUsersWithScaledAmount(t *testin
 	assert.Equal(t, int64(120), inviterTopUp.Amount)
 	assert.InDelta(t, 0.0, inviterTopUp.Money, 0.0001)
 	assert.Equal(t, common.TopUpStatusSuccess, inviterTopUp.Status)
+}
+
+func TestInviteRewardEmailOnlySkipsNonEmailRegistrationButKeepsNewUserQuota(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+	setInviteRewardConfig(t, 0, 5000, 12000, true, "")
+
+	inviter := createRegisteredUser(t, "email_only_non_email_inviter")
+	common.QuotaForNewUser = 700
+	invitee := &User{
+		Username:    fmt.Sprintf("email_only_non_email_invitee_%d", time.Now().UnixNano()),
+		Password:    "Password123",
+		DisplayName: "invitee",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+	}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	reloadedInvitee, err := GetUserById(invitee.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 700, reloadedInvitee.Quota)
+
+	reloadedInviter, err := GetUserById(inviter.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 0, reloadedInviter.AffCount)
+	assert.Equal(t, 0, reloadedInviter.AffHistoryQuota)
+	assert.Equal(t, 0, reloadedInviter.Quota)
+	requireNoPromotionTopUp(t, invitee.Id, PaymentMethodAffInvitee)
+	requireNoPromotionTopUp(t, inviter.Id, PaymentMethodAffInviter)
+}
+
+func TestInviteRewardEmailOnlyAllowsEmailRegistration(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+	setInviteRewardConfig(t, 700, 5000, 12000, true, "")
+
+	inviter := createRegisteredUser(t, "email_only_inviter")
+	invitee := &User{
+		Username:            fmt.Sprintf("email_only_invitee_%d", time.Now().UnixNano()),
+		Password:            "Password123",
+		DisplayName:         "invitee",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		Email:               "invitee@example.com",
+		IsEmailRegistration: true,
+	}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	reloadedInvitee, err := GetUserById(invitee.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 5700, reloadedInvitee.Quota)
+
+	var inviteeTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", invitee.Id, PaymentMethodAffInvitee, PaymentProviderPromotion).First(&inviteeTopUp).Error)
+	assert.Equal(t, int64(50), inviteeTopUp.Amount)
+
+	var inviterTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", inviter.Id, PaymentMethodAffInviter, PaymentProviderPromotion).First(&inviterTopUp).Error)
+	assert.Equal(t, int64(120), inviterTopUp.Amount)
+}
+
+func TestInviteRewardEmailRegexRestrictsInviteRewards(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+	setInviteRewardConfig(t, 700, 5000, 12000, false, `^[^@]+@example\.com$`)
+
+	inviter := createRegisteredUser(t, "email_regex_inviter")
+	mismatchedInvitee := &User{
+		Username:            fmt.Sprintf("email_regex_mismatch_%d", time.Now().UnixNano()),
+		Password:            "Password123",
+		DisplayName:         "invitee",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		Email:               "invitee@test.com",
+		IsEmailRegistration: true,
+	}
+	require.NoError(t, mismatchedInvitee.Insert(inviter.Id))
+	requireNoPromotionTopUp(t, mismatchedInvitee.Id, PaymentMethodAffInvitee)
+
+	matchedInvitee := &User{
+		Username:            fmt.Sprintf("email_regex_match_%d", time.Now().UnixNano()),
+		Password:            "Password123",
+		DisplayName:         "invitee",
+		Role:                common.RoleCommonUser,
+		Status:              common.UserStatusEnabled,
+		Email:               "invitee@example.com",
+		IsEmailRegistration: true,
+	}
+	require.NoError(t, matchedInvitee.Insert(inviter.Id))
+
+	var inviteeTopUp TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ? AND payment_provider = ?", matchedInvitee.Id, PaymentMethodAffInvitee, PaymentProviderPromotion).First(&inviteeTopUp).Error)
+	assert.Equal(t, int64(50), inviteeTopUp.Amount)
+}
+
+func TestInviteRewardEmailOnlySkipsOAuthStyleRegistrationEvenWithEmail(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+	setInviteRewardConfig(t, 700, 5000, 12000, true, `^[^@]+@example\.com$`)
+
+	inviter := createRegisteredUser(t, "oauth_email_only_inviter")
+	invitee := &User{
+		Username:    fmt.Sprintf("oauth_email_only_invitee_%d", time.Now().UnixNano()),
+		DisplayName: "oauth invitee",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+		Email:       "invitee@example.com",
+	}
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return invitee.InsertWithTx(tx, inviter.Id)
+	}))
+	invitee.FinalizeOAuthUserCreation(inviter.Id)
+
+	reloadedInvitee, err := GetUserById(invitee.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 700, reloadedInvitee.Quota)
+	requireNoPromotionTopUp(t, invitee.Id, PaymentMethodAffInvitee)
+	requireNoPromotionTopUp(t, inviter.Id, PaymentMethodAffInviter)
 }
 
 func TestOAuthStyleInviteRegistrationPersistsInviterId(t *testing.T) {

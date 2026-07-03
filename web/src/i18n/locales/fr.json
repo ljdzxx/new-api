@@ -3350,6 +3350,11 @@
     "Deploy your own gateway and start routing requests through your configured upstream services.": "Déployez votre propre passerelle et commencez à router les requêtes via vos services en amont configurés.",
     "Failed to load home page content...": "Échec du chargement du contenu de la page d’accueil...",
     "Copied to clipboard": "Copié dans le presse-papiers",
+    "仅邮箱注册有奖": "Récompenses uniquement pour les inscriptions par e-mail",
+    "开启后，仅邮箱注册用户可触发邀请人奖励和被邀请人奖励": "Une fois activé, seuls les utilisateurs inscrits par e-mail peuvent déclencher les récompenses de parrain et de filleul",
+    "邮箱限定正则": "Expression régulière de restriction d’e-mail",
+    "例如：^[^@]+@example\\.com$": "Exemple : ^[^@]+@example\\.com$",
+    "为空则不限制；填写后，仅邮箱匹配的新用户可触发邀请奖励": "Laissez vide pour ne pas limiter ; si renseigné, seuls les nouveaux utilisateurs dont l’e-mail correspond peuvent déclencher les récompenses d’invitation",
     "Custom Home Page": "Page d’accueil personnalisée"
   }
 }

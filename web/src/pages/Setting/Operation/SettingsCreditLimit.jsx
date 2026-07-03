@@ -37,6 +37,8 @@ export default function SettingsCreditLimit(props) {
     QuotaForInviter: '',
     QuotaForInvitee: '',
     InviteeSubscriptionPlanId: '0',
+    InviteRewardEmailOnly: false,
+    InviteRewardEmailRegex: '',
     'quota_setting.enable_free_model_pre_consume': true,
   });
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
@@ -88,6 +90,12 @@ export default function SettingsCreditLimit(props) {
     }
     if (currentInputs.InviteeSubscriptionPlanId === undefined) {
       currentInputs.InviteeSubscriptionPlanId = '0';
+    }
+    if (currentInputs.InviteRewardEmailOnly === undefined) {
+      currentInputs.InviteRewardEmailOnly = false;
+    }
+    if (currentInputs.InviteRewardEmailRegex === undefined) {
+      currentInputs.InviteRewardEmailRegex = '';
     }
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
@@ -212,6 +220,39 @@ export default function SettingsCreditLimit(props) {
                     );
                   })}
                 </Form.Select>
+              </Col>
+            </Row>
+            <Row>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  label={t('仅邮箱注册有奖')}
+                  field={'InviteRewardEmailOnly'}
+                  extraText={t(
+                    '开启后，仅邮箱注册用户可触发邀请人奖励和被邀请人奖励',
+                  )}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      InviteRewardEmailOnly: value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={16} lg={16} xl={16}>
+                <Form.Input
+                  label={t('邮箱限定正则')}
+                  field={'InviteRewardEmailRegex'}
+                  placeholder={t('例如：^[^@]+@example\\.com$')}
+                  extraText={t(
+                    '为空则不限制；填写后，仅邮箱匹配的新用户可触发邀请奖励',
+                  )}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      InviteRewardEmailRegex: value,
+                    })
+                  }
+                />
               </Col>
             </Row>
             <Row>

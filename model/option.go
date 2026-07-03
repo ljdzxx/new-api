@@ -109,6 +109,8 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
 	common.OptionMap["InviteeSubscriptionPlanId"] = strconv.Itoa(common.InviteeSubscriptionPlanId)
+	common.OptionMap["InviteRewardEmailOnly"] = strconv.FormatBool(common.InviteRewardEmailOnly)
+	common.OptionMap["InviteRewardEmailRegex"] = common.InviteRewardEmailRegex
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -232,7 +234,7 @@ func updateOptionMap(key string, value string) (err error) {
 			common.ImageDownloadPermission = intValue
 		}
 	}
-	if strings.HasSuffix(key, "Enabled") || key == "DefaultCollapseSidebar" || key == "DefaultUseAutoGroup" {
+	if strings.HasSuffix(key, "Enabled") || key == "DefaultCollapseSidebar" || key == "DefaultUseAutoGroup" || key == "InviteRewardEmailOnly" {
 		boolValue := value == "true"
 		switch key {
 		case "PasswordRegisterEnabled":
@@ -313,6 +315,8 @@ func updateOptionMap(key string, value string) (err error) {
 			setting.DefaultUseAutoGroup = boolValue
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
+		case "InviteRewardEmailOnly":
+			common.InviteRewardEmailOnly = boolValue
 		}
 	}
 	switch key {
@@ -413,6 +417,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.QuotaForInvitee, _ = strconv.Atoi(value)
 	case "InviteeSubscriptionPlanId":
 		common.InviteeSubscriptionPlanId, _ = strconv.Atoi(value)
+	case "InviteRewardEmailRegex":
+		common.InviteRewardEmailRegex = value
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

@@ -3421,6 +3421,11 @@
     "Deploy your own gateway and start routing requests through your configured upstream services.": "Deploy your own gateway and start routing requests through your configured upstream services.",
     "Failed to load home page content...": "Failed to load home page content...",
     "Copied to clipboard": "Copied to clipboard",
+    "仅邮箱注册有奖": "Email registrations only get rewards",
+    "开启后，仅邮箱注册用户可触发邀请人奖励和被邀请人奖励": "When enabled, only email-registered users can trigger inviter and invitee rewards",
+    "邮箱限定正则": "Email regex restriction",
+    "例如：^[^@]+@example\\.com$": "Example: ^[^@]+@example\\.com$",
+    "为空则不限制；填写后，仅邮箱匹配的新用户可触发邀请奖励": "Leave empty for no restriction; when set, only new users whose email matches can trigger invite rewards",
     "Custom Home Page": "Custom Home Page"
   }
 }

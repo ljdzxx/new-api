@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -188,6 +189,17 @@ func UpdateOption(c *gin.Context) {
 				"message": "无法启用 Telegram OAuth，请先填入 Telegram Bot Token！",
 			})
 			return
+		}
+	case "InviteRewardEmailRegex":
+		if strings.TrimSpace(option.Value.(string)) != "" {
+			_, err = regexp.Compile(option.Value.(string))
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "邮箱限定正则无效：" + err.Error(),
+				})
+				return
+			}
 		}
 	case "GroupRatio":
 		err = ratio_setting.CheckGroupRatio(option.Value.(string))
