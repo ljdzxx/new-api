@@ -22,7 +22,38 @@ import { defineConfig, transformWithEsbuild } from 'vite';
 import pkg from '@douyinfe/vite-plugin-semi';
 import path from 'path';
 import { codeInspectorPlugin } from 'code-inspector-plugin';
+import JavaScriptObfuscator from 'javascript-obfuscator';
 const { vitePluginSemi } = pkg;
+
+const fingerprintObfuscatorPlugin = () => ({
+  name: 'fingerprint-obfuscator',
+  apply: 'build',
+  transform(code, id) {
+    const normalizedId = id.split(path.sep).join('/');
+    if (!normalizedId.endsWith('/src/helpers/fingerprint.js')) {
+      return null;
+    }
+
+    const result = JavaScriptObfuscator.obfuscate(code, {
+      compact: true,
+      controlFlowFlattening: true,
+      controlFlowFlatteningThreshold: 0.75,
+      deadCodeInjection: true,
+      deadCodeInjectionThreshold: 0.2,
+      identifierNamesGenerator: 'hexadecimal',
+      renameGlobals: false,
+      stringArray: true,
+      stringArrayEncoding: ['base64'],
+      stringArrayThreshold: 1,
+      transformObjectKeys: true,
+    });
+
+    return {
+      code: result.getObfuscatedCode(),
+      map: null,
+    };
+  },
+});
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -54,6 +85,7 @@ export default defineConfig({
     vitePluginSemi({
       cssLayer: true,
     }),
+    fingerprintObfuscatorPlugin(),
   ],
   optimizeDeps: {
     force: true,
@@ -67,12 +99,22 @@ export default defineConfig({
   build: {
     // 降低build内存
     sourcemap: false,
-    minify: 'esbuild',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_debugger: true,
+      },
+      format: {
+        comments: false,
+      },
+    },
     // 路由级拆包后仍存在 Markdown/Mermaid、Lobe icons 等懒加载库级块。
     // 默认 500KB 阈值对当前后台应用过低，避免每次构建产生误导性告警。
     chunkSizeWarningLimit: 5000,
     rollupOptions: {
       output: {
+        entryFileNames: 'assets/[name]-[hash].min.js',
+        chunkFileNames: 'assets/[name]-[hash].min.js',
         manualChunks(id) {
           if (!id.includes('node_modules')) {
             return;
