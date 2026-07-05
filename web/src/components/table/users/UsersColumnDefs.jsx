@@ -290,6 +290,17 @@ const renderInviteInfo = (text, record, t) => {
             ? t('无邀请人')
             : `${t('邀请人')}: ${record.inviter_id}`}
         </Tag>
+        {record.inviter_id > 0 && record.invite_risk_score !== undefined ? (
+          <Tag
+            color={
+              Number(record.invite_risk_score || 0) >= 60 ? 'red' : 'green'
+            }
+            shape='circle'
+            className='!text-xs'
+          >
+            {t('风控分')}: {record.invite_risk_score}
+          </Tag>
+        ) : null}
       </Space>
     </div>
   );
@@ -456,7 +467,6 @@ const renderRedemptionRecordsAction = (
   );
 };
 
-
 /**
  * Get users table column definitions
  */
@@ -575,5 +585,3 @@ export const getUsersColumns = ({
     },
   ];
 };
-
-

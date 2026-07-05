@@ -27,6 +27,10 @@ func GenerateOAuthCode(c *gin.Context) {
 	if affCode != "" {
 		session.Set("aff", affCode)
 	}
+	fingerprint := c.Query("fingerprint")
+	if fingerprint != "" {
+		session.Set("fingerprint", fingerprint)
+	}
 	session.Set("oauth_state", state)
 	err := session.Save()
 	if err != nil {
@@ -259,6 +263,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
+	user.RegistrationIP = c.ClientIP()
+	if fpRaw, ok := session.Get("fingerprint").(string); ok && fpRaw != "" {
+		var fp model.RegistrationFingerprint
+		if err := common.UnmarshalJsonStr(fpRaw, &fp); err == nil {
+			user.RegistrationFingerprint = fp
+		}
+	}
 
 	// Handle affiliate code
 	affCode := session.Get("aff")

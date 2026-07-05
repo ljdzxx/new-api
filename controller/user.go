@@ -171,11 +171,13 @@ func Register(c *gin.Context) {
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
 	cleanUser := model.User{
-		Username:    user.Username,
-		Password:    user.Password,
-		DisplayName: user.Username,
-		InviterId:   inviterId,
-		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
+		Username:                user.Username,
+		Password:                user.Password,
+		DisplayName:             user.Username,
+		InviterId:               inviterId,
+		Role:                    common.RoleCommonUser, // 明确设置角色为普通用户
+		RegistrationIP:          c.ClientIP(),
+		RegistrationFingerprint: user.RegistrationFingerprint,
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
@@ -244,6 +246,9 @@ func GetAllUsers(c *gin.Context) {
 	if err := model.FillUsersListingExtras(users); err != nil {
 		common.SysError("failed to fill users listing extras: " + err.Error())
 	}
+	if err := model.FillUsersInviteRiskScore(users); err != nil {
+		common.SysError("failed to fill users invite risk score: " + err.Error())
+	}
 	responseItems, err := buildAdminUserListResponseItems(users)
 	if err != nil {
 		common.ApiError(c, err)
@@ -272,6 +277,9 @@ func SearchUsers(c *gin.Context) {
 	}
 	if err := model.FillUsersListingExtras(users); err != nil {
 		common.SysError("failed to fill users listing extras: " + err.Error())
+	}
+	if err := model.FillUsersInviteRiskScore(users); err != nil {
+		common.SysError("failed to fill users invite risk score: " + err.Error())
 	}
 	responseItems, err := buildAdminUserListResponseItems(users)
 	if err != nil {

@@ -201,6 +201,22 @@ func UpdateOption(c *gin.Context) {
 				return
 			}
 		}
+	case "InviteRiskScoreWeights":
+		var weights common.InviteRiskScoreWeights
+		if err = common.UnmarshalJsonStr(option.Value.(string), &weights); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "邀请奖励风控权重必须是合法的 JSON",
+			})
+			return
+		}
+		if weights.Total() != 100 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "邀请奖励风控权重总分必须等于 100",
+			})
+			return
+		}
 	case "GroupRatio":
 		err = ratio_setting.CheckGroupRatio(option.Value.(string))
 		if err != nil {

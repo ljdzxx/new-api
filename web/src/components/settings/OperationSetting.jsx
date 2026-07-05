@@ -39,6 +39,11 @@ const OperationSetting = () => {
     InviteeSubscriptionPlanId: '0',
     InviteRewardEmailOnly: false,
     InviteRewardEmailRegex: '',
+    InviteRiskControlEnabled: false,
+    InviteRiskThreshold: 60,
+    InviteRiskDailyLimit: 0,
+    InviteRiskScoreWeights:
+      '{"ip":25,"fingerprint":30,"canvas":10,"webgl":10,"audio":6,"fonts":6,"ua":5,"locale":4,"screen":3,"hardware":1}',
     'quota_setting.enable_free_model_pre_consume': true,
 
     /* 通用设置 */

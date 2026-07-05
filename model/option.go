@@ -111,6 +111,10 @@ func InitOptionMap() {
 	common.OptionMap["InviteeSubscriptionPlanId"] = strconv.Itoa(common.InviteeSubscriptionPlanId)
 	common.OptionMap["InviteRewardEmailOnly"] = strconv.FormatBool(common.InviteRewardEmailOnly)
 	common.OptionMap["InviteRewardEmailRegex"] = common.InviteRewardEmailRegex
+	common.OptionMap["InviteRiskControlEnabled"] = strconv.FormatBool(common.InviteRiskControlEnabled)
+	common.OptionMap["InviteRiskThreshold"] = strconv.Itoa(common.InviteRiskThreshold)
+	common.OptionMap["InviteRiskDailyLimit"] = strconv.Itoa(common.InviteRiskDailyLimit)
+	common.OptionMap["InviteRiskScoreWeights"] = common.InviteRiskScoreWeights2JSONString()
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -317,6 +321,8 @@ func updateOptionMap(key string, value string) (err error) {
 			ratio_setting.SetExposeRatioEnabled(boolValue)
 		case "InviteRewardEmailOnly":
 			common.InviteRewardEmailOnly = boolValue
+		case "InviteRiskControlEnabled":
+			common.InviteRiskControlEnabled = boolValue
 		}
 	}
 	switch key {
@@ -419,6 +425,12 @@ func updateOptionMap(key string, value string) (err error) {
 		common.InviteeSubscriptionPlanId, _ = strconv.Atoi(value)
 	case "InviteRewardEmailRegex":
 		common.InviteRewardEmailRegex = value
+	case "InviteRiskThreshold":
+		common.InviteRiskThreshold, _ = strconv.Atoi(value)
+	case "InviteRiskDailyLimit":
+		common.InviteRiskDailyLimit, _ = strconv.Atoi(value)
+	case "InviteRiskScoreWeights":
+		err = common.UpdateInviteRiskScoreWeightsByJSONString(value)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

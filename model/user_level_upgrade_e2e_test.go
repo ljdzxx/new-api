@@ -19,7 +19,7 @@ var e2eTopUpSeq int64
 
 func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	t.Helper()
-	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &RedemptionUsage{}, &UserSubscription{}, &UserSubscriptionDailyStat{}))
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &RedemptionUsage{}, &UserSubscription{}, &UserSubscriptionDailyStat{}, &UserRegistrationProfile{}, &InviteRewardAudit{}))
 	if common.UsingSQLite {
 		require.NoError(t, ensureRedemptionsTableSQLite())
 		require.NoError(t, ensureSubscriptionPlanTableSQLite())
@@ -44,6 +44,8 @@ func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	require.NoError(t, DB.Exec("DELETE FROM user_subscription_daily_stats").Error)
 	require.NoError(t, DB.Exec("DELETE FROM user_subscriptions").Error)
 	require.NoError(t, DB.Exec("DELETE FROM subscription_plans").Error)
+	require.NoError(t, DB.Exec("DELETE FROM invite_reward_audits").Error)
+	require.NoError(t, DB.Exec("DELETE FROM user_registration_profiles").Error)
 	require.NoError(t, DB.Exec("DELETE FROM users").Error)
 	require.NoError(t, DB.Exec("DELETE FROM logs").Error)
 }
@@ -105,6 +107,39 @@ func requireNoPromotionTopUp(t *testing.T, userId int, paymentMethod string) {
 	var count int64
 	require.NoError(t, DB.Model(&TopUp{}).Where("user_id = ? AND payment_method = ? AND payment_provider = ?", userId, paymentMethod, PaymentProviderPromotion).Count(&count).Error)
 	assert.Equal(t, int64(0), count)
+}
+
+func setInviteRiskConfig(t *testing.T, enabled bool, threshold int, dailyLimit int, weights common.InviteRiskScoreWeights) {
+	t.Helper()
+	originEnabled := common.InviteRiskControlEnabled
+	originThreshold := common.InviteRiskThreshold
+	originDailyLimit := common.InviteRiskDailyLimit
+	originWeights := common.InviteRiskWeights
+	t.Cleanup(func() {
+		common.InviteRiskControlEnabled = originEnabled
+		common.InviteRiskThreshold = originThreshold
+		common.InviteRiskDailyLimit = originDailyLimit
+		common.InviteRiskWeights = originWeights
+	})
+
+	common.InviteRiskControlEnabled = enabled
+	common.InviteRiskThreshold = threshold
+	common.InviteRiskDailyLimit = dailyLimit
+	common.InviteRiskWeights = weights
+}
+
+func testFingerprint(seed string) RegistrationFingerprint {
+	return RegistrationFingerprint{
+		FingerprintHash: "fingerprint-" + seed,
+		CanvasHash:      "canvas-" + seed,
+		WebGLHash:       "webgl-" + seed,
+		AudioHash:       "audio-" + seed,
+		FontsHash:       "fonts-" + seed,
+		UAHash:          "ua-" + seed,
+		LocaleHash:      "locale-" + seed,
+		ScreenHash:      "screen-" + seed,
+		HardwareHash:    "hardware-" + seed,
+	}
 }
 
 func TestUserRegister_DefaultUserLevelIDIsOne(t *testing.T) {
@@ -362,6 +397,82 @@ func TestInviteRewardEmailOnlySkipsOAuthStyleRegistrationEvenWithEmail(t *testin
 	assert.Equal(t, 700, reloadedInvitee.Quota)
 	requireNoPromotionTopUp(t, invitee.Id, PaymentMethodAffInvitee)
 	requireNoPromotionTopUp(t, inviter.Id, PaymentMethodAffInviter)
+}
+
+func TestInviteRiskControlDeniesRewardsAndWritesAudit(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+	setInviteRewardConfig(t, 700, 5000, 12000, false, "")
+	setInviteRiskConfig(t, true, 60, 0, common.DefaultInviteRiskScoreWeights())
+
+	inviter := createRegisteredUser(t, "risk_denied_inviter")
+	fp := testFingerprint("same")
+	require.NoError(t, SaveUserRegistrationProfile(inviter.Id, "203.0.113.10", fp))
+
+	invitee := &User{
+		Username:                fmt.Sprintf("risk_denied_invitee_%d", time.Now().UnixNano()),
+		Password:                "Password123",
+		DisplayName:             "invitee",
+		Role:                    common.RoleCommonUser,
+		Status:                  common.UserStatusEnabled,
+		RegistrationIP:          "203.0.113.10",
+		RegistrationFingerprint: fp,
+	}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	reloadedInvitee, err := GetUserById(invitee.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 700, reloadedInvitee.Quota)
+	requireNoPromotionTopUp(t, invitee.Id, PaymentMethodAffInvitee)
+	requireNoPromotionTopUp(t, inviter.Id, PaymentMethodAffInviter)
+
+	var audit InviteRewardAudit
+	require.NoError(t, DB.Where("invitee_id = ?", invitee.Id).First(&audit).Error)
+	assert.Equal(t, InviteRewardAuditStatusDeniedRisk, audit.RewardStatus)
+	assert.Equal(t, 100, audit.RiskScore)
+	assert.Contains(t, audit.RiskReasons, "ip:25")
+}
+
+func TestInviteRiskDailyLimitDeniesRewardsAndWritesAudit(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+	common.QuotaPerUnit = 100
+	setInviteRewardConfig(t, 700, 5000, 12000, false, "")
+	setInviteRiskConfig(t, false, 60, 1, common.DefaultInviteRiskScoreWeights())
+
+	inviter := createRegisteredUser(t, "daily_limit_inviter")
+	require.NoError(t, SaveUserRegistrationProfile(inviter.Id, "203.0.113.20", testFingerprint("inviter")))
+
+	firstInvitee := &User{
+		Username:                fmt.Sprintf("daily_limit_first_%d", time.Now().UnixNano()),
+		Password:                "Password123",
+		DisplayName:             "invitee",
+		Role:                    common.RoleCommonUser,
+		Status:                  common.UserStatusEnabled,
+		RegistrationIP:          "203.0.113.21",
+		RegistrationFingerprint: testFingerprint("first"),
+	}
+	require.NoError(t, firstInvitee.Insert(inviter.Id))
+
+	secondInvitee := &User{
+		Username:                fmt.Sprintf("daily_limit_second_%d", time.Now().UnixNano()),
+		Password:                "Password123",
+		DisplayName:             "invitee",
+		Role:                    common.RoleCommonUser,
+		Status:                  common.UserStatusEnabled,
+		RegistrationIP:          "203.0.113.22",
+		RegistrationFingerprint: testFingerprint("second"),
+	}
+	require.NoError(t, secondInvitee.Insert(inviter.Id))
+
+	var firstAudit InviteRewardAudit
+	require.NoError(t, DB.Where("invitee_id = ?", firstInvitee.Id).First(&firstAudit).Error)
+	assert.Equal(t, InviteRewardAuditStatusGranted, firstAudit.RewardStatus)
+
+	var secondAudit InviteRewardAudit
+	require.NoError(t, DB.Where("invitee_id = ?", secondInvitee.Id).First(&secondAudit).Error)
+	assert.Equal(t, InviteRewardAuditStatusDeniedDailyLimit, secondAudit.RewardStatus)
+	assert.Equal(t, 1, secondAudit.DailyCountBefore)
+	requireNoPromotionTopUp(t, secondInvitee.Id, PaymentMethodAffInvitee)
 }
 
 func TestOAuthStyleInviteRegistrationPersistsInviterId(t *testing.T) {

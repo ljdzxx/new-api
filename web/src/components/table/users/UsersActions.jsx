@@ -21,7 +21,7 @@ import React from 'react';
 import { Button } from '@douyinfe/semi-ui';
 import { useNavigate } from 'react-router-dom';
 
-const UsersActions = ({ setShowAddUser, t }) => {
+const UsersActions = ({ setShowAddUser, setShowInviteRewardAudits, t }) => {
   const navigate = useNavigate();
 
   const handleAddUser = () => {
@@ -37,6 +37,14 @@ const UsersActions = ({ setShowAddUser, t }) => {
         onClick={() => navigate('/console/subscription-rank')}
       >
         {t('订阅使用榜')}
+      </Button>
+      <Button
+        className='w-full md:w-auto'
+        type='tertiary'
+        size='small'
+        onClick={() => setShowInviteRewardAudits(true)}
+      >
+        {t('邀请奖励风控审计')}
       </Button>
       <Button className='w-full md:w-auto' onClick={handleAddUser} size='small'>
         {t('添加用户')}

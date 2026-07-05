@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Col, Form, Row, Select, Spin } from '@douyinfe/semi-ui';
+import { Button, Col, Form, Row, Select, Spin, Tag } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import {
   compareObjects,
@@ -27,6 +27,33 @@ import {
   showSuccess,
   showWarning,
 } from '../../../helpers';
+
+const DEFAULT_INVITE_RISK_WEIGHTS = {
+  ip: 25,
+  fingerprint: 30,
+  canvas: 10,
+  webgl: 10,
+  audio: 6,
+  fonts: 6,
+  ua: 5,
+  locale: 4,
+  screen: 3,
+  hardware: 1,
+};
+
+const parseInviteRiskWeights = (raw) => {
+  if (!raw) return { ...DEFAULT_INVITE_RISK_WEIGHTS };
+  try {
+    return {
+      ...DEFAULT_INVITE_RISK_WEIGHTS,
+      ...JSON.parse(raw),
+    };
+  } catch (err) {
+    return { ...DEFAULT_INVITE_RISK_WEIGHTS };
+  }
+};
+
+const stringifyInviteRiskWeights = (weights) => JSON.stringify(weights);
 
 export default function SettingsCreditLimit(props) {
   const { t } = useTranslation();
@@ -39,14 +66,41 @@ export default function SettingsCreditLimit(props) {
     InviteeSubscriptionPlanId: '0',
     InviteRewardEmailOnly: false,
     InviteRewardEmailRegex: '',
+    InviteRiskControlEnabled: false,
+    InviteRiskThreshold: 60,
+    InviteRiskDailyLimit: 0,
+    InviteRiskScoreWeights: stringifyInviteRiskWeights(
+      DEFAULT_INVITE_RISK_WEIGHTS,
+    ),
     'quota_setting.enable_free_model_pre_consume': true,
   });
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(false);
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
+  const inviteRiskWeights = parseInviteRiskWeights(
+    inputs.InviteRiskScoreWeights,
+  );
+  const inviteRiskWeightTotal = Object.values(inviteRiskWeights).reduce(
+    (sum, value) => sum + Number(value || 0),
+    0,
+  );
+
+  const updateInviteRiskWeight = (key, value) => {
+    const next = {
+      ...inviteRiskWeights,
+      [key]: Number(value || 0),
+    };
+    setInputs({
+      ...inputs,
+      InviteRiskScoreWeights: stringifyInviteRiskWeights(next),
+    });
+  };
 
   function onSubmit() {
+    if (inviteRiskWeightTotal !== 100) {
+      return showError(t('邀请奖励风控权重总分必须等于 100'));
+    }
     const updateArray = compareObjects(inputs, inputsRow);
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
     const requestQueue = updateArray.map((item) => {
@@ -96,6 +150,20 @@ export default function SettingsCreditLimit(props) {
     }
     if (currentInputs.InviteRewardEmailRegex === undefined) {
       currentInputs.InviteRewardEmailRegex = '';
+    }
+    if (currentInputs.InviteRiskControlEnabled === undefined) {
+      currentInputs.InviteRiskControlEnabled = false;
+    }
+    if (currentInputs.InviteRiskThreshold === undefined) {
+      currentInputs.InviteRiskThreshold = 60;
+    }
+    if (currentInputs.InviteRiskDailyLimit === undefined) {
+      currentInputs.InviteRiskDailyLimit = 0;
+    }
+    if (currentInputs.InviteRiskScoreWeights === undefined) {
+      currentInputs.InviteRiskScoreWeights = stringifyInviteRiskWeights(
+        DEFAULT_INVITE_RISK_WEIGHTS,
+      );
     }
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
@@ -272,6 +340,147 @@ export default function SettingsCreditLimit(props) {
                 />
               </Col>
             </Row>
+            <Form.Section text={t('邀请奖励风控')}>
+              <Row gutter={16}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    label={t('启用邀请奖励风控')}
+                    field={'InviteRiskControlEnabled'}
+                    extraText={t(
+                      '开启后，受邀注册会根据 IP 与浏览器指纹评分决定是否发放邀请奖励',
+                    )}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        InviteRiskControlEnabled: value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('风险拦截分数')}
+                    field={'InviteRiskThreshold'}
+                    min={0}
+                    max={100}
+                    step={1}
+                    extraText={t('风控评分大于等于该值时不发放邀请奖励')}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        InviteRiskThreshold: String(value),
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('每日有效邀请上限')}
+                    field={'InviteRiskDailyLimit'}
+                    min={0}
+                    step={1}
+                    extraText={t(
+                      '0 表示不限制；超过上限后当天不再发放邀请奖励',
+                    )}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        InviteRiskDailyLimit: String(value),
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+              <Row>
+                <Col span={24}>
+                  <Tag
+                    color={inviteRiskWeightTotal === 100 ? 'green' : 'red'}
+                    shape='circle'
+                  >
+                    {t('权重总分')}: {inviteRiskWeightTotal}/100
+                  </Tag>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                {[
+                  {
+                    key: 'ip',
+                    label: '精确 IP hash 相同',
+                    placeholder: 25,
+                    extraText: '你明确要求精确 IP，不用 IP 段',
+                  },
+                  {
+                    key: 'fingerprint',
+                    label: '浏览器稳定指纹整体 hash 相同',
+                    placeholder: 30,
+                    extraText:
+                      'Canvas/WebGL/Audio/字体/硬件等组合后的 stable hash',
+                  },
+                  {
+                    key: 'canvas',
+                    label: 'Canvas hash 相同',
+                    placeholder: 10,
+                    extraText: '识别度较高',
+                  },
+                  {
+                    key: 'webgl',
+                    label: 'WebGL renderer/vendor hash 相同',
+                    placeholder: 10,
+                    extraText: 'GPU 环境强信号',
+                  },
+                  {
+                    key: 'audio',
+                    label: 'AudioContext hash 相同',
+                    placeholder: 6,
+                    extraText: '中等强度',
+                  },
+                  {
+                    key: 'fonts',
+                    label: '字体集合 hash 相同',
+                    placeholder: 6,
+                    extraText: '有用，但兼容性波动较大',
+                  },
+                  {
+                    key: 'ua',
+                    label: 'User-Agent / Client Hints hash 相同',
+                    placeholder: 5,
+                    extraText: '容易相同，也容易伪造，低权重',
+                  },
+                  {
+                    key: 'locale',
+                    label: '时区 + 语言 hash 相同',
+                    placeholder: 4,
+                    extraText: '辅助信号',
+                  },
+                  {
+                    key: 'screen',
+                    label: '屏幕/DPR/颜色深度 hash 相同',
+                    placeholder: 3,
+                    extraText: '辅助信号',
+                  },
+                  {
+                    key: 'hardware',
+                    label: 'CPU/内存/平台能力 hash 相同',
+                    placeholder: 1,
+                    extraText: '辅助信号，低权重',
+                  },
+                ].map(({ key, label, placeholder, extraText }) => (
+                  <Col key={key} xs={12} sm={12} md={8} lg={6} xl={6}>
+                    <Form.InputNumber
+                      label={t(label)}
+                      field={`InviteRiskScoreWeights.${key}`}
+                      min={0}
+                      max={100}
+                      step={1}
+                      placeholder={String(placeholder)}
+                      extraText={t(extraText)}
+                      value={inviteRiskWeights[key]}
+                      onChange={(value) => updateInviteRiskWeight(key, value)}
+                    />
+                  </Col>
+                ))}
+              </Row>
+            </Form.Section>
 
             <Row>
               <Button size='default' onClick={onSubmit}>

@@ -25,6 +25,7 @@ import UsersFilters from './UsersFilters';
 import UsersDescription from './UsersDescription';
 import AddUserModal from './modals/AddUserModal';
 import EditUserModal from './modals/EditUserModal';
+import InviteRewardAuditsModal from './modals/InviteRewardAuditsModal';
 import { useUsersData } from '../../../hooks/users/useUsersData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
@@ -32,6 +33,8 @@ import { createCardProPagination } from '../../../helpers/utils';
 const UsersPage = () => {
   const usersData = useUsersData();
   const isMobile = useIsMobile();
+  const [showInviteRewardAudits, setShowInviteRewardAudits] =
+    React.useState(false);
 
   const {
     // Modal state
@@ -76,6 +79,11 @@ const UsersPage = () => {
         handleClose={closeEditUser}
         editingUser={editingUser}
       />
+      <InviteRewardAuditsModal
+        visible={showInviteRewardAudits}
+        handleClose={() => setShowInviteRewardAudits(false)}
+        t={t}
+      />
 
       <CardPro
         type='type1'
@@ -88,7 +96,11 @@ const UsersPage = () => {
         }
         actionsArea={
           <div className='flex flex-col md:flex-row justify-between items-center gap-2 w-full'>
-            <UsersActions setShowAddUser={setShowAddUser} t={t} />
+            <UsersActions
+              setShowAddUser={setShowAddUser}
+              setShowInviteRewardAudits={setShowInviteRewardAudits}
+              t={t}
+            />
 
             <UsersFilters
               formInitValues={formInitValues}
