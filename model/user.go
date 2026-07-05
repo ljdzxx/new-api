@@ -26,7 +26,10 @@ type User struct {
 	OriginalPassword         string                  `json:"original_password" gorm:"-:all"` // this field is only for Password change verification, don't save it to database!
 	IsEmailRegistration      bool                    `json:"-" gorm:"-:all"`
 	RegistrationIP           string                  `json:"-" gorm:"-:all"`
-	RegistrationFingerprint  RegistrationFingerprint `json:"fingerprint,omitempty" gorm:"-:all"`
+	RegistrationFingerprint  RegistrationFingerprint `json:"-" gorm:"-:all"`
+	RegistrationRiskToken    string                  `json:"risk_token,omitempty" gorm:"-:all"`
+	RegistrationRiskScore    *int                    `json:"-" gorm:"-:all"`
+	RegistrationRiskReason   string                  `json:"-" gorm:"-:all"`
 	DisplayName              string                  `json:"display_name" gorm:"index" validate:"max=20"`
 	Role                     int                     `json:"role" gorm:"type:int;default:1"`   // admin, common
 	Status                   int                     `json:"status" gorm:"type:int;default:1"` // enabled, disabled

@@ -31,7 +31,7 @@ import {
   setUserData,
   onDiscordOAuthClicked,
   onCustomOAuthClicked,
-  generateInviteFingerprint,
+  getRegisterRiskToken,
 } from '../../helpers';
 import Turnstile from 'react-turnstile';
 import {
@@ -246,11 +246,11 @@ const RegisterForm = () => {
         if (!affCode) {
           affCode = localStorage.getItem('aff');
         }
-        const fingerprint = await generateInviteFingerprint();
+        const riskToken = await getRegisterRiskToken();
         const payload = {
           ...inputs,
           aff_code: affCode,
-          fingerprint,
+          risk_token: riskToken,
         };
         const res = await API.post(
           `/api/user/register?turnstile=${turnstileToken}`,

@@ -27,9 +27,11 @@ func GenerateOAuthCode(c *gin.Context) {
 	if affCode != "" {
 		session.Set("aff", affCode)
 	}
-	fingerprint := c.Query("fingerprint")
-	if fingerprint != "" {
-		session.Set("fingerprint", fingerprint)
+	riskToken := c.Query("risk_token")
+	if riskToken != "" {
+		session.Set("risk_token", riskToken)
+	} else {
+		session.Delete("risk_token")
 	}
 	session.Set("oauth_state", state)
 	err := session.Save()
@@ -264,12 +266,8 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	user.Role = common.RoleCommonUser
 	user.Status = common.UserStatusEnabled
 	user.RegistrationIP = c.ClientIP()
-	if fpRaw, ok := session.Get("fingerprint").(string); ok && fpRaw != "" {
-		var fp model.RegistrationFingerprint
-		if err := common.UnmarshalJsonStr(fpRaw, &fp); err == nil {
-			user.RegistrationFingerprint = fp
-		}
-	}
+	riskToken, _ := session.Get("risk_token").(string)
+	user.RegistrationFingerprint, user.RegistrationRiskScore, user.RegistrationRiskReason = model.ConsumeRegisterRiskToken(riskToken, c.ClientIP(), c.GetHeader("User-Agent"))
 
 	// Handle affiliate code
 	affCode := session.Get("aff")

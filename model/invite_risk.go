@@ -187,17 +187,23 @@ func evaluateInviteReward(user *User, inviterId int) (string, int, string, int) 
 
 	inviterProfile, inviterProfileErr := getUserRegistrationProfile(inviterId)
 	inviteeProfile, inviteeProfileErr := getUserRegistrationProfile(user.Id)
-	if common.InviteRiskControlEnabled {
+	if user.RegistrationRiskScore != nil {
+		score = *user.RegistrationRiskScore
+		reasons = user.RegistrationRiskReason
+		if strings.TrimSpace(reasons) == "" {
+			reasons = "risk_token_abnormal"
+		}
+	} else if common.InviteRiskControlEnabled {
 		if inviterProfileErr == nil && inviteeProfileErr == nil {
 			score, reasons = calculateInviteRiskScore(inviterProfile, inviteeProfile)
 		} else {
 			reasons = "profile_missing"
 		}
-		if score >= common.InviteRiskThreshold {
-			status = InviteRewardAuditStatusDeniedRisk
-		}
 	} else if inviterProfileErr == nil && inviteeProfileErr == nil {
 		score, reasons = calculateInviteRiskScore(inviterProfile, inviteeProfile)
+	}
+	if common.InviteRiskControlEnabled && score >= common.InviteRiskThreshold {
+		status = InviteRewardAuditStatusDeniedRisk
 	}
 
 	dailyCountBefore, err := countTodayGrantedInviteRewards(inviterId)

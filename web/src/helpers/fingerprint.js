@@ -34,6 +34,27 @@ const hashText = async (value) => {
     .join('');
 };
 
+const textEncoder = new TextEncoder();
+
+const bytesToBase64Url = (bytes) => {
+  const binary = Array.from(new Uint8Array(bytes))
+    .map((byte) => String.fromCharCode(byte))
+    .join('');
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
+
+const base64ToBytes = (value) => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(
+    normalized.length + ((4 - (normalized.length % 4)) % 4),
+    '=',
+  );
+  return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+};
+
 const getCanvasValue = () => {
   const canvas = document.createElement('canvas');
   canvas.width = 320;
@@ -196,4 +217,62 @@ export const generateInviteFingerprint = async () => {
   } catch (err) {
     return { missing: true };
   }
+};
+
+export const encryptRegisterRiskPayload = async (challenge, fingerprint) => {
+  if (!window.crypto?.subtle) {
+    throw new Error('WebCrypto is not available');
+  }
+  const publicKey = await window.crypto.subtle.importKey(
+    'spki',
+    base64ToBytes(challenge.public_key),
+    {
+      name: 'RSA-OAEP',
+      hash: 'SHA-256',
+    },
+    false,
+    ['encrypt'],
+  );
+  const aesKey = await window.crypto.subtle.generateKey(
+    {
+      name: 'AES-GCM',
+      length: 256,
+    },
+    true,
+    ['encrypt'],
+  );
+  const rawAesKey = await window.crypto.subtle.exportKey('raw', aesKey);
+  const challengeId = challenge.challenge_id;
+  const additionalData = textEncoder.encode(challengeId);
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = textEncoder.encode(
+    JSON.stringify({
+      challenge_id: challengeId,
+      nonce: challenge.nonce,
+      fingerprint,
+    }),
+  );
+  const ciphertext = await window.crypto.subtle.encrypt(
+    {
+      name: 'AES-GCM',
+      iv,
+      additionalData,
+    },
+    aesKey,
+    plaintext,
+  );
+  const encryptedKey = await window.crypto.subtle.encrypt(
+    {
+      name: 'RSA-OAEP',
+      label: additionalData,
+    },
+    publicKey,
+    rawAesKey,
+  );
+  const envelope = JSON.stringify({
+    key: bytesToBase64Url(encryptedKey),
+    iv: bytesToBase64Url(iv),
+    data: bytesToBase64Url(ciphertext),
+  });
+  return bytesToBase64Url(textEncoder.encode(envelope));
 };

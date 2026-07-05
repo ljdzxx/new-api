@@ -24,7 +24,10 @@ import {
   isValidMessage,
 } from './utils';
 import axios from 'axios';
-import { generateInviteFingerprint } from './fingerprint';
+import {
+  encryptRegisterRiskPayload,
+  generateInviteFingerprint,
+} from './fingerprint';
 import { MESSAGE_ROLES } from '../constants/playground.constants';
 
 export let API = axios.create({
@@ -222,8 +225,10 @@ export async function getOAuthState() {
   if (affCode && affCode.length > 0) {
     params.set('aff', affCode);
   }
-  const fingerprint = await generateInviteFingerprint();
-  params.set('fingerprint', JSON.stringify(fingerprint));
+  const riskToken = await getRegisterRiskToken();
+  if (riskToken) {
+    params.set('risk_token', riskToken);
+  }
   const query = params.toString();
   const path = query ? `/api/oauth/state?${query}` : '/api/oauth/state';
   const res = await API.get(path);
@@ -234,6 +239,39 @@ export async function getOAuthState() {
     showError(message);
     return '';
   }
+}
+
+export async function getRegisterRiskToken() {
+  try {
+    const challengeRes = await API.get('/api/user/register_risk/challenge', {
+      skipErrorHandler: true,
+    });
+    if (!challengeRes.data?.success || !challengeRes.data?.data) {
+      return '';
+    }
+    const challenge = challengeRes.data.data;
+    const fingerprint = await generateInviteFingerprint();
+    const encryptedPayload = await encryptRegisterRiskPayload(
+      challenge,
+      fingerprint,
+    );
+    const collectRes = await API.post(
+      `/api/user/register_risk/collect/${encodeURIComponent(
+        challenge.challenge_id,
+      )}`,
+      encryptedPayload,
+      {
+        headers: {
+          'Content-Type': 'text/plain',
+        },
+        skipErrorHandler: true,
+      },
+    );
+    if (collectRes.data?.success && collectRes.data?.data) {
+      return collectRes.data.data;
+    }
+  } catch (err) {}
+  return '';
 }
 
 async function prepareOAuthState(options = {}) {

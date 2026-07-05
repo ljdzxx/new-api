@@ -170,6 +170,7 @@ func Register(c *gin.Context) {
 	}
 	affCode := user.AffCode // this code is the inviter's code, not the user's own code
 	inviterId, _ := model.GetUserIdByAffCode(affCode)
+	registrationFingerprint, riskScore, riskReason := model.ConsumeRegisterRiskToken(user.RegistrationRiskToken, c.ClientIP(), c.GetHeader("User-Agent"))
 	cleanUser := model.User{
 		Username:                user.Username,
 		Password:                user.Password,
@@ -177,7 +178,9 @@ func Register(c *gin.Context) {
 		InviterId:               inviterId,
 		Role:                    common.RoleCommonUser, // 明确设置角色为普通用户
 		RegistrationIP:          c.ClientIP(),
-		RegistrationFingerprint: user.RegistrationFingerprint,
+		RegistrationFingerprint: registrationFingerprint,
+		RegistrationRiskScore:   riskScore,
+		RegistrationRiskReason:  riskReason,
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
