@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@douyinfe/semi-ui';
 import {
@@ -30,9 +30,11 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import { fetchTokenKey as fetchTokenKeyById } from '../../helpers/token';
+import { StatusContext } from '../../context/Status';
 
 export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const { t } = useTranslation();
+  const [statusState] = useContext(StatusContext);
 
   // Basic state
   const [tokens, setTokens] = useState([]);
@@ -42,6 +44,8 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [searching, setSearching] = useState(false);
   const [searchMode, setSearchMode] = useState(false); // 是否处于搜索结果视图
+  const [groupOptions, setGroupOptions] = useState([]);
+  const [updatingTokenGroups, setUpdatingTokenGroups] = useState({});
 
   // Selection state
   const [selectedKeys, setSelectedKeys] = useState([]);
@@ -106,6 +110,32 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
       showError(message);
     }
     setLoading(false);
+  };
+
+  const loadGroups = async () => {
+    try {
+      const res = await API.get('/api/user/self/groups');
+      const { success, message, data } = res.data || {};
+      if (success) {
+        const options = Object.entries(data || {}).map(([group, info]) => ({
+          label: info?.desc || group,
+          value: group,
+          ratio: info?.ratio,
+        }));
+        if (statusState?.status?.default_use_auto_group) {
+          options.sort((a, b) => {
+            if (a.value === 'auto') return -1;
+            if (b.value === 'auto') return 1;
+            return 0;
+          });
+        }
+        setGroupOptions(options);
+      } else {
+        showError(t(message));
+      }
+    } catch (error) {
+      showError(error.message || t('加载分组失败'));
+    }
   };
 
   // Refresh function
@@ -280,11 +310,61 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     setLoading(false);
   };
 
+  const updateTokenGroup = async (record, nextGroup) => {
+    if (!record?.id) {
+      showError(t('令牌不存在'));
+      return;
+    }
+
+    const normalizedGroup = nextGroup || '';
+    if ((record.group || '') === normalizedGroup) {
+      return;
+    }
+
+    setUpdatingTokenGroups((prev) => ({ ...prev, [record.id]: true }));
+    try {
+      const payload = {
+        id: parseInt(record.id, 10),
+        name: record.name,
+        status: record.status,
+        expired_time: record.expired_time,
+        remain_quota: parseInt(record.remain_quota, 10) || 0,
+        unlimited_quota: !!record.unlimited_quota,
+        model_limits_enabled: !!record.model_limits_enabled,
+        model_limits: record.model_limits || '',
+        allow_ips: record.allow_ips ?? '',
+        group: normalizedGroup,
+        cross_group_retry:
+          normalizedGroup === 'auto' ? !!record.cross_group_retry : false,
+      };
+      const res = await API.put('/api/token/', payload);
+      const { success, message, data } = res.data || {};
+      if (success) {
+        const updatedToken = data || { ...record, ...payload };
+        setTokens((prev) =>
+          prev.map((token) =>
+            token.id === record.id ? { ...token, ...updatedToken } : token,
+          ),
+        );
+        showSuccess(t('令牌更新成功！'));
+      } else {
+        showError(t(message));
+      }
+    } catch (error) {
+      showError(error.message || t('更新失败'));
+    } finally {
+      setUpdatingTokenGroups((prev) => {
+        const next = { ...prev };
+        delete next[record.id];
+        return next;
+      });
+    }
+  };
+
   // Search tokens function
   const searchTokens = async (page = 1, size = pageSize) => {
     const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
-    const normalizedSize =
-      Number.isInteger(size) && size > 0 ? size : pageSize;
+    const normalizedSize = Number.isInteger(size) && size > 0 ? size : pageSize;
 
     const { searchKeyword, searchToken } = getFormValues();
     if (searchKeyword === '' && searchToken === '') {
@@ -398,7 +478,9 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     }
     try {
       const keys = await Promise.all(
-        selectedKeys.map((token) => fetchTokenKey(token, { suppressError: true })),
+        selectedKeys.map((token) =>
+          fetchTokenKey(token, { suppressError: true }),
+        ),
       );
       let content = '';
       for (let i = 0; i < selectedKeys.length; i++) {
@@ -424,6 +506,10 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
       });
   }, [pageSize]);
 
+  useEffect(() => {
+    loadGroups();
+  }, [statusState?.status?.default_use_auto_group]);
+
   return {
     // Basic state
     tokens,
@@ -432,6 +518,8 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     tokenCount,
     pageSize,
     searching,
+    groupOptions,
+    updatingTokenGroups,
 
     // Selection state
     selectedKeys,
@@ -467,6 +555,7 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
     copyTokenKey,
     onOpenLink,
     manageToken,
+    updateTokenGroup,
     searchTokens,
     sortToken,
     handlePageChange,

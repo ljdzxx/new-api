@@ -32,12 +32,17 @@ import {
   Typography,
   Input,
   Modal,
+  Select,
 } from '@douyinfe/semi-ui';
 import {
   timestamp2string,
   renderGroup,
+  renderGroupOption,
+  renderRatio,
+  stringToColor,
   renderQuota,
   getModelCategories,
+  selectFilter,
   showError,
 } from '../../../helpers';
 import {
@@ -88,7 +93,81 @@ const renderStatus = (text, record, t) => {
 };
 
 // Render group column
-const renderGroupColumn = (text, record, t) => {
+const renderGroupValue = (optionNode, t) => {
+  const group = optionNode?.value || '';
+  const ratio = optionNode?.ratio;
+  if (group === 'auto') {
+    return (
+      <span className='flex items-center gap-1 min-w-0'>
+        <Tag color='white' shape='circle'>
+          {t('智能熔断')}
+        </Tag>
+        {ratio !== undefined && renderRatio(ratio)}
+      </span>
+    );
+  }
+  return (
+    <span className='flex items-center gap-1 min-w-0'>
+      <Tag color={stringToColor(group)} shape='circle' className='max-w-[92px]'>
+        <span className='truncate'>{group}</span>
+      </Tag>
+      {ratio !== undefined && renderRatio(ratio)}
+    </span>
+  );
+};
+
+const renderGroupColumn = (
+  text,
+  record,
+  t,
+  groupOptions,
+  updatingTokenGroups,
+  updateTokenGroup,
+) => {
+  if (groupOptions?.length > 0 && updateTokenGroup) {
+    const rowGroupOptions =
+      text && !groupOptions.some((option) => option.value === text)
+        ? [
+            ...groupOptions,
+            {
+              label: text,
+              value: text,
+              disabled: true,
+            },
+          ]
+        : groupOptions;
+
+    return (
+      <div className='w-[190px]' onClick={(event) => event.stopPropagation()}>
+        <Select
+          size='small'
+          value={text || undefined}
+          placeholder={t('用户分组')}
+          optionList={rowGroupOptions}
+          renderOptionItem={renderGroupOption}
+          renderSelectedItem={(optionNode) => renderGroupValue(optionNode, t)}
+          filter={selectFilter}
+          searchPosition='dropdown'
+          searchable
+          showClear
+          loading={!!updatingTokenGroups?.[record.id]}
+          disabled={!!updatingTokenGroups?.[record.id]}
+          emptyContent={t('暂无数据')}
+          style={{ width: '100%' }}
+          onChange={(value) => updateTokenGroup(record, value)}
+        />
+        {text === 'auto' && record?.cross_group_retry ? (
+          <div
+            className='mt-1 text-xs'
+            style={{ color: 'var(--semi-color-text-2)' }}
+          >
+            {t('跨分组')}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   if (text === 'auto') {
     return (
       <Tooltip
@@ -449,6 +528,9 @@ export const getTokensColumns = ({
   setEditingToken,
   setShowEdit,
   refresh,
+  groupOptions,
+  updatingTokenGroups,
+  updateTokenGroup,
 }) => {
   return [
     {
@@ -470,7 +552,15 @@ export const getTokensColumns = ({
       title: t('分组'),
       dataIndex: 'group',
       key: 'group',
-      render: (text, record) => renderGroupColumn(text, record, t),
+      render: (text, record) =>
+        renderGroupColumn(
+          text,
+          record,
+          t,
+          groupOptions,
+          updatingTokenGroups,
+          updateTokenGroup,
+        ),
     },
     {
       title: t('密钥'),

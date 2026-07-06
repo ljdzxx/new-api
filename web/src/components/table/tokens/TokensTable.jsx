@@ -34,6 +34,8 @@ const TokensTable = (tokensData) => {
     pageSize,
     tokenCount,
     compactMode,
+    groupOptions,
+    updatingTokenGroups,
     handlePageChange,
     handlePageSizeChange,
     rowSelection,
@@ -44,6 +46,7 @@ const TokensTable = (tokensData) => {
     toggleTokenVisibility,
     copyTokenKey,
     manageToken,
+    updateTokenGroup,
     onOpenLink,
     setEditingToken,
     setShowEdit,
@@ -61,10 +64,13 @@ const TokensTable = (tokensData) => {
       toggleTokenVisibility,
       copyTokenKey,
       manageToken,
+      updateTokenGroup,
       onOpenLink,
       setEditingToken,
       setShowEdit,
       refresh,
+      groupOptions,
+      updatingTokenGroups,
     });
   }, [
     t,
@@ -74,10 +80,13 @@ const TokensTable = (tokensData) => {
     toggleTokenVisibility,
     copyTokenKey,
     manageToken,
+    updateTokenGroup,
     onOpenLink,
     setEditingToken,
     setShowEdit,
     refresh,
+    groupOptions,
+    updatingTokenGroups,
   ]);
 
   // Handle compact mode by removing fixed positioning
