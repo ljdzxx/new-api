@@ -304,7 +304,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		}
 	}
 	scaledTotalTokens := relayhelper.ScaleTokensByGlobalModelRatio(totalTokens, globalModelRatio)
-	actualQuota := int(float64(scaledTotalTokens) * modelRatio * finalGroupRatio)
+	actualQuota := common.QuotaFromFloat(float64(scaledTotalTokens) * modelRatio * finalGroupRatio)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
 	if globalModelRatio != 1 || (common.DebugTraceEnabled && common.NormalizeDebugTraceToken(common.DebugTraceToken) == "") {
