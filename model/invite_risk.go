@@ -31,7 +31,7 @@ type RegistrationFingerprint struct {
 
 type UserRegistrationProfile struct {
 	Id                 int    `json:"id"`
-	UserId             int    `json:"user_id" gorm:"uniqueIndex;index"`
+	UserId             int    `json:"user_id" gorm:"uniqueIndex"`
 	IPHash             string `json:"-" gorm:"type:varchar(128);index"`
 	FingerprintHash    string `json:"-" gorm:"type:varchar(128);index"`
 	CanvasHash         string `json:"-" gorm:"type:varchar(128);index"`

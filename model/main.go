@@ -247,6 +247,20 @@ func InitLogDB() (err error) {
 	return err
 }
 
+type autoMigration struct {
+	model interface{}
+	name  string
+}
+
+func migrateModelList(migrations []autoMigration) error {
+	for _, migration := range migrations {
+		if err := DB.AutoMigrate(migration.model); err != nil {
+			return fmt.Errorf("failed to migrate %s: %w", migration.name, err)
+		}
+	}
+	return nil
+}
+
 func migrateDB() error {
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
@@ -264,82 +278,7 @@ func migrateDB() error {
 		}
 	}
 
-	autoMigrateModels := []interface{}{
-		&Token{},
-		&ChannelDailyMark{},
-		&PasskeyCredential{},
-		&Option{},
-		&Redemption{},
-		&RedemptionUsage{},
-		&Ability{},
-		&Log{},
-		&Midjourney{},
-		&TopUp{},
-		&PaymentReconcileJob{},
-		&PaymentReconcileItem{},
-		&QuotaData{},
-		&ImageGenerationRecord{},
-		&Task{},
-		&Model{},
-		&Vendor{},
-		&PrefillGroup{},
-		&Setup{},
-		&TwoFA{},
-		&TwoFABackupCode{},
-		&Checkin{},
-		&SubscriptionOrder{},
-		&UserSubscription{},
-		&UserSubscriptionDailyStat{},
-		&SubscriptionPreConsumeRecord{},
-		&CustomOAuthProvider{},
-		&UserOAuthBinding{},
-		&UserRegistrationProfile{},
-		&InviteRewardAudit{},
-		&LotteryPeriod{},
-		&LotteryPrize{},
-		&LotteryPrizeCode{},
-		&LotteryEntry{},
-		&LotteryWinner{},
-	}
-	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
-		autoMigrateModels = append([]interface{}{&Channel{}}, autoMigrateModels...)
-	}
-	err := DB.AutoMigrate(autoMigrateModels...)
-	if err != nil {
-		return err
-	}
-	if err := backfillPaymentProviders(); err != nil {
-		return err
-	}
-	if err := backfillTopUpReconcileStatus(); err != nil {
-		return err
-	}
-	if err := ensureUserSubscriptionResetCountColumn(); err != nil {
-		return err
-	}
-	if common.UsingSQLite {
-		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
-			return err
-		}
-		if err := ensureRedemptionsTableSQLite(); err != nil {
-			return err
-		}
-	} else {
-		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func migrateDBFast() error {
-
-	var wg sync.WaitGroup
-
-	migrations := []struct {
-		model interface{}
-		name  string
-	}{
+	autoMigrateModels := []autoMigration{
 		{&Token{}, "Token"},
 		{&ChannelDailyMark{}, "ChannelDailyMark"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
@@ -377,10 +316,78 @@ func migrateDBFast() error {
 		{&LotteryWinner{}, "LotteryWinner"},
 	}
 	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
-		migrations = append([]struct {
-			model interface{}
-			name  string
-		}{{&Channel{}, "Channel"}}, migrations...)
+		autoMigrateModels = append([]autoMigration{{&Channel{}, "Channel"}}, autoMigrateModels...)
+	}
+	if err := migrateModelList(autoMigrateModels); err != nil {
+		return err
+	}
+	if err := backfillPaymentProviders(); err != nil {
+		return err
+	}
+	if err := backfillTopUpReconcileStatus(); err != nil {
+		return err
+	}
+	if err := ensureUserSubscriptionResetCountColumn(); err != nil {
+		return err
+	}
+	if common.UsingSQLite {
+		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
+			return err
+		}
+		if err := ensureRedemptionsTableSQLite(); err != nil {
+			return err
+		}
+	} else {
+		if err := DB.AutoMigrate(&SubscriptionPlan{}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateDBFast() error {
+
+	var wg sync.WaitGroup
+
+	migrations := []autoMigration{
+		{&Token{}, "Token"},
+		{&ChannelDailyMark{}, "ChannelDailyMark"},
+		{&PasskeyCredential{}, "PasskeyCredential"},
+		{&Option{}, "Option"},
+		{&Redemption{}, "Redemption"},
+		{&RedemptionUsage{}, "RedemptionUsage"},
+		{&Ability{}, "Ability"},
+		{&Log{}, "Log"},
+		{&Midjourney{}, "Midjourney"},
+		{&TopUp{}, "TopUp"},
+		{&PaymentReconcileJob{}, "PaymentReconcileJob"},
+		{&PaymentReconcileItem{}, "PaymentReconcileItem"},
+		{&QuotaData{}, "QuotaData"},
+		{&ImageGenerationRecord{}, "ImageGenerationRecord"},
+		{&Task{}, "Task"},
+		{&Model{}, "Model"},
+		{&Vendor{}, "Vendor"},
+		{&PrefillGroup{}, "PrefillGroup"},
+		{&Setup{}, "Setup"},
+		{&TwoFA{}, "TwoFA"},
+		{&TwoFABackupCode{}, "TwoFABackupCode"},
+		{&Checkin{}, "Checkin"},
+		{&SubscriptionOrder{}, "SubscriptionOrder"},
+		{&UserSubscription{}, "UserSubscription"},
+		{&UserSubscriptionDailyStat{}, "UserSubscriptionDailyStat"},
+		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
+		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
+		{&UserOAuthBinding{}, "UserOAuthBinding"},
+		{&UserRegistrationProfile{}, "UserRegistrationProfile"},
+		{&InviteRewardAudit{}, "InviteRewardAudit"},
+		{&LotteryPeriod{}, "LotteryPeriod"},
+		{&LotteryPrize{}, "LotteryPrize"},
+		{&LotteryPrizeCode{}, "LotteryPrizeCode"},
+		{&LotteryEntry{}, "LotteryEntry"},
+		{&LotteryWinner{}, "LotteryWinner"},
+	}
+	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
+		migrations = append([]autoMigration{{&Channel{}, "Channel"}}, migrations...)
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))
