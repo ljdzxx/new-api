@@ -472,7 +472,7 @@ func inviteUser(inviterId int) (err error) {
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		user := User{}
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", inviterId).First(&user).Error; err != nil {
+		if err := lockForUpdate(tx).Where("id = ?", inviterId).First(&user).Error; err != nil {
 			return err
 		}
 		user.AffCount++
@@ -637,7 +637,7 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	defer tx.Rollback() // 确保在函数退出时事务能回滚
 
 	// 加锁查询用户以确保数据一致性
-	err := tx.Set("gorm:query_option", "FOR UPDATE").First(user, user.Id).Error
+	err := lockForUpdate(tx).First(user, user.Id).Error
 	if err != nil {
 		return err
 	}

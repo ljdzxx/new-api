@@ -309,7 +309,7 @@ func Redeem(key string, userId int, userSubscriptionId int) (result *RedeemResul
 	keyCol := redemptionKeyColumn()
 	common.RandomSleep()
 	err = DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Set("gorm:query_option", "FOR UPDATE").Where(keyCol+" = ?", key).First(redemption).Error
+		err := lockForUpdate(tx).Where(keyCol+" = ?", key).First(redemption).Error
 		if err != nil {
 			return errors.New("无效的兑换码")
 		}
@@ -407,7 +407,7 @@ func BindRedemptionExclusiveUserTx(tx *gorm.DB, key string, userId int) error {
 		return nil
 	}
 	redemption := &Redemption{}
-	err := tx.Set("gorm:query_option", "FOR UPDATE").Where(redemptionKeyColumn()+" = ?", key).First(redemption).Error
+	err := lockForUpdate(tx).Where(redemptionKeyColumn()+" = ?", key).First(redemption).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
