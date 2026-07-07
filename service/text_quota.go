@@ -90,6 +90,7 @@ func noteQuotaClamp(relayInfo *relaycommon.RelayInfo, clamp *common.QuotaClamp) 
 		relayInfo.QuotaClamp = clamp
 	}
 }
+
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
 	summary := textQuotaSummary{
 		ModelName:            relayInfo.OriginModelName,
