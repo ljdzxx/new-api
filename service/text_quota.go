@@ -79,6 +79,17 @@ func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *d
 	return usage.ClaudeCacheCreation5mTokens > 0 || usage.ClaudeCacheCreation1hTokens > 0
 }
 
+// noteQuotaClamp records the first quota saturation event onto relayInfo so it
+// can later be attached to the consume/task log for admin auditing. First
+// non-nil clamp wins (a single request may hit multiple conversions).
+func noteQuotaClamp(relayInfo *relaycommon.RelayInfo, clamp *common.QuotaClamp) {
+	if clamp == nil || relayInfo == nil {
+		return
+	}
+	if relayInfo.QuotaClamp == nil {
+		relayInfo.QuotaClamp = clamp
+	}
+}
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
 	summary := textQuotaSummary{
 		ModelName:            relayInfo.OriginModelName,
@@ -275,7 +286,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
-		summary.Quota = decimalToQuota(quotaCalculateDecimal)
+		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
+		summary.Quota = quota
+		noteQuotaClamp(relayInfo, clamp)
 	} else {
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
@@ -288,7 +301,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
 			}
 		}
-		summary.Quota = decimalToQuota(quotaCalculateDecimal)
+		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
+		summary.Quota = quota
+		noteQuotaClamp(relayInfo, clamp)
 	}
 
 	if summary.TotalTokens == 0 {
@@ -350,14 +365,6 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 
 	return summary
-}
-
-// decimalToQuota converts a computed quota decimal to int with saturation
-// (see common.QuotaFromFloat). Oversized multipliers (e.g. an absurd image
-// generation count) must never wrap around and turn a charge into a credit.
-func decimalToQuota(d decimal.Decimal) int {
-	f, _ := d.Round(0).Float64()
-	return common.QuotaFromFloat(f)
 }
 
 func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
@@ -491,6 +498,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		// prompt/cache fields here, otherwise old upstream payloads may be double-counted.
 		other["input_tokens_total"] = relayhelper.ScaleTokensByGlobalModelRatio(usage.InputTokens, summary.GlobalModelRatio)
 	}
+
+	attachQuotaSaturation(ctx, relayInfo, other)
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,

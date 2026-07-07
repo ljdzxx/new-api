@@ -164,7 +164,11 @@ type RelayInfo struct {
 
 	PriceData types.PriceData
 
-	Request dto.Request
+	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
+	// int32 bound (or NaN fallback) while computing this request's charge.
+	// It is surfaced onto the consume/task log's admin_info for auditing.
+	QuotaClamp *common.QuotaClamp
+	Request    dto.Request
 
 	// RequestConversionChain records request format conversions in order, e.g.
 	// ["openai", "openai_responses"] or ["openai", "claude"].
