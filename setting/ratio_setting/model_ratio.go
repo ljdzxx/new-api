@@ -526,10 +526,17 @@ func getHardcodedCompletionModelRatio(name string) (float64, bool) {
 		}
 		// gpt-5 匹配
 		if strings.HasPrefix(name, "gpt-5") {
-			if strings.HasPrefix(name, "gpt-5.4") || strings.HasPrefix(name, "gpt-5.5"){
+			if !strings.Contains(name, ".") {
+				return 8, true
+			}
+			if strings.HasPrefix(name, "gpt-5.4") {
+				if strings.HasPrefix(name, "gpt-5.4-nano") {
+					return 6.25, true
+				}
 				return 6, true
 			}
-			return 8, true
+			// gpt-5.5 and later models are unlocked
+			return 6, false
 		}
 		// gpt-4.5-preview匹配
 		if strings.HasPrefix(name, "gpt-4.5-preview") {
