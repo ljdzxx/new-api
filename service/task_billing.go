@@ -12,6 +12,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -24,9 +25,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	if common.StringsContains(constant.TaskPricePatches, info.OriginModelName) {
 		logContent = fmt.Sprintf("%s，按次计费", logContent)
 	} else {
-		if len(info.PriceData.OtherRatios) > 0 {
+		if otherRatios := info.PriceData.OtherRatios(); len(otherRatios) > 0 {
 			var contents []string
-			for key, ra := range info.PriceData.OtherRatios {
+			for key, ra := range otherRatios {
 				if 1.0 != ra {
 					contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
 				}
@@ -124,8 +125,8 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["user_global_model_ratio"] = bc.UserGlobalModelRatio
 		other["channel_model_ratio"] = bc.ChannelModelRatio
 		other["global_model_ratio"] = bc.GlobalModelRatio
-		if len(bc.OtherRatios) > 0 {
-			for k, v := range bc.OtherRatios {
+		if priceData := taskBillingContextPriceData(bc); priceData != nil {
+			for k, v := range priceData.OtherRatios() {
 				other[k] = v
 			}
 		}
@@ -136,6 +137,17 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["upstream_model_name"] = props.UpstreamModelName
 	}
 	return other
+}
+
+func taskBillingContextPriceData(bc *model.TaskBillingContext) *types.PriceData {
+	if bc == nil || len(bc.OtherRatios) == 0 {
+		return nil
+	}
+	priceData := &types.PriceData{}
+	if !priceData.ReplaceOtherRatios(bc.OtherRatios) {
+		return nil
+	}
+	return priceData
 }
 
 // taskModelName 从 BillingContext 或 Properties 中获取模型名称。
@@ -308,8 +320,14 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 			globalModelRatio *= channelModelRatio
 		}
 	}
+
+	// 计算 OtherRatios 乘积（视频折扣、时长等）
+	otherMultiplier := 1.0
+	if priceData := taskBillingContextPriceData(task.PrivateData.BillingContext); priceData != nil {
+		otherMultiplier = priceData.OtherRatioMultiplier()
+	}
 	scaledTotalTokens := relayhelper.ScaleTokensByGlobalModelRatio(totalTokens, globalModelRatio)
-	actualQuota, clamp := common.QuotaFromFloatChecked(float64(scaledTotalTokens) * modelRatio * finalGroupRatio)
+	actualQuota, clamp := common.QuotaFromFloatChecked(float64(scaledTotalTokens) * modelRatio * finalGroupRatio * otherMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
 	if globalModelRatio != 1 || (common.DebugTraceEnabled && common.NormalizeDebugTraceToken(common.DebugTraceToken) == "") {
@@ -322,6 +340,6 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 			scaledTotalTokens, modelRatio, finalGroupRatio, actualQuota,
 		))
 	}
-	reason = fmt.Sprintf("token recalculation: tokens=%d, scaledTokens=%d, globalModelRatio=%.2f, modelRatio=%.2f, groupRatio=%.2f", totalTokens, scaledTotalTokens, globalModelRatio, modelRatio, finalGroupRatio)
+	reason = fmt.Sprintf("token recalculation: tokens=%d, scaledTokens=%d, globalModelRatio=%.2f, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, scaledTotalTokens, globalModelRatio, modelRatio, finalGroupRatio, otherMultiplier)
 	RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
 }
