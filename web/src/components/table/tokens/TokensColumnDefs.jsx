@@ -108,7 +108,7 @@ const renderGroupValue = (optionNode, t) => {
   }
   return (
     <span className='flex items-center gap-1 min-w-0'>
-      <Tag color={stringToColor(group)} shape='circle' className='max-w-[92px]'>
+      <Tag color={stringToColor(group)} shape='circle' className='max-w-[200px]'>
         <span className='truncate'>{group}</span>
       </Tag>
       {ratio !== undefined && renderRatio(ratio)}
@@ -138,7 +138,7 @@ const renderGroupColumn = (
         : groupOptions;
 
     return (
-      <div className='w-[190px]' onClick={(event) => event.stopPropagation()}>
+      <div className='w-[360px]' onClick={(event) => event.stopPropagation()}>
         <Select
           size='small'
           value={text || undefined}
@@ -552,6 +552,7 @@ export const getTokensColumns = ({
       title: t('分组'),
       dataIndex: 'group',
       key: 'group',
+      width: 380,
       render: (text, record) =>
         renderGroupColumn(
           text,
