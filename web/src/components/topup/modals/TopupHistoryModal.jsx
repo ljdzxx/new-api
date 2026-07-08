@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Modal,
   Table,
@@ -76,6 +76,7 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
+  const currentUserIdRef = useRef(userId);
 
   const isMobile = useIsMobile();
   const userIsAdmin = useMemo(() => isAdmin(), []);
@@ -106,10 +107,25 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
   };
 
   useEffect(() => {
-    if (visible) {
-      loadTopups(page, pageSize);
+    if (!visible) {
+      return;
     }
+
+    if (currentUserIdRef.current !== userId) {
+      currentUserIdRef.current = userId;
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
+    }
+
+    loadTopups(page, pageSize);
   }, [visible, page, pageSize, keyword, userId]);
+
+  const handleCancel = () => {
+    setPage(1);
+    onCancel?.();
+  };
 
   const handleAdminComplete = async (tradeNo) => {
     try {
@@ -267,7 +283,7 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
     <Modal
       title={t('充值账单')}
       visible={visible}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       footer={null}
       size={isMobile ? 'full-width' : 'large'}
       width={isMobile ? '100vw' : userIsAdmin ? 1060 : 970}
