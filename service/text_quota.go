@@ -410,6 +410,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	observeTextQuotaShadow(ctx, relayInfo, usage, summary.Quota)
 
 	if summary.WebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Web Search 调用 %d 次，调用花费 %s", summary.WebSearchCallCount, decimal.NewFromFloat(summary.WebSearchPrice).Mul(decimal.NewFromInt(int64(summary.WebSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
@@ -537,4 +538,52 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+}
+
+func observeTextQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, legacyQuota int) {
+	if !billing_policy.IsShadow() || relayInfo == nil {
+		return
+	}
+	policy, ok := billing_policy.Resolve(relayInfo.OriginModelName)
+	if !ok {
+		billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, -1)
+		return
+	}
+	inputTotal := int64(relayInfo.GetEstimatePromptTokens())
+	outputTotal := int64(0)
+	if usage != nil {
+		inputTotal = int64(usage.PromptTokens)
+		outputTotal = int64(usage.CompletionTokens)
+		if usageSemanticFromUsage(relayInfo, usage) == "anthropic" {
+			inputTotal += int64(usage.PromptTokensDetails.CachedTokens + usage.PromptTokensDetails.CachedCreationTokens)
+		}
+	}
+	values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: inputTotal, OutputTotalTokens: outputTotal})
+	if err != nil {
+		billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, -1)
+		logger.LogWarn(ctx, "shadow final billing policy invalid: "+err.Error())
+		return
+	}
+	originalPriceData := relayInfo.PriceData
+	originalClamp := relayInfo.QuotaClamp
+	shadowPriceData := originalPriceData
+	shadowPriceData.UsePrice = values.UsePrice
+	shadowPriceData.ModelPrice = values.ModelPrice
+	shadowPriceData.ModelRatio = values.ModelRatio
+	shadowPriceData.CompletionRatio = values.CompletionRatio
+	shadowPriceData.CacheRatio = values.CacheRatio
+	shadowPriceData.CacheCreationRatio = values.CacheCreationRatio
+	shadowPriceData.CacheCreation5mRatio = values.CacheCreationRatio
+	shadowPriceData.CacheCreation1hRatio = values.CacheCreation1hRatio
+	shadowPriceData.ImageRatio = values.ImageRatio
+	shadowPriceData.AudioRatio = values.AudioRatio
+	shadowPriceData.AudioCompletionRatio = values.AudioCompletionRatio
+	relayInfo.PriceData = shadowPriceData
+	shadowSummary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	relayInfo.PriceData = originalPriceData
+	relayInfo.QuotaClamp = originalClamp
+	billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, shadowSummary.Quota)
+	if legacyQuota != shadowSummary.Quota {
+		logger.LogWarn(ctx, fmt.Sprintf("shadow final billing mismatch: model=%s legacy=%d policy=%d", relayInfo.OriginModelName, legacyQuota, shadowSummary.Quota))
+	}
 }
