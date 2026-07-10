@@ -112,6 +112,9 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 		other["billing_mode"] = "tiered"
 		other["billing_tier"] = tier
 	}
+	if adjustments, exists := ctx.Get("billing_policy_adjustments"); exists {
+		other["billing_policy_adjustments"] = adjustments
+	}
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}

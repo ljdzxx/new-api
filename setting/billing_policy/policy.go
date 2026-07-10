@@ -50,14 +50,29 @@ type Usage struct {
 	OutputTotalTokens int64
 }
 
+type AdjustmentCondition struct {
+	Source   string `json:"source"`
+	Path     string `json:"path,omitempty"`
+	Operator string `json:"operator"`
+	Value    string `json:"value,omitempty"`
+	Timezone string `json:"timezone,omitempty"`
+}
+
+type Adjustment struct {
+	ID         string                `json:"id"`
+	Conditions []AdjustmentCondition `json:"conditions"`
+	Multiplier string                `json:"multiplier"`
+}
+
 type Policy struct {
-	Version  int    `json:"version"`
-	Mode     string `json:"mode"`
-	Currency string `json:"currency"`
-	Unit     string `json:"unit"`
-	Price    string `json:"price,omitempty"`
-	Prices   Prices `json:"prices,omitempty"`
-	Tiers    []Tier `json:"tiers,omitempty"`
+	Version     int          `json:"version"`
+	Mode        string       `json:"mode"`
+	Currency    string       `json:"currency"`
+	Unit        string       `json:"unit"`
+	Price       string       `json:"price,omitempty"`
+	Prices      Prices       `json:"prices,omitempty"`
+	Tiers       []Tier       `json:"tiers,omitempty"`
+	Adjustments []Adjustment `json:"adjustments,omitempty"`
 }
 
 type MigrationMeta struct {
@@ -404,7 +419,42 @@ func ValidatePolicy(policy Policy) error {
 	default:
 		return fmt.Errorf("unsupported policy mode: %s", policy.Mode)
 	}
+	for index, adjustment := range policy.Adjustments {
+		if strings.TrimSpace(adjustment.ID) == "" || len(adjustment.Conditions) == 0 {
+			return fmt.Errorf("adjustment %d requires id and conditions", index)
+		}
+		multiplier, err := decimal.NewFromString(adjustment.Multiplier)
+		if err != nil || !multiplier.IsPositive() {
+			return fmt.Errorf("adjustment %s multiplier must be positive", adjustment.ID)
+		}
+		for _, condition := range adjustment.Conditions {
+			if err := validateAdjustmentCondition(condition); err != nil {
+				return fmt.Errorf("adjustment %s: %w", adjustment.ID, err)
+			}
+		}
+	}
 	return nil
+}
+
+func validateAdjustmentCondition(condition AdjustmentCondition) error {
+	switch condition.Source {
+	case "header", "param":
+		if strings.TrimSpace(condition.Path) == "" {
+			return fmt.Errorf("%s condition requires path", condition.Source)
+		}
+	case "hour", "weekday":
+		if strings.TrimSpace(condition.Timezone) == "" {
+			return fmt.Errorf("time condition requires timezone")
+		}
+	default:
+		return fmt.Errorf("unsupported adjustment source: %s", condition.Source)
+	}
+	switch condition.Operator {
+	case "eq", "contains", "exists", "lt", "lte", "gt", "gte":
+		return nil
+	default:
+		return fmt.Errorf("unsupported adjustment operator: %s", condition.Operator)
+	}
 }
 
 func validatePrices(prices Prices) error {

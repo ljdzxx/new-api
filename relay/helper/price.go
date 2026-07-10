@@ -3,6 +3,7 @@ package helper
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -16,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
 // https://docs.claude.com/en/docs/build-with-claude/prompt-caching#1-hour-cache-duration
@@ -113,6 +115,16 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		activePolicyValues = &values
 		modelPrice, usePrice = values.ModelPrice, values.UsePrice
 	}
+	policyAdjustmentMultiplier := 1.0
+	if billing_policy.IsActive() {
+		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
+			multiplier, applied := evaluatePolicyAdjustments(c, policy)
+			policyAdjustmentMultiplier, _ = multiplier.Float64()
+			if len(applied) > 0 {
+				c.Set("billing_policy_adjustments", applied)
+			}
+		}
+	}
 	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
 
 	groupRatioInfo := HandleGroupRatio(c, info)
@@ -193,6 +205,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 		preConsumedQuota = common.QuotaFromFloat(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
 	}
+	if policyAdjustmentMultiplier != 1 {
+		preConsumedQuota = common.QuotaFromFloat(float64(preConsumedQuota) * policyAdjustmentMultiplier)
+	}
 
 	// check if free model pre-consume is disabled
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
@@ -233,6 +248,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		CacheCreation1hRatio:   cacheCreationRatio1h,
 		QuotaToPreConsume:      preConsumedQuota,
 	}
+	if policyAdjustmentMultiplier != 1 {
+		priceData.AddOtherRatio("billing_policy", policyAdjustmentMultiplier)
+	}
 
 	if common.DebugEnabled {
 		println(fmt.Sprintf("model_price_helper result: %s", priceData.ToSetting()))
@@ -240,6 +258,20 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	info.PriceData = priceData
 	observeShadowPreConsume(c, info, promptTokens, meta, priceData)
 	return priceData, nil
+}
+
+func evaluatePolicyAdjustments(c *gin.Context, policy billing_policy.Policy) (decimal.Decimal, []billing_policy.AppliedAdjustment) {
+	headers := make(map[string]string, len(c.Request.Header))
+	for key, values := range c.Request.Header {
+		if len(values) > 0 {
+			headers[strings.ToLower(key)] = values[0]
+		}
+	}
+	var body []byte
+	if storage, err := common.GetBodyStorage(c); err == nil && storage != nil {
+		body, _ = storage.Bytes()
+	}
+	return billing_policy.EvaluateAdjustments(policy, billing_policy.RequestContext{Headers: headers, Body: body})
 }
 
 func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, legacy types.PriceData) {
