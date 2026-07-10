@@ -140,6 +140,9 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 
 func legacyRatiosEquivalent(values LegacyValues, modelRatio, completion, cache float64, hasCache bool, cacheCreate float64, hasCacheCreate bool, image float64, hasImage bool, audio float64, hasAudio bool, audioOutput float64, hasAudioOutput bool) bool {
 	equal := func(left, right float64) bool { return math.Abs(left-right) <= 1e-9 }
+	if modelRatio == 0 {
+		return values.ModelRatio == 0
+	}
 	if !equal(values.ModelRatio, modelRatio) || !equal(values.CompletionRatio, completion) {
 		return false
 	}

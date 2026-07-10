@@ -260,6 +260,9 @@ func legacyValuesFromPrices(prices Prices) (LegacyValues, error) {
 	modelRatio := input.Div(decimal.NewFromInt(2))
 	values := LegacyValues{CompletionRatio: 1}
 	values.ModelRatio, _ = modelRatio.Float64()
+	if input.IsZero() {
+		return values, nil
+	}
 	values.CompletionRatio, err = relativePrice(prices.Output, input, 1)
 	if err != nil {
 		return LegacyValues{}, err
