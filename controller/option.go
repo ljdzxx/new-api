@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -113,6 +114,16 @@ func UpdateOption(c *gin.Context) {
 			"message": "无效的参数",
 		})
 		return
+	}
+	if isLegacyPricingOption(option.Key) {
+		state := billing_policy.GetState()
+		if state == billing_policy.StatePrepared || state == billing_policy.StateActive {
+			c.JSON(http.StatusConflict, gin.H{
+				"success": false,
+				"message": "模型价格迁移已冻结旧配置，请使用新版模型价格策略界面",
+			})
+			return
+		}
 	}
 	switch option.Value.(type) {
 	case bool:
@@ -384,4 +395,13 @@ func UpdateOption(c *gin.Context) {
 		"message": "",
 	})
 	return
+}
+
+func isLegacyPricingOption(key string) bool {
+	switch key {
+	case "ModelPrice", "ModelRatio", "CompletionRatio", "CacheRatio", "CreateCacheRatio", "ImageRatio", "AudioRatio", "AudioCompletionRatio":
+		return true
+	default:
+		return false
+	}
 }

@@ -220,6 +220,11 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
+			optionRoute.GET("/billing_policy", controller.GetBillingPolicyState)
+			optionRoute.GET("/billing_policy/migration/preview", controller.PreviewBillingPolicyMigration)
+			optionRoute.POST("/billing_policy/shadow", controller.StartBillingPolicyShadow)
+			optionRoute.POST("/billing_policy/prepare", controller.PrepareBillingPolicySwitch)
+			optionRoute.POST("/billing_policy/activate", controller.ActivateBillingPolicy)
 			optionRoute.POST("/migrate_console_setting", controller.MigrateConsoleSetting) // 用于迁移检测的旧键，下个版本会删除
 		}
 

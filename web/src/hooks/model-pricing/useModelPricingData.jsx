@@ -196,7 +196,8 @@ export const useModelPricingData = () => {
     for (let i = 0; i < models.length; i++) {
       const m = models[i];
       m.key = m.model_name;
-      m.group_ratio = groupRatio[m.model_name];
+      // 模型广场只展示模型原始价格，所有站点/用户/渠道/分组倍率均按 1 倍处理。
+      m.group_ratio = 1;
 
       if (m.vendor_id && vendorMap[m.vendor_id]) {
         const vendor = vendorMap[m.vendor_id];
@@ -291,15 +292,8 @@ export const useModelPricingData = () => {
   const handleGroupClick = (group) => {
     setSelectedGroup(group);
     setFilterGroup(group);
-    if (group === 'all') {
-      showInfo(t('已切换至最优倍率视图，每个模型使用其最低倍率分组'));
-    } else {
-      showInfo(
-        t('当前查看的分组为：{{group}}，倍率为：{{ratio}}', {
-          group: group,
-          ratio: groupRatio[group] ?? 1,
-        }),
-      );
+    if (group !== 'all') {
+      showInfo(t('当前仅按分组筛选可用模型，价格始终按原始 1 倍展示'));
     }
   };
 

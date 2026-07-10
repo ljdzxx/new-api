@@ -79,6 +79,10 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other := make(map[string]interface{})
 	other["model_ratio"] = modelRatio
 	other["group_ratio"] = groupRatio
+	other["base_group_ratio"] = relayInfo.PriceData.GroupRatioInfo.BaseGroupRatio
+	other["user_level_ratio"] = relayInfo.PriceData.GroupRatioInfo.UserLevelRatio
+	other["user_level_id"] = relayInfo.PriceData.GroupRatioInfo.UserLevelID
+	other["effective_group_ratio"] = relayInfo.PriceData.GroupRatioInfo.GroupRatio
 	other["system_global_model_ratio"] = relayInfo.PriceData.SystemGlobalModelRatio
 	other["user_global_model_ratio"] = relayInfo.PriceData.UserGlobalModelRatio
 	other["channel_model_ratio"] = relayInfo.PriceData.ChannelModelRatio
@@ -88,6 +92,12 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["cache_ratio"] = cacheRatio
 	other["model_price"] = modelPrice
 	other["user_group_ratio"] = userGroupRatio
+	if relayInfo.PriceData.GroupRatioInfo.HasSpecialRatio {
+		// Preserve the legacy field as the effective value so old frontends do
+		// not accidentally omit the user-level discount during quota previews.
+		other["user_group_ratio"] = relayInfo.PriceData.GroupRatioInfo.GroupRatio
+		other["user_group_base_ratio"] = relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio
+	}
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort

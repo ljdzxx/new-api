@@ -9,6 +9,9 @@ import (
 
 type GroupRatioInfo struct {
 	GroupRatio        float64
+	BaseGroupRatio    float64
+	UserLevelRatio    float64
+	UserLevelID       int
 	GroupSpecialRatio float64
 	HasSpecialRatio   bool
 }

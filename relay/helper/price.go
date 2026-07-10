@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
@@ -65,6 +66,8 @@ func getChannelModelRatio(info *relaycommon.RelayInfo) float64 {
 func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.GroupRatioInfo {
 	groupRatioInfo := types.GroupRatioInfo{
 		GroupRatio:        1.0, // default ratio
+		BaseGroupRatio:    1.0,
+		UserLevelRatio:    1.0,
 		GroupSpecialRatio: -1,
 	}
 
@@ -87,13 +90,29 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 	userLevelID := common.GetContextKeyInt(ctx, constant.ContextKeyUserLevelID)
-	groupRatioInfo.GroupRatio = groupRatioInfo.GroupRatio * setting.GetUserLevelDiscountMultiplierByID(userLevelID)
+	groupRatioInfo.BaseGroupRatio = groupRatioInfo.GroupRatio
+	groupRatioInfo.UserLevelID = userLevelID
+	groupRatioInfo.UserLevelRatio = setting.GetUserLevelDiscountMultiplierByID(userLevelID)
+	groupRatioInfo.GroupRatio = groupRatioInfo.BaseGroupRatio * groupRatioInfo.UserLevelRatio
 
 	return groupRatioInfo
 }
 
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
+	var activePolicyValues *billing_policy.LegacyValues
+	if billing_policy.IsActive() {
+		policy, ok := billing_policy.Resolve(info.OriginModelName)
+		if !ok {
+			return types.PriceData{}, fmt.Errorf("模型 %s 未配置新版计费策略", info.OriginModelName)
+		}
+		values, err := billing_policy.ToLegacyValues(policy)
+		if err != nil {
+			return types.PriceData{}, fmt.Errorf("模型 %s 计费策略无效: %w", info.OriginModelName, err)
+		}
+		activePolicyValues = &values
+		modelPrice, usePrice = values.ModelPrice, values.UsePrice
+	}
 	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
 
 	groupRatioInfo := HandleGroupRatio(c, info)
@@ -116,7 +135,11 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		}
 		var success bool
 		var matchName string
-		modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+		if activePolicyValues != nil {
+			modelRatio, success, matchName = activePolicyValues.ModelRatio, true, info.OriginModelName
+		} else {
+			modelRatio, success, matchName = ratio_setting.GetModelRatio(info.OriginModelName)
+		}
 		if !success {
 			acceptUnsetRatio := false
 			if info.UserSetting.AcceptUnsetRatioModel {
@@ -126,15 +149,24 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				return types.PriceData{}, fmt.Errorf("模型 %s 倍率或价格未配置，请联系管理员设置或开始自用模式；Model %s ratio or price not set, please set or start self-use mode", matchName, matchName)
 			}
 		}
-		completionRatio = ratio_setting.GetCompletionRatio(info.OriginModelName)
-		cacheRatio, _ = ratio_setting.GetCacheRatio(info.OriginModelName)
-		cacheCreationRatio, _ = ratio_setting.GetCreateCacheRatio(info.OriginModelName)
+		if activePolicyValues != nil {
+			completionRatio = activePolicyValues.CompletionRatio
+			cacheRatio = activePolicyValues.CacheRatio
+			cacheCreationRatio = activePolicyValues.CacheCreationRatio
+			imageRatio = activePolicyValues.ImageRatio
+			audioRatio = activePolicyValues.AudioRatio
+			audioCompletionRatio = activePolicyValues.AudioCompletionRatio
+		} else {
+			completionRatio = ratio_setting.GetCompletionRatio(info.OriginModelName)
+			cacheRatio, _ = ratio_setting.GetCacheRatio(info.OriginModelName)
+			cacheCreationRatio, _ = ratio_setting.GetCreateCacheRatio(info.OriginModelName)
+			imageRatio, _ = ratio_setting.GetImageRatio(info.OriginModelName)
+			audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
+			audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
+		}
 		cacheCreationRatio5m = cacheCreationRatio
 		// 固定1h和5min缓存写入价格的比例
 		cacheCreationRatio1h = cacheCreationRatio * claudeCacheCreation1hMultiplier
-		imageRatio, _ = ratio_setting.GetImageRatio(info.OriginModelName)
-		audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
-		audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 		scaledPreConsumedTokens := ScaleTokensByGlobalModelRatio(preConsumedTokens, globalModelRatio)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		preConsumedQuota = common.QuotaFromFloat(float64(scaledPreConsumedTokens) * ratio)
@@ -203,7 +235,48 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		println(fmt.Sprintf("model_price_helper result: %s", priceData.ToSetting()))
 	}
 	info.PriceData = priceData
+	observeShadowPreConsume(c, info, promptTokens, meta, priceData)
 	return priceData, nil
+}
+
+func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta, legacy types.PriceData) {
+	if !billing_policy.IsShadow() || info == nil || meta == nil {
+		return
+	}
+	policy, ok := billing_policy.Resolve(info.OriginModelName)
+	if !ok {
+		billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
+		logger.LogWarn(c, "shadow billing policy missing for model "+info.OriginModelName)
+		return
+	}
+	values, err := billing_policy.ToLegacyValues(policy)
+	if err != nil {
+		billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
+		logger.LogWarn(c, "shadow billing policy invalid for model "+info.OriginModelName+": "+err.Error())
+		return
+	}
+	var quota int
+	if values.UsePrice {
+		price := values.ModelPrice
+		if meta.ImagePriceRatio != 0 {
+			price *= meta.ImagePriceRatio
+		}
+		quota = common.QuotaFromFloat(price * common.QuotaPerUnit * legacy.GroupRatioInfo.GroupRatio)
+	} else {
+		preConsumedTokens := common.Max(promptTokens, common.PreConsumedQuota)
+		if meta.MaxTokens != 0 {
+			preConsumedTokens += meta.MaxTokens
+		}
+		scaledTokens := ScaleTokensByGlobalModelRatio(preConsumedTokens, legacy.GlobalModelRatio)
+		quota = common.QuotaFromFloat(float64(scaledTokens) * values.ModelRatio * legacy.GroupRatioInfo.GroupRatio)
+	}
+	if legacy.FreeModel {
+		quota = 0
+	}
+	billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, quota)
+	if quota != legacy.QuotaToPreConsume {
+		logger.LogWarn(c, fmt.Sprintf("shadow billing pre-consume mismatch: model=%s legacy=%d policy=%d", info.OriginModelName, legacy.QuotaToPreConsume, quota))
+	}
 }
 
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
@@ -212,6 +285,20 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
+	if billing_policy.IsActive() {
+		policy, ok := billing_policy.Resolve(info.OriginModelName)
+		if !ok {
+			return types.PriceData{}, fmt.Errorf("模型 %s 未配置新版计费策略", info.OriginModelName)
+		}
+		values, err := billing_policy.ToLegacyValues(policy)
+		if err != nil {
+			return types.PriceData{}, fmt.Errorf("模型 %s 计费策略无效: %w", info.OriginModelName, err)
+		}
+		if !values.UsePrice {
+			return types.PriceData{}, fmt.Errorf("模型 %s 不是按次计费策略", info.OriginModelName)
+		}
+		modelPrice, success = values.ModelPrice, true
+	}
 	// 如果没有配置价格，检查模型倍率配置
 	if !success {
 

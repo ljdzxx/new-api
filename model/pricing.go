@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 )
@@ -33,6 +34,7 @@ type Pricing struct {
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
+	BillingPolicy          *billing_policy.Policy  `json:"billing_policy,omitempty"`
 }
 
 type PricingVendor struct {
@@ -72,6 +74,13 @@ func GetPricing() []Pricing {
 		}
 	}
 	return pricingMap
+}
+
+func InvalidatePricingCache() {
+	updatePricingLock.Lock()
+	lastGetPricingTime = time.Time{}
+	pricingMap = nil
+	updatePricingLock.Unlock()
 }
 
 // GetVendors 返回当前定价接口使用到的供应商信息
@@ -318,6 +327,11 @@ func updatePricing() {
 		if ratio_setting.ContainsAudioCompletionRatio(model) {
 			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
+		}
+		if billing_policy.IsActive() {
+			if policy, ok := billing_policy.Resolve(model); ok {
+				pricing.BillingPolicy = &policy
+			}
 		}
 		pricingMap = append(pricingMap, pricing)
 	}

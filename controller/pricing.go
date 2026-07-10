@@ -10,23 +10,18 @@ import (
 
 func GetPricing(c *gin.Context) {
 	pricing := model.GetPricing()
-	userId, exists := c.Get("id")
 	usableGroup := map[string]string{}
 	groupRatio := map[string]float64{}
-	for s, f := range ratio_setting.GetGroupRatioCopy() {
-		groupRatio[s] = f
+	for groupName := range ratio_setting.GetGroupRatioCopy() {
+		// The model marketplace intentionally presents original model prices.
+		// Availability groups remain filterable, but every display multiplier is 1.
+		groupRatio[groupName] = 1
 	}
 	var group string
-	if exists {
+	if userId, exists := c.Get("id"); exists {
 		user, err := model.GetUserCache(userId.(int))
 		if err == nil {
 			group = user.Group
-			for g := range groupRatio {
-				ratio, ok := ratio_setting.GetGroupGroupRatio(group, g)
-				if ok {
-					groupRatio[g] = ratio
-				}
-			}
 		}
 	}
 
@@ -58,6 +53,7 @@ func GetPricing(c *gin.Context) {
 		"usable_group":       usableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroup(group),
+		"pricing_basis":      "original",
 		"_":                  "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
 }
