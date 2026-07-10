@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import ModelPricingEditor from './components/ModelPricingEditor';
+import BillingPolicyManager from './components/BillingPolicyManager';
 
-export default function ModelSettingsVisualEditor(props) {
-  return <ModelPricingEditor options={props.options} refresh={props.refresh} />;
+export default function ModelSettingsVisualEditor() {
+  return <BillingPolicyManager />;
 }

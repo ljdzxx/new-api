@@ -22,6 +22,32 @@ func GetBillingPolicyState(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"config": billing_policy.GetConfig(), "shadow": billing_policy.GetShadowStats()}})
 }
 
+func UpdateBillingPolicyConfig(c *gin.Context) {
+	var next billing_policy.Config
+	if err := common.DecodeJson(c.Request.Body, &next); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	current := billing_policy.GetConfig()
+	if current.State != billing_policy.StateActive {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "billing policy editing is available only after activation"})
+		return
+	}
+	if next.Revision != current.Revision {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "billing policy revision conflict", "data": current})
+		return
+	}
+	next.State = billing_policy.StateActive
+	next.SchemaVersion = billing_policy.SchemaVersion
+	next.Migration = current.Migration
+	next.Revision++
+	if err := persistBillingPolicyConfig(next); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": next})
+}
+
 // StartBillingPolicyShadow snapshots all legacy prices and enables comparison-only
 // evaluation. The legacy engine remains authoritative until ActivateBillingPolicy.
 func StartBillingPolicyShadow(c *gin.Context) {

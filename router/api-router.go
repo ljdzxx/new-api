@@ -221,6 +221,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
 			optionRoute.GET("/billing_policy", controller.GetBillingPolicyState)
+			optionRoute.PUT("/billing_policy", controller.UpdateBillingPolicyConfig)
 			optionRoute.GET("/billing_policy/migration/preview", controller.PreviewBillingPolicyMigration)
 			optionRoute.POST("/billing_policy/shadow", controller.StartBillingPolicyShadow)
 			optionRoute.POST("/billing_policy/prepare", controller.PrepareBillingPolicySwitch)
