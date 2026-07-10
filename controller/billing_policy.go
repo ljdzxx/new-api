@@ -132,7 +132,7 @@ func persistBillingPolicyConfig(config billing_policy.Config) error {
 	if err != nil {
 		return err
 	}
-	if err := model.UpdateOption("ModelBillingPolicy", string(data)); err != nil {
+	if err := model.UpdateBillingPolicyOptionAtomic(string(data)); err != nil {
 		return err
 	}
 	model.InvalidatePricingCache()

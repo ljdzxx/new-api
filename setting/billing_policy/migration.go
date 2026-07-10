@@ -24,6 +24,7 @@ type MigrationReport struct {
 	PerRequest     int              `json:"per_request"`
 	Issues         []MigrationIssue `json:"issues"`
 	Candidate      Config           `json:"candidate"`
+	Verified       int              `json:"verified"`
 }
 
 func LegacySourceValues() map[string]string {
@@ -76,6 +77,11 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 				continue
 			}
 			config.Policies[name] = Policy{Version: SchemaVersion, Mode: "per_request", Currency: "USD", Unit: "per_request", Price: decimal.NewFromFloat(price).String()}
+			if values, verifyErr := ToLegacyValues(config.Policies[name]); verifyErr != nil || math.Abs(values.ModelPrice-price) > 1e-12 {
+				report.Issues = append(report.Issues, MigrationIssue{Level: "error", Model: name, Code: "VERIFY_FAILED", Message: "fixed price changed during migration"})
+			} else {
+				report.Verified++
+			}
 			report.PerRequest++
 			continue
 		}
@@ -104,11 +110,17 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 		policy.Prices.ImageInput = multiplyPrice(input, imageValue, hasImage)
 		audioValue, hasAudio := audio[name]
 		policy.Prices.AudioInput = multiplyPrice(input, audioValue, hasAudio)
+		audioOutputValue, hasAudioOutput := audioOutput[name]
 		if policy.Prices.AudioInput != "" {
-			audioOutputValue, hasAudioOutput := audioOutput[name]
 			policy.Prices.AudioOutput = multiplyPrice(decimal.RequireFromString(policy.Prices.AudioInput), audioOutputValue, hasAudioOutput)
 		}
 		config.Policies[name] = policy
+		values, verifyErr := ToLegacyValues(policy)
+		if verifyErr != nil || !legacyRatiosEquivalent(values, ratio, ratio_setting.GetCompletionRatio(name), cacheValue, hasCache, cacheCreateValue, hasCacheCreate, imageValue, hasImage, audioValue, hasAudio, audioOutputValue, hasAudioOutput) {
+			report.Issues = append(report.Issues, MigrationIssue{Level: "error", Model: name, Code: "VERIFY_FAILED", Message: "token ratios changed during migration"})
+		} else {
+			report.Verified++
+		}
 		report.PerToken++
 	}
 
@@ -124,6 +136,27 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 		return report, err
 	}
 	return report, nil
+}
+
+func legacyRatiosEquivalent(values LegacyValues, modelRatio, completion, cache float64, hasCache bool, cacheCreate float64, hasCacheCreate bool, image float64, hasImage bool, audio float64, hasAudio bool, audioOutput float64, hasAudioOutput bool) bool {
+	equal := func(left, right float64) bool { return math.Abs(left-right) <= 1e-9 }
+	if !equal(values.ModelRatio, modelRatio) || !equal(values.CompletionRatio, completion) {
+		return false
+	}
+	checks := []struct {
+		actual   float64
+		expected float64
+		present  bool
+	}{{values.CacheRatio, cache, hasCache}, {values.CacheCreationRatio, cacheCreate, hasCacheCreate}, {values.ImageRatio, image, hasImage}, {values.AudioRatio, audio, hasAudio}, {values.AudioCompletionRatio, audioOutput, hasAudioOutput}}
+	for _, check := range checks {
+		if check.present && !equal(check.actual, check.expected) {
+			return false
+		}
+		if !check.present && check.actual != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func validateLegacyNumber(value float64) error {

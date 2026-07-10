@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/performance_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
+	"gorm.io/gorm"
 )
 
 type Option struct {
@@ -214,6 +215,23 @@ func UpdateOption(key string, value string) error {
 	DB.Save(&option)
 	// Update OptionMap
 	return updateOptionMap(key, value)
+}
+
+// UpdateBillingPolicyOptionAtomic persists the complete policy set and engine
+// state as one row transaction. In-memory readers are updated only after the
+// database commit succeeds, so they observe either the old or the new config.
+func UpdateBillingPolicyOptionAtomic(value string) error {
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		option := Option{Key: "ModelBillingPolicy"}
+		if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
+			return err
+		}
+		option.Value = value
+		return tx.Save(&option).Error
+	}); err != nil {
+		return err
+	}
+	return updateOptionMap("ModelBillingPolicy", value)
 }
 
 func updateOptionMap(key string, value string) (err error) {
