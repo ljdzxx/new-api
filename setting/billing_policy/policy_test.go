@@ -45,6 +45,7 @@ func TestTieredPolicyMatchesRawUsage(t *testing.T) {
 			{ID: "short", Priority: 10, Conditions: []TierCondition{{Metric: "input_total_tokens", Operator: "lte", Value: 200000}}, Prices: Prices{Input: "3", Output: "15"}},
 			{ID: "long", Priority: 20, Fallback: true, Prices: Prices{Input: "6", Output: "22.5"}},
 		},
+	}
 	require.NoError(t, ValidatePolicy(policy))
 
 	values, tier, err := ToLegacyValuesForUsage(policy, Usage{InputTotalTokens: 150000})
