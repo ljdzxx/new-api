@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -139,6 +140,35 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			}
 		}
 		summary.PromptTokens -= summary.CacheCreationTokens
+	}
+
+	if billing_policy.IsActive() {
+		if policy, ok := billing_policy.Resolve(summary.ModelName); ok && policy.Mode == "tiered" {
+			inputTotal := int64(usage.PromptTokens)
+			if summary.IsClaudeUsageSemantic {
+				inputTotal += int64(summary.CacheTokens + summary.CacheCreationTokens)
+			}
+			values, tierID, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{
+				InputTotalTokens: inputTotal, OutputTotalTokens: int64(usage.CompletionTokens),
+			})
+			if err != nil {
+				logger.LogWarn(ctx, "failed to resolve active tiered billing policy: "+err.Error())
+			} else {
+				summary.ModelRatio = values.ModelRatio
+				summary.CompletionRatio = values.CompletionRatio
+				summary.CacheRatio = values.CacheRatio
+				summary.CacheCreationRatio = values.CacheCreationRatio
+				summary.CacheCreationRatio5m = values.CacheCreationRatio
+				summary.CacheCreationRatio1h = values.CacheCreation1hRatio
+				summary.ImageRatio = values.ImageRatio
+				relayInfo.PriceData.ModelRatio = values.ModelRatio
+				relayInfo.PriceData.CompletionRatio = values.CompletionRatio
+				relayInfo.PriceData.CacheRatio = values.CacheRatio
+				relayInfo.PriceData.CacheCreationRatio = values.CacheCreationRatio
+				relayInfo.PriceData.ImageRatio = values.ImageRatio
+				ctx.Set("billing_policy_tier", tierID)
+			}
+		}
 	}
 
 	rawPromptTokens := summary.PromptTokens

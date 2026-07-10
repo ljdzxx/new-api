@@ -31,6 +31,25 @@ type Prices struct {
 	AudioOutput  string `json:"audio_output,omitempty"`
 }
 
+type TierCondition struct {
+	Metric   string `json:"metric"`
+	Operator string `json:"operator"`
+	Value    int64  `json:"value"`
+}
+
+type Tier struct {
+	ID         string          `json:"id"`
+	Priority   int             `json:"priority"`
+	Fallback   bool            `json:"fallback,omitempty"`
+	Conditions []TierCondition `json:"conditions,omitempty"`
+	Prices     Prices          `json:"prices"`
+}
+
+type Usage struct {
+	InputTotalTokens  int64
+	OutputTotalTokens int64
+}
+
 type Policy struct {
 	Version  int    `json:"version"`
 	Mode     string `json:"mode"`
@@ -38,6 +57,7 @@ type Policy struct {
 	Unit     string `json:"unit"`
 	Price    string `json:"price,omitempty"`
 	Prices   Prices `json:"prices,omitempty"`
+	Tiers    []Tier `json:"tiers,omitempty"`
 }
 
 type MigrationMeta struct {
@@ -127,6 +147,7 @@ type LegacyValues struct {
 	CompletionRatio      float64
 	CacheRatio           float64
 	CacheCreationRatio   float64
+	CacheCreation1hRatio float64
 	ImageRatio           float64
 	AudioRatio           float64
 	AudioCompletionRatio float64
@@ -147,36 +168,110 @@ func ToLegacyValues(policy Policy) (LegacyValues, error) {
 		value, _ := price.Float64()
 		return LegacyValues{UsePrice: true, ModelPrice: value}, nil
 	}
-	input, err := decimal.NewFromString(policy.Prices.Input)
+	if policy.Mode == "tiered" {
+		return LegacyValues{}, fmt.Errorf("tiered policy requires usage context")
+	}
+	return legacyValuesFromPrices(policy.Prices)
+}
+
+func ToLegacyValuesForUsage(policy Policy, usage Usage) (LegacyValues, string, error) {
+	if err := ValidatePolicy(policy); err != nil {
+		return LegacyValues{}, "", err
+	}
+	if policy.Mode != "tiered" {
+		values, err := ToLegacyValues(policy)
+		return values, "", err
+	}
+	tier, ok := MatchTier(policy, usage)
+	if !ok {
+		return LegacyValues{}, "", fmt.Errorf("tiered policy has no matching tier")
+	}
+	values, err := legacyValuesFromPrices(tier.Prices)
+	return values, tier.ID, err
+}
+
+func MatchTier(policy Policy, usage Usage) (Tier, bool) {
+	tiers := append([]Tier(nil), policy.Tiers...)
+	sort.SliceStable(tiers, func(i, j int) bool { return tiers[i].Priority < tiers[j].Priority })
+	var fallback *Tier
+	for index := range tiers {
+		tier := tiers[index]
+		if tier.Fallback {
+			copyTier := tier
+			fallback = &copyTier
+			continue
+		}
+		matched := true
+		for _, condition := range tier.Conditions {
+			if !matchTierCondition(condition, usage) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return tier, true
+		}
+	}
+	if fallback != nil {
+		return *fallback, true
+	}
+	return Tier{}, false
+}
+
+func matchTierCondition(condition TierCondition, usage Usage) bool {
+	actual := usage.InputTotalTokens
+	if condition.Metric == "output_total_tokens" {
+		actual = usage.OutputTotalTokens
+	}
+	switch condition.Operator {
+	case "lt":
+		return actual < condition.Value
+	case "lte":
+		return actual <= condition.Value
+	case "gt":
+		return actual > condition.Value
+	case "gte":
+		return actual >= condition.Value
+	default:
+		return false
+	}
+}
+
+func legacyValuesFromPrices(prices Prices) (LegacyValues, error) {
+	input, err := decimal.NewFromString(prices.Input)
 	if err != nil || input.IsNegative() {
 		return LegacyValues{}, fmt.Errorf("invalid input price")
 	}
 	modelRatio := input.Div(decimal.NewFromInt(2))
 	values := LegacyValues{CompletionRatio: 1}
 	values.ModelRatio, _ = modelRatio.Float64()
-	values.CompletionRatio, err = relativePrice(policy.Prices.Output, input, 1)
+	values.CompletionRatio, err = relativePrice(prices.Output, input, 1)
 	if err != nil {
 		return LegacyValues{}, err
 	}
-	values.CacheRatio, err = relativePrice(policy.Prices.CacheRead, input, 0)
+	values.CacheRatio, err = relativePrice(prices.CacheRead, input, 0)
 	if err != nil {
 		return LegacyValues{}, err
 	}
-	values.CacheCreationRatio, err = relativePrice(policy.Prices.CacheWrite5m, input, 0)
+	values.CacheCreationRatio, err = relativePrice(prices.CacheWrite5m, input, 0)
 	if err != nil {
 		return LegacyValues{}, err
 	}
-	values.ImageRatio, err = relativePrice(policy.Prices.ImageInput, input, 0)
+	values.CacheCreation1hRatio, err = relativePrice(prices.CacheWrite1h, input, 0)
 	if err != nil {
 		return LegacyValues{}, err
 	}
-	values.AudioRatio, err = relativePrice(policy.Prices.AudioInput, input, 0)
+	values.ImageRatio, err = relativePrice(prices.ImageInput, input, 0)
+	if err != nil {
+		return LegacyValues{}, err
+	}
+	values.AudioRatio, err = relativePrice(prices.AudioInput, input, 0)
 	if err != nil {
 		return LegacyValues{}, err
 	}
 	if values.AudioRatio != 0 {
-		audioInput, _ := decimal.NewFromString(policy.Prices.AudioInput)
-		values.AudioCompletionRatio, err = relativePrice(policy.Prices.AudioOutput, audioInput, 0)
+		audioInput, _ := decimal.NewFromString(prices.AudioInput)
+		values.AudioCompletionRatio, err = relativePrice(prices.AudioOutput, audioInput, 0)
 	}
 	return values, err
 }
@@ -264,8 +359,87 @@ func ValidatePolicy(policy Policy) error {
 		if strings.TrimSpace(policy.Prices.Input) == "" {
 			return fmt.Errorf("per-token policy requires input price")
 		}
+		if err := validatePrices(policy.Prices); err != nil {
+			return err
+		}
+	case "tiered":
+		if len(policy.Tiers) == 0 {
+			return fmt.Errorf("tiered policy requires tiers")
+		}
+		fallbackCount := 0
+		priorities := map[int]struct{}{}
+		ids := map[string]struct{}{}
+		for index, tier := range policy.Tiers {
+			if strings.TrimSpace(tier.ID) == "" {
+				return fmt.Errorf("tier %d requires id", index)
+			}
+			if _, exists := ids[tier.ID]; exists {
+				return fmt.Errorf("duplicate tier id: %s", tier.ID)
+			}
+			ids[tier.ID] = struct{}{}
+			if _, exists := priorities[tier.Priority]; exists {
+				return fmt.Errorf("duplicate tier priority: %d", tier.Priority)
+			}
+			priorities[tier.Priority] = struct{}{}
+			if tier.Fallback {
+				fallbackCount++
+				if len(tier.Conditions) != 0 {
+					return fmt.Errorf("fallback tier %s cannot have conditions", tier.ID)
+				}
+			} else if len(tier.Conditions) == 0 {
+				return fmt.Errorf("non-fallback tier %s requires conditions", tier.ID)
+			}
+			for _, condition := range tier.Conditions {
+				if err := validateTierCondition(condition); err != nil {
+					return fmt.Errorf("tier %s: %w", tier.ID, err)
+				}
+			}
+			if err := validatePrices(tier.Prices); err != nil {
+				return fmt.Errorf("tier %s: %w", tier.ID, err)
+			}
+		}
+		if fallbackCount != 1 {
+			return fmt.Errorf("tiered policy requires exactly one fallback tier")
+		}
 	default:
 		return fmt.Errorf("unsupported policy mode: %s", policy.Mode)
+	}
+	return nil
+}
+
+func validatePrices(prices Prices) error {
+	if strings.TrimSpace(prices.Input) == "" {
+		return fmt.Errorf("input price is required")
+	}
+	for name, raw := range map[string]string{
+		"input": prices.Input, "output": prices.Output, "cache_read": prices.CacheRead,
+		"cache_write_5m": prices.CacheWrite5m, "cache_write_1h": prices.CacheWrite1h,
+		"image_input": prices.ImageInput, "audio_input": prices.AudioInput, "audio_output": prices.AudioOutput,
+	} {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		value, err := decimal.NewFromString(raw)
+		if err != nil || value.IsNegative() {
+			return fmt.Errorf("%s price must be a non-negative decimal", name)
+		}
+	}
+	return nil
+}
+
+func validateTierCondition(condition TierCondition) error {
+	switch condition.Metric {
+	case "input_total_tokens", "output_total_tokens":
+	default:
+		return fmt.Errorf("unsupported tier metric: %s", condition.Metric)
+	}
+	switch condition.Operator {
+	case "lt", "lte", "gt", "gte":
+	default:
+		return fmt.Errorf("unsupported tier operator: %s", condition.Operator)
+	}
+	if condition.Value < 0 {
+		return fmt.Errorf("tier condition value cannot be negative")
 	}
 	return nil
 }

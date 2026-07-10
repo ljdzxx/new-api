@@ -38,6 +38,33 @@ func TestSourceChecksumIsOrderIndependent(t *testing.T) {
 	assert.Equal(t, a, b)
 }
 
+func TestTieredPolicyMatchesRawUsage(t *testing.T) {
+	policy := Policy{
+		Version: SchemaVersion, Mode: "tiered", Currency: "USD", Unit: "per_million_tokens",
+		Tiers: []Tier{
+			{ID: "short", Priority: 10, Conditions: []TierCondition{{Metric: "input_total_tokens", Operator: "lte", Value: 200000}}, Prices: Prices{Input: "3", Output: "15"}},
+			{ID: "long", Priority: 20, Fallback: true, Prices: Prices{Input: "6", Output: "22.5"}},
+		},
+	require.NoError(t, ValidatePolicy(policy))
+
+	values, tier, err := ToLegacyValuesForUsage(policy, Usage{InputTotalTokens: 150000})
+	require.NoError(t, err)
+	assert.Equal(t, "short", tier)
+	assert.Equal(t, 1.5, values.ModelRatio)
+	assert.Equal(t, 5.0, values.CompletionRatio)
+
+	values, tier, err = ToLegacyValuesForUsage(policy, Usage{InputTotalTokens: 250000})
+	require.NoError(t, err)
+	assert.Equal(t, "long", tier)
+	assert.Equal(t, 3.0, values.ModelRatio)
+	assert.Equal(t, 3.75, values.CompletionRatio)
+}
+
+func TestTieredPolicyRequiresSingleFallback(t *testing.T) {
+	policy := Policy{Version: SchemaVersion, Mode: "tiered", Currency: "USD", Unit: "per_million_tokens", Tiers: []Tier{{ID: "only", Priority: 1, Prices: Prices{Input: "1"}}}}
+	assert.Error(t, ValidatePolicy(policy))
+}
+
 func testTokenPolicy(input string) Policy {
 	return Policy{Version: SchemaVersion, Mode: "per_token", Currency: "USD", Unit: "per_million_tokens", Prices: Prices{Input: input}}
 }

@@ -106,7 +106,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if !ok {
 			return types.PriceData{}, fmt.Errorf("模型 %s 未配置新版计费策略", info.OriginModelName)
 		}
-		values, err := billing_policy.ToLegacyValues(policy)
+		values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: int64(promptTokens)})
 		if err != nil {
 			return types.PriceData{}, fmt.Errorf("模型 %s 计费策略无效: %w", info.OriginModelName, err)
 		}
@@ -167,6 +167,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		cacheCreationRatio5m = cacheCreationRatio
 		// 固定1h和5min缓存写入价格的比例
 		cacheCreationRatio1h = cacheCreationRatio * claudeCacheCreation1hMultiplier
+		if activePolicyValues != nil {
+			cacheCreationRatio1h = activePolicyValues.CacheCreation1hRatio
+		}
 		scaledPreConsumedTokens := ScaleTokensByGlobalModelRatio(preConsumedTokens, globalModelRatio)
 		ratio := modelRatio * groupRatioInfo.GroupRatio
 		preConsumedQuota = common.QuotaFromFloat(float64(scaledPreConsumedTokens) * ratio)
@@ -249,7 +252,7 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 		logger.LogWarn(c, "shadow billing policy missing for model "+info.OriginModelName)
 		return
 	}
-	values, err := billing_policy.ToLegacyValues(policy)
+	values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: int64(promptTokens)})
 	if err != nil {
 		billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
 		logger.LogWarn(c, "shadow billing policy invalid for model "+info.OriginModelName+": "+err.Error())
