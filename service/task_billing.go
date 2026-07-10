@@ -122,6 +122,9 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["user_global_model_ratio"] = bc.UserGlobalModelRatio
 		other["channel_model_ratio"] = bc.ChannelModelRatio
 		other["global_model_ratio"] = bc.GlobalModelRatio
+		if bc.BillingPolicyRevision != 0 {
+			other["billing_policy_revision"] = bc.BillingPolicyRevision
+		}
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
 			for k, v := range priceData.OtherRatios() {
 				other[k] = v

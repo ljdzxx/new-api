@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -1358,6 +1359,17 @@ func RelayTask(c *gin.Context) {
 		task.PrivateData.BillingSource = relayInfo.BillingSource
 		task.PrivateData.SubscriptionId = relayInfo.SubscriptionId
 		task.PrivateData.TokenId = relayInfo.TokenId
+		policyRevision := int64(0)
+		policyJSON := ""
+		if billing_policy.IsActive() {
+			config := billing_policy.GetConfig()
+			policyRevision = config.Revision
+			if policy, ok := billing_policy.Resolve(relayInfo.OriginModelName); ok {
+				if policyBytes, marshalErr := common.Marshal(policy); marshalErr == nil {
+					policyJSON = string(policyBytes)
+				}
+			}
+		}
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
 			ModelPrice:             relayInfo.PriceData.ModelPrice,
 			GroupRatio:             relayInfo.PriceData.GroupRatioInfo.GroupRatio,
@@ -1369,6 +1381,8 @@ func RelayTask(c *gin.Context) {
 			OtherRatios:            relayInfo.PriceData.OtherRatios(),
 			OriginModelName:        relayInfo.OriginModelName,
 			PerCallBilling:         common.StringsContains(constant.TaskPricePatches, relayInfo.OriginModelName) || relayInfo.PriceData.UsePrice,
+			BillingPolicyRevision:  policyRevision,
+			BillingPolicy:          policyJSON,
 		}
 		task.Quota = result.Quota
 		task.Data = result.TaskData
