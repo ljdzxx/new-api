@@ -40,10 +40,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	other := make(map[string]interface{})
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
-	other["group_ratio"] = info.PriceData.GroupRatioInfo.GroupRatio
-	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
-		other["user_group_ratio"] = info.PriceData.GroupRatioInfo.GroupSpecialRatio
-	}
+	attachGroupRatioBreakdown(other, info.PriceData.GroupRatioInfo)
 	if info.IsModelMapped {
 		other["is_model_mapped"] = true
 		other["upstream_model_name"] = info.UpstreamModelName

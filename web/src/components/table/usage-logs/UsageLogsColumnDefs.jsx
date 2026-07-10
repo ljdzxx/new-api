@@ -504,6 +504,31 @@ function getUsageLogGroupSummary(groupRatio, userGroupRatio, t) {
   return `${useUserGroupRatio ? t('专属倍率') : t('分组')} ${formatRatio(ratio)}x`;
 }
 
+function getUserLevelRatioSegments(other, t) {
+  const baseRatio = Number(other?.base_group_ratio);
+  const levelRatio = Number(other?.user_level_ratio);
+  const effectiveRatio = Number(other?.effective_group_ratio);
+  if (!Number.isFinite(baseRatio) || !Number.isFinite(levelRatio)) {
+    return [];
+  }
+  return [
+    {
+      text: `${other?.group_ratio_source === 'user_group_special' ? t('专属倍率') : t('分组倍率')} ${formatRatio(baseRatio)}x`,
+      tone: 'primary',
+    },
+    {
+      text: `${t('用户等级倍率')} ${formatRatio(levelRatio)}x`,
+      tone: 'secondary',
+    },
+    Number.isFinite(effectiveRatio)
+      ? {
+          text: `${t('最终分组倍率')} ${formatRatio(effectiveRatio)}x`,
+          tone: 'secondary',
+        }
+      : null,
+  ].filter(Boolean);
+}
+
 function renderCompactDetailSummary(summarySegments) {
   const segments = Array.isArray(summarySegments)
     ? summarySegments.filter((segment) => segment?.text)
@@ -587,48 +612,49 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
     };
   }
 
+  const priceSegments = other?.claude
+    ? renderModelPriceSimple(
+        other.model_ratio,
+        other.model_price,
+        other.group_ratio,
+        other?.user_group_ratio,
+        other.cache_tokens || 0,
+        other.cache_ratio || 1.0,
+        other.cache_creation_tokens || 0,
+        other.cache_creation_ratio || 1.0,
+        other.cache_creation_tokens_5m || 0,
+        other.cache_creation_ratio_5m || other.cache_creation_ratio || 1.0,
+        other.cache_creation_tokens_1h || 0,
+        other.cache_creation_ratio_1h || other.cache_creation_ratio || 1.0,
+        false,
+        1.0,
+        other?.is_system_prompt_overwritten,
+        'claude',
+        billingDisplayMode,
+        'segments',
+      )
+    : renderModelPriceSimple(
+        other.model_ratio,
+        other.model_price,
+        other.group_ratio,
+        other?.user_group_ratio,
+        other.cache_tokens || 0,
+        other.cache_ratio || 1.0,
+        0,
+        1.0,
+        0,
+        1.0,
+        0,
+        1.0,
+        false,
+        1.0,
+        other?.is_system_prompt_overwritten,
+        'openai',
+        billingDisplayMode,
+        'segments',
+      );
   return {
-    segments: other?.claude
-      ? renderModelPriceSimple(
-          other.model_ratio,
-          other.model_price,
-          other.group_ratio,
-          other?.user_group_ratio,
-          other.cache_tokens || 0,
-          other.cache_ratio || 1.0,
-          other.cache_creation_tokens || 0,
-          other.cache_creation_ratio || 1.0,
-          other.cache_creation_tokens_5m || 0,
-          other.cache_creation_ratio_5m || other.cache_creation_ratio || 1.0,
-          other.cache_creation_tokens_1h || 0,
-          other.cache_creation_ratio_1h || other.cache_creation_ratio || 1.0,
-          false,
-          1.0,
-          other?.is_system_prompt_overwritten,
-          'claude',
-          billingDisplayMode,
-          'segments',
-        )
-      : renderModelPriceSimple(
-          other.model_ratio,
-          other.model_price,
-          other.group_ratio,
-          other?.user_group_ratio,
-          other.cache_tokens || 0,
-          other.cache_ratio || 1.0,
-          0,
-          1.0,
-          0,
-          1.0,
-          0,
-          1.0,
-          false,
-          1.0,
-          other?.is_system_prompt_overwritten,
-          'openai',
-          billingDisplayMode,
-          'segments',
-        ),
+    segments: [...getUserLevelRatioSegments(other, t), ...priceSegments],
   };
 }
 

@@ -22,6 +22,23 @@ func scaleLogTokens(tokens int, relayInfo *relaycommon.RelayInfo) int {
 	return relayhelper.ScaleTokensByGlobalModelRatio(tokens, relayInfo.PriceData.GlobalModelRatio)
 }
 
+func attachGroupRatioBreakdown(other map[string]interface{}, info types.GroupRatioInfo) {
+	if other == nil {
+		return
+	}
+	other["group_ratio"] = info.GroupRatio
+	other["base_group_ratio"] = info.BaseGroupRatio
+	other["user_level_ratio"] = info.UserLevelRatio
+	other["user_level_id"] = info.UserLevelID
+	other["effective_group_ratio"] = info.GroupRatio
+	other["group_ratio_source"] = "group"
+	if info.HasSpecialRatio {
+		other["group_ratio_source"] = "user_group_special"
+		other["user_group_ratio"] = info.GroupRatio
+		other["user_group_base_ratio"] = info.GroupSpecialRatio
+	}
+}
+
 // attachQuotaSaturationToOther nests a quota saturation marker under
 // other.admin_info.quota_saturation. Nesting under admin_info makes it
 // admin-only for free, since model.formatUserLogs strips the whole admin_info
@@ -78,11 +95,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
 	other["model_ratio"] = modelRatio
-	other["group_ratio"] = groupRatio
-	other["base_group_ratio"] = relayInfo.PriceData.GroupRatioInfo.BaseGroupRatio
-	other["user_level_ratio"] = relayInfo.PriceData.GroupRatioInfo.UserLevelRatio
-	other["user_level_id"] = relayInfo.PriceData.GroupRatioInfo.UserLevelID
-	other["effective_group_ratio"] = relayInfo.PriceData.GroupRatioInfo.GroupRatio
+	attachGroupRatioBreakdown(other, relayInfo.PriceData.GroupRatioInfo)
 	other["system_global_model_ratio"] = relayInfo.PriceData.SystemGlobalModelRatio
 	other["user_global_model_ratio"] = relayInfo.PriceData.UserGlobalModelRatio
 	other["channel_model_ratio"] = relayInfo.PriceData.ChannelModelRatio
@@ -91,14 +104,14 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other["cache_tokens"] = cacheTokens
 	other["cache_ratio"] = cacheRatio
 	other["model_price"] = modelPrice
-	other["user_group_ratio"] = userGroupRatio
-	if relayInfo.PriceData.GroupRatioInfo.HasSpecialRatio {
-		// Preserve the legacy field as the effective value so old frontends do
-		// not accidentally omit the user-level discount during quota previews.
-		other["user_group_ratio"] = relayInfo.PriceData.GroupRatioInfo.GroupRatio
-		other["user_group_base_ratio"] = relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio
+	if !relayInfo.PriceData.GroupRatioInfo.HasSpecialRatio {
+		other["user_group_ratio"] = userGroupRatio
 	}
 	other["frt"] = float64(relayInfo.FirstResponseTime.UnixMilli() - relayInfo.StartTime.UnixMilli())
+	if tier := ctx.GetString("billing_policy_tier"); tier != "" {
+		other["billing_mode"] = "tiered"
+		other["billing_tier"] = tier
+	}
 	if relayInfo.ReasoningEffort != "" {
 		other["reasoning_effort"] = relayInfo.ReasoningEffort
 	}
@@ -284,14 +297,11 @@ func GenerateClaudeOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData types.PriceData) map[string]interface{} {
 	other := make(map[string]interface{})
 	other["model_price"] = priceData.ModelPrice
-	other["group_ratio"] = priceData.GroupRatioInfo.GroupRatio
+	attachGroupRatioBreakdown(other, priceData.GroupRatioInfo)
 	other["system_global_model_ratio"] = priceData.SystemGlobalModelRatio
 	other["user_global_model_ratio"] = priceData.UserGlobalModelRatio
 	other["channel_model_ratio"] = priceData.ChannelModelRatio
 	other["global_model_ratio"] = priceData.GlobalModelRatio
-	if priceData.GroupRatioInfo.HasSpecialRatio {
-		other["user_group_ratio"] = priceData.GroupRatioInfo.GroupSpecialRatio
-	}
 	appendRequestPath(nil, relayInfo, other)
 	return other
 }
