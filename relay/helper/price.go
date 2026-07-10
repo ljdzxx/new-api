@@ -357,6 +357,19 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 
 	}
 	quota := common.QuotaFromFloat(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+	policyAdjustmentMultiplier := 1.0
+	if billing_policy.IsActive() {
+		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
+			multiplier, applied := evaluatePolicyAdjustments(c, policy)
+			policyAdjustmentMultiplier, _ = multiplier.Float64()
+			if len(applied) > 0 {
+				c.Set("billing_policy_adjustments", applied)
+			}
+		}
+	}
+	if policyAdjustmentMultiplier != 1 {
+		quota = common.QuotaFromFloat(float64(quota) * policyAdjustmentMultiplier)
+	}
 
 	// 免费模型检测（与 ModelPriceHelper 对齐）
 	freeModel := false
@@ -376,6 +389,24 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		GlobalModelRatio:       globalModelRatio,
 		Quota:                  quota,
 		GroupRatioInfo:         groupRatioInfo,
+	}
+	if policyAdjustmentMultiplier != 1 {
+		priceData.AddOtherRatio("billing_policy", policyAdjustmentMultiplier)
+	}
+	if billing_policy.IsShadow() {
+		policyQuota := -1
+		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
+			if values, err := billing_policy.ToLegacyValues(policy); err == nil && values.UsePrice {
+				policyQuota = common.QuotaFromFloat(values.ModelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+				if freeModel {
+					policyQuota = 0
+				}
+			}
+		}
+		billing_policy.ObserveShadow(info.OriginModelName, quota, policyQuota)
+		if quota != policyQuota {
+			logger.LogWarn(c, fmt.Sprintf("shadow per-call billing mismatch: model=%s legacy=%d policy=%d", info.OriginModelName, quota, policyQuota))
+		}
 	}
 	return priceData, nil
 }
