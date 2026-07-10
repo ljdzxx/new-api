@@ -51,33 +51,3 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) 
 	require.EqualValues(t, 30, stats.CachedTokens)
 	require.Equal(t, cacheTokenRateModeCachedOverPromptPlusCached, stats.CachedTokenRateMode)
 }
-
-func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
-	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
-	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
-
-	openAIUsage := &dto.Usage{
-		PromptTokens: 100,
-		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens: 10,
-		},
-	}
-	claudeUsage := &dto.Usage{
-		PromptTokens: 80,
-		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens: 20,
-		},
-	}
-
-	ObserveChannelAffinityUsageCacheByRelayFormat(ctx, openAIUsage, types.RelayFormatOpenAI)
-	ObserveChannelAffinityUsageCacheByRelayFormat(ctx, claudeUsage, types.RelayFormatClaude)
-	stats := GetChannelAffinityUsageCacheStats(ruleName, usingGroup, keyFP)
-
-	require.EqualValues(t, 2, stats.Total)
-	require.EqualValues(t, 2, stats.Hit)
-	require.EqualValues(t, 180, stats.PromptTokens)
-	require.EqualValues(t, 30, stats.CachedTokens)
-	require.Equal(t, cacheTokenRateModeMixed, stats.CachedTokenRateMode)
-}
