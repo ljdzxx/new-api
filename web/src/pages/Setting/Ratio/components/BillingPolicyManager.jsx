@@ -154,6 +154,14 @@ export default function BillingPolicyManager() {
             >
               {t('原子切换')}
             </Button>
+            <Button
+              type='tertiary'
+              loading={loading}
+              disabled={!['shadow', 'prepared'].includes(config?.state)}
+              onClick={() => runAction('cancel')}
+            >
+              {t('取消迁移')}
+            </Button>
           </Space>
         </div>
         {config?.state === 'shadow' && (

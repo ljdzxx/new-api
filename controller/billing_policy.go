@@ -124,6 +124,22 @@ func ActivateBillingPolicy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": config})
 }
 
+func CancelBillingPolicyMigration(c *gin.Context) {
+	config := billing_policy.GetConfig()
+	if config.State == billing_policy.StateActive {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "active policies cannot be rolled back automatically after new-policy edits"})
+		return
+	}
+	config.State = billing_policy.StateLegacy
+	config.Revision++
+	if err := persistBillingPolicyConfig(config); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	billing_policy.ResetShadowStats()
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": config})
+}
+
 func persistBillingPolicyConfig(config billing_policy.Config) error {
 	if err := billing_policy.ValidateConfig(&config); err != nil {
 		return err

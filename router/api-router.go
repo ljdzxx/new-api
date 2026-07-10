@@ -226,6 +226,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/billing_policy/shadow", controller.StartBillingPolicyShadow)
 			optionRoute.POST("/billing_policy/prepare", controller.PrepareBillingPolicySwitch)
 			optionRoute.POST("/billing_policy/activate", controller.ActivateBillingPolicy)
+			optionRoute.POST("/billing_policy/cancel", controller.CancelBillingPolicyMigration)
 			optionRoute.POST("/migrate_console_setting", controller.MigrateConsoleSetting) // 用于迁移检测的旧键，下个版本会删除
 		}
 
