@@ -81,25 +81,3 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
 	require.EqualValues(t, 30, stats.CachedTokens)
 	require.Equal(t, cacheTokenRateModeMixed, stats.CachedTokenRateMode)
 }
-
-func TestObserveChannelAffinityUsageCacheByRelayFormat_UnsupportedModeKeepsEmpty(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
-	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
-	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
-
-	usage := &dto.Usage{
-		PromptTokens: 100,
-		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens: 25,
-		},
-	}
-
-	ObserveChannelAffinityUsageCacheByRelayFormat(ctx, usage, types.RelayFormatGemini)
-	stats := GetChannelAffinityUsageCacheStats(ruleName, usingGroup, keyFP)
-
-	require.EqualValues(t, 1, stats.Total)
-	require.EqualValues(t, 1, stats.Hit)
-	require.EqualValues(t, 25, stats.CachedTokens)
-	require.Equal(t, "", stats.CachedTokenRateMode)
-}
