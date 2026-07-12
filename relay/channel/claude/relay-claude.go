@@ -704,6 +704,29 @@ func buildOpenAIStyleUsageFromClaudeUsage(usage *dto.Usage) dto.Usage {
 	return clone
 }
 
+func attachClaudeBillingUsage(usage *dto.Usage) {
+	if usage == nil {
+		return
+	}
+	cacheCreation5m, cacheCreation1h := service.NormalizeCacheCreationSplit(
+		usage.PromptTokensDetails.CacheWriteTokens,
+		usage.ClaudeCacheCreation5mTokens,
+		usage.ClaudeCacheCreation1hTokens,
+	)
+	claudeUsage := &dto.ClaudeUsage{
+		InputTokens: usage.PromptTokens, OutputTokens: usage.CompletionTokens,
+		CacheReadInputTokens:     usage.PromptTokensDetails.CachedTokens,
+		CacheCreationInputTokens: usage.PromptTokensDetails.CacheWriteTokens,
+	}
+	if cacheCreation5m > 0 || cacheCreation1h > 0 {
+		claudeUsage.CacheCreation = &dto.ClaudeCacheCreationUsage{
+			Ephemeral5mInputTokens: cacheCreation5m,
+			Ephemeral1hInputTokens: cacheCreation1h,
+		}
+	}
+	usage.BillingUsage = dto.NewClaudeMessagesBillingUsage(claudeUsage)
+}
+
 func buildMessageDeltaPatchUsage(claudeResponse *dto.ClaudeResponse, claudeInfo *ClaudeResponseInfo) *dto.ClaudeUsage {
 	usage := &dto.ClaudeUsage{}
 	if claudeResponse != nil && claudeResponse.Usage != nil {
@@ -937,6 +960,7 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 	}
 	if claudeInfo.Usage != nil {
 		claudeInfo.Usage.UsageSemantic = "anthropic"
+		attachClaudeBillingUsage(claudeInfo.Usage)
 	}
 
 	if info.RelayFormat == types.RelayFormatClaude {
@@ -1240,6 +1264,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage.PromptTokensDetails.CacheWriteTokens = claudeResponse.Usage.CacheCreationInputTokens
 		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
 		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
+		claudeInfo.Usage.BillingUsage = dto.NewClaudeMessagesBillingUsage(claudeResponse.Usage)
 	}
 	var responseData []byte
 	switch info.RelayFormat {

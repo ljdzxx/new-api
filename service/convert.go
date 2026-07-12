@@ -236,6 +236,10 @@ func buildClaudeUsageFromOpenAIUsage(oaiUsage *dto.Usage) *dto.ClaudeUsage {
 		OutputTokens:             oaiUsage.CompletionTokens,
 		CacheCreationInputTokens: oaiUsage.PromptTokensDetails.CacheWriteTokens,
 		CacheReadInputTokens:     oaiUsage.PromptTokensDetails.CachedTokens,
+		BillingUsage:             dto.CloneBillingUsage(oaiUsage.BillingUsage),
+	}
+	if usage.BillingUsage == nil {
+		usage.BillingUsage = dto.NewOpenAIChatBillingUsage(oaiUsage)
 	}
 	if cacheCreation5m > 0 || cacheCreation1h > 0 {
 		usage.CacheCreation = &dto.ClaudeCacheCreationUsage{
@@ -831,7 +835,11 @@ func ResponseOpenAI2Gemini(openAIResponse *dto.OpenAITextResponse, info *relayco
 			PromptTokenCount:     openAIResponse.PromptTokens,
 			CandidatesTokenCount: openAIResponse.CompletionTokens,
 			TotalTokenCount:      openAIResponse.PromptTokens + openAIResponse.CompletionTokens,
+			BillingUsage:         dto.CloneBillingUsage(openAIResponse.Usage.BillingUsage),
 		},
+	}
+	if geminiResponse.UsageMetadata.BillingUsage == nil {
+		geminiResponse.UsageMetadata.BillingUsage = dto.NewOpenAIChatBillingUsage(&openAIResponse.Usage)
 	}
 
 	for _, choice := range openAIResponse.Choices {
@@ -934,6 +942,10 @@ func StreamResponseOpenAI2Gemini(openAIResponse *dto.ChatCompletionsStreamRespon
 		geminiResponse.UsageMetadata.PromptTokenCount = openAIResponse.Usage.PromptTokens
 		geminiResponse.UsageMetadata.CandidatesTokenCount = openAIResponse.Usage.CompletionTokens
 		geminiResponse.UsageMetadata.TotalTokenCount = openAIResponse.Usage.TotalTokens
+		geminiResponse.UsageMetadata.BillingUsage = dto.CloneBillingUsage(openAIResponse.Usage.BillingUsage)
+		if geminiResponse.UsageMetadata.BillingUsage == nil {
+			geminiResponse.UsageMetadata.BillingUsage = dto.NewOpenAIChatBillingUsage(openAIResponse.Usage)
+		}
 	}
 
 	for _, choice := range openAIResponse.Choices {

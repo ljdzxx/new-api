@@ -255,6 +255,9 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse) (*
 	}
 
 	usage := resp.Usage
+	if usage.BillingUsage == nil {
+		usage.BillingUsage = dto.NewOpenAIChatBillingUsage(&resp.Usage)
+	}
 	if usage.InputTokens == 0 && usage.PromptTokens != 0 {
 		usage.InputTokens = usage.PromptTokens
 	}

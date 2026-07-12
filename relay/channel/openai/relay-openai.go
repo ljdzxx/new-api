@@ -180,6 +180,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	}
 
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
+	if containStreamUsage && usage.BillingUsage == nil {
+		usage.BillingUsage = dto.NewOpenAIChatBillingUsage(usage)
+	}
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
@@ -250,6 +253,9 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
+	if !usageModified && simpleResponse.Usage.BillingUsage == nil {
+		simpleResponse.Usage.BillingUsage = dto.NewOpenAIChatBillingUsage(&simpleResponse.Usage)
+	}
 
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:

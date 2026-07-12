@@ -225,6 +225,28 @@ func TestGeminiChatHandlerUsesEstimatedPromptTokensWhenUsagePromptMissing(t *tes
 	require.Equal(t, 110, usage.TotalTokens)
 }
 
+func TestPatchGeminiZeroCompletionUsageRebuildsEstimatedBillingUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "gemini-2.5-flash",
+		ChannelMeta:     &relaycommon.ChannelMeta{UpstreamModelName: "gemini-2.5-flash"},
+	}
+	usage := buildUsageFromGeminiMetadata(dto.GeminiUsageMetadata{
+		PromptTokenCount: 100,
+		TotalTokenCount:  100,
+	}, 0)
+
+	patchGeminiZeroCompletionUsage(c, info, &usage, "Gemini returned output before the final usage chunk.", 0)
+
+	require.Greater(t, usage.CompletionTokens, 0)
+	require.Equal(t, usage.PromptTokens+usage.CompletionTokens, usage.TotalTokens)
+	require.NotNil(t, usage.BillingUsage)
+	require.True(t, usage.BillingUsage.Estimated)
+	require.NotNil(t, usage.BillingUsage.GeminiUsageMetadata)
+	require.Equal(t, usage.CompletionTokens, usage.BillingUsage.GeminiUsageMetadata.CandidatesTokenCount)
+}
+
 func TestGeminiStreamHandlerUsesEstimatedPromptTokensWhenUsagePromptMissing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())

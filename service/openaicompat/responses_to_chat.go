@@ -16,6 +16,10 @@ func ResponsesResponseToChatCompletionsResponse(resp *dto.OpenAIResponsesRespons
 
 	usage := &dto.Usage{}
 	if resp.Usage != nil {
+		usage.BillingUsage = dto.CloneBillingUsage(resp.Usage.BillingUsage)
+		if usage.BillingUsage == nil {
+			usage.BillingUsage = dto.NewOpenAIResponsesBillingUsage(resp.Usage)
+		}
 		if resp.Usage.InputTokens != 0 {
 			usage.PromptTokens = resp.Usage.InputTokens
 			usage.InputTokens = resp.Usage.InputTokens
