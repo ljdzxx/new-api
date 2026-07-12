@@ -261,6 +261,16 @@ type InputTokenDetails struct {
 	ImageTokens      int `json:"image_tokens"`
 }
 
+// CacheCreationTokensTotal returns a cache-write count that is safe to use as
+// a billing multiplier. Upstream usage is untrusted and a negative count must
+// never reduce the charge.
+func (d InputTokenDetails) CacheCreationTokensTotal() int {
+	if d.CacheWriteTokens < 0 {
+		return 0
+	}
+	return d.CacheWriteTokens
+}
+
 func (d *InputTokenDetails) UnmarshalJSON(data []byte) error {
 	type inputTokenDetails InputTokenDetails
 	var aux struct {
@@ -274,6 +284,7 @@ func (d *InputTokenDetails) UnmarshalJSON(data []byte) error {
 	if d.CacheWriteTokens == 0 && aux.LegacyCacheWriteTokens > 0 {
 		d.CacheWriteTokens = aux.LegacyCacheWriteTokens
 	}
+	d.CacheWriteTokens = d.CacheCreationTokensTotal()
 	return nil
 }
 

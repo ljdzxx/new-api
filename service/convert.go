@@ -226,15 +226,25 @@ func buildClaudeUsageFromOpenAIUsage(oaiUsage *dto.Usage) *dto.ClaudeUsage {
 	if oaiUsage == nil {
 		return nil
 	}
+	cacheWriteTokens := oaiUsage.PromptTokensDetails.CacheCreationTokensTotal()
 	cacheCreation5m, cacheCreation1h := NormalizeCacheCreationSplit(
-		oaiUsage.PromptTokensDetails.CacheWriteTokens,
+		cacheWriteTokens,
 		oaiUsage.ClaudeCacheCreation5mTokens,
 		oaiUsage.ClaudeCacheCreation1hTokens,
 	)
+	inputTokens := oaiUsage.PromptTokens
+	if cacheWriteTokens > 0 {
+		// OpenAI reports cache read/write as overlapping, unadjusted prefix
+		// counts included in prompt_tokens. Claude input_tokens excludes both.
+		inputTokens -= oaiUsage.PromptTokensDetails.CachedTokens + cacheWriteTokens
+		if inputTokens < 0 {
+			inputTokens = 0
+		}
+	}
 	usage := &dto.ClaudeUsage{
-		InputTokens:              oaiUsage.PromptTokens,
+		InputTokens:              inputTokens,
 		OutputTokens:             oaiUsage.CompletionTokens,
-		CacheCreationInputTokens: oaiUsage.PromptTokensDetails.CacheWriteTokens,
+		CacheCreationInputTokens: cacheWriteTokens,
 		CacheReadInputTokens:     oaiUsage.PromptTokensDetails.CachedTokens,
 		BillingUsage:             dto.CloneBillingUsage(oaiUsage.BillingUsage),
 	}

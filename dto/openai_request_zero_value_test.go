@@ -97,6 +97,8 @@ func TestOpenAIResponsesCompactionRequestPreservesCodexFields(t *testing.T) {
 		"reasoning":{"mode":"auto","context":{}},
 		"service_tier":"default",
 		"prompt_cache_key":"cache-1",
+		"prompt_cache_options":{"type":"ephemeral"},
+		"prompt_cache_retention":"24h",
 		"text":{"format":{"type":"text"}}
 	}`)
 
@@ -105,7 +107,7 @@ func TestOpenAIResponsesCompactionRequestPreservesCodexFields(t *testing.T) {
 
 	encoded, err := common.Marshal(req)
 	require.NoError(t, err)
-	for _, path := range []string{"tools", "parallel_tool_calls", "reasoning.mode", "reasoning.context", "service_tier", "prompt_cache_key", "text.format.type"} {
+	for _, path := range []string{"tools", "parallel_tool_calls", "reasoning.mode", "reasoning.context", "service_tier", "prompt_cache_key", "prompt_cache_options.type", "prompt_cache_retention", "text.format.type"} {
 		require.True(t, gjson.GetBytes(encoded, path).Exists(), path)
 	}
 }

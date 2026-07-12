@@ -402,6 +402,52 @@ func TestCalculateTextQuotaSummaryHandlesLegacyClaudeDerivedOpenAIUsage(t *testi
 	require.Equal(t, 1624, summary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryBillsOpenAICacheWriteTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		RelayFormat:     types.RelayFormatOpenAI,
+		OriginModelName: "gpt-cache-write",
+		PriceData: types.PriceData{
+			ModelRatio: 1, CompletionRatio: 2, CacheRatio: 0.1,
+			CacheCreationRatio: 1.25, GlobalModelRatio: 1,
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+
+	t.Run("positive uncached remainder", func(t *testing.T) {
+		usage := &dto.Usage{
+			PromptTokens: 1473, CompletionTokens: 19,
+			PromptTokensDetails: dto.InputTokenDetails{CacheWriteTokens: 1470},
+		}
+		summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+		require.Equal(t, 1470, summary.CacheCreationTokens)
+		// (1473-1470) + 1470*1.25 + 19*2 = 1878.5, rounded half away from zero.
+		require.Equal(t, 1879, summary.Quota)
+	})
+
+	t.Run("overlapping prefixes clamp uncached remainder", func(t *testing.T) {
+		usage := &dto.Usage{
+			PromptTokens: 3619, CompletionTokens: 36,
+			PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 2921, CacheWriteTokens: 3616},
+		}
+		summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+		// max(3619-2921-3616, 0) + 2921*0.1 + 3616*1.25 + 36*2 = 4884.1.
+		require.Equal(t, 4884, summary.Quota)
+	})
+
+	t.Run("negative cache write cannot reduce charge", func(t *testing.T) {
+		usage := &dto.Usage{
+			PromptTokens: 100, CompletionTokens: 10,
+			PromptTokensDetails: dto.InputTokenDetails{CacheWriteTokens: -1000},
+		}
+		summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+		require.Zero(t, summary.CacheCreationTokens)
+		require.Equal(t, 120, summary.Quota)
+	})
+}
+
 func TestCalculateTextQuotaSummaryUsesGlobalModelRatio(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

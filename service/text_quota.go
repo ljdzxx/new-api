@@ -137,7 +137,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CompletionTokens = usage.CompletionTokens
 	summary.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	summary.CacheTokens = usage.PromptTokensDetails.CachedTokens
-	summary.CacheCreationTokens = usage.PromptTokensDetails.CacheWriteTokens
+	summary.CacheCreationTokens = usage.PromptTokensDetails.CacheCreationTokensTotal()
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
@@ -388,6 +388,13 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 		if !dAudioTokens.IsZero() && summary.AudioInputPrice > 0 {
 			baseTokens = baseTokens.Sub(dAudioTokens)
+		}
+
+		// OpenAI cache usage contains overlapping, unadjusted prefix counts, so
+		// cached + cache-write can exceed prompt tokens. Never allow that overlap
+		// to become a negative base charge.
+		if baseTokens.IsNegative() {
+			baseTokens = decimal.Zero
 		}
 
 		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cacheWriteTokensWithRatio)
