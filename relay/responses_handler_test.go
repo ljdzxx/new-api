@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,40 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestOpenAIResponsesRequestFromCompactionUsesUpstreamWhitelist(t *testing.T) {
+	t.Parallel()
+
+	req := &dto.OpenAIResponsesCompactionRequest{
+		Model:                "gpt-5.6-sol",
+		Input:                json.RawMessage(`"input"`),
+		Instructions:         json.RawMessage(`"instructions"`),
+		PreviousResponseID:   "resp-1",
+		Tools:                json.RawMessage(`[]`),
+		ParallelToolCalls:    json.RawMessage(`false`),
+		Reasoning:            &dto.Reasoning{Effort: "high"},
+		ServiceTier:          "default",
+		PromptCacheKey:       json.RawMessage(`"cache-1"`),
+		PromptCacheOptions:   json.RawMessage(`{"type":"ephemeral"}`),
+		PromptCacheRetention: json.RawMessage(`"24h"`),
+		Text:                 json.RawMessage(`{"format":{"type":"text"}}`),
+	}
+
+	converted := openAIResponsesRequestFromCompaction(req)
+
+	require.Equal(t, req.Model, converted.Model)
+	require.Equal(t, req.Input, converted.Input)
+	require.Equal(t, req.Instructions, converted.Instructions)
+	require.Equal(t, req.PreviousResponseID, converted.PreviousResponseID)
+	require.Equal(t, req.ParallelToolCalls, converted.ParallelToolCalls)
+	require.Equal(t, req.ServiceTier, converted.ServiceTier)
+	require.Equal(t, req.PromptCacheKey, converted.PromptCacheKey)
+	require.Equal(t, req.PromptCacheOptions, converted.PromptCacheOptions)
+	require.Equal(t, req.PromptCacheRetention, converted.PromptCacheRetention)
+	require.Nil(t, converted.Tools)
+	require.Nil(t, converted.Reasoning)
+	require.Nil(t, converted.Text)
+}
 
 func TestResponsesHelperRejectsXiaomiChannel(t *testing.T) {
 	t.Parallel()

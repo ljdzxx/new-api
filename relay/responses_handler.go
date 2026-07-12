@@ -68,20 +68,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	case *dto.OpenAIResponsesRequest:
 		responsesReq = req
 	case *dto.OpenAIResponsesCompactionRequest:
-		responsesReq = &dto.OpenAIResponsesRequest{
-			Model:                req.Model,
-			Input:                req.Input,
-			Instructions:         req.Instructions,
-			PreviousResponseID:   req.PreviousResponseID,
-			Tools:                req.Tools,
-			ParallelToolCalls:    req.ParallelToolCalls,
-			Reasoning:            req.Reasoning,
-			ServiceTier:          req.ServiceTier,
-			PromptCacheKey:       req.PromptCacheKey,
-			PromptCacheOptions:   req.PromptCacheOptions,
-			PromptCacheRetention: req.PromptCacheRetention,
-			Text:                 req.Text,
-		}
+		responsesReq = openAIResponsesRequestFromCompaction(req)
 	default:
 		return types.NewErrorWithStatusCode(
 			fmt.Errorf("invalid request type, expected dto.OpenAIResponsesRequest or dto.OpenAIResponsesCompactionRequest, got %T", info.Request),
@@ -247,6 +234,23 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		service.PostTextConsumeQuota(c, info, usageDto, nil)
 	}
 	return nil
+}
+
+func openAIResponsesRequestFromCompaction(req *dto.OpenAIResponsesCompactionRequest) *dto.OpenAIResponsesRequest {
+	// Only fields supported by POST /v1/responses/compact are forwarded.
+	// Codex-parity fields such as tools, reasoning, and text remain accepted by
+	// the client DTO for compatibility, but are intentionally not sent upstream.
+	return &dto.OpenAIResponsesRequest{
+		Model:                req.Model,
+		Input:                req.Input,
+		Instructions:         req.Instructions,
+		PreviousResponseID:   req.PreviousResponseID,
+		ParallelToolCalls:    req.ParallelToolCalls,
+		ServiceTier:          req.ServiceTier,
+		PromptCacheKey:       req.PromptCacheKey,
+		PromptCacheOptions:   req.PromptCacheOptions,
+		PromptCacheRetention: req.PromptCacheRetention,
+	}
 }
 
 func isEncryptedContentRelayError(err *types.NewAPIError) bool {
