@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -100,10 +101,12 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 		policy.Prices.Input = input.String()
 		policy.Prices.Output = multiplyPrice(input, ratio_setting.GetCompletionRatio(name), true)
 		cacheValue, hasCache := cache[name]
-		policy.Prices.CacheRead = multiplyPrice(input, cacheValue, hasCache)
+		cacheReadPrice := multiplyPrice(input, cacheValue, hasCache)
+		policy.Prices.CacheRead = cacheReadPrice
 		cacheCreateValue, hasCacheCreate := cacheCreate[name]
-		policy.Prices.CacheWrite5m = multiplyPrice(input, cacheCreateValue, hasCacheCreate)
-		if policy.Prices.CacheWrite5m != "" {
+		policy.Prices.CacheWrite = multiplyPrice(input, cacheCreateValue, hasCacheCreate)
+		if policy.Prices.CacheWrite != "" && isAnthropicPricingModel(name) {
+			policy.Prices.CacheWrite5m = policy.Prices.CacheWrite
 			policy.Prices.CacheWrite1h = decimal.RequireFromString(policy.Prices.CacheWrite5m).Mul(decimal.NewFromFloat(6 / 3.75)).String()
 		}
 		imageValue, hasImage := image[name]
@@ -136,6 +139,11 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 		return report, err
 	}
 	return report, nil
+}
+
+func isAnthropicPricingModel(modelName string) bool {
+	normalized := strings.ToLower(modelName)
+	return strings.Contains(normalized, "claude") || strings.Contains(normalized, "anthropic/")
 }
 
 func legacyRatiosEquivalent(values LegacyValues, modelRatio, completion, cache float64, hasCache bool, cacheCreate float64, hasCacheCreate bool, image float64, hasImage bool, audio float64, hasAudio bool, audioOutput float64, hasAudioOutput bool) bool {

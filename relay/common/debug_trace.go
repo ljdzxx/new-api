@@ -3,6 +3,7 @@ package common
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,8 @@ import (
 
 const debugTraceClientRequestLoggedKey = "debug_trace_client_request_logged"
 
+const debugTraceJSONFieldMaxBytes = 50
+
 type debugTraceReadCloser struct {
 	rc       io.ReadCloser
 	ctx      *gin.Context
@@ -29,6 +32,8 @@ type debugTraceReadCloser struct {
 	status   int
 	header   http.Header
 	buf      bytes.Buffer
+	bodySize int64
+	sizeOnly bool
 	once     sync.Once
 	closeErr error
 }
@@ -36,7 +41,10 @@ type debugTraceReadCloser struct {
 func (r *debugTraceReadCloser) Read(p []byte) (int, error) {
 	n, err := r.rc.Read(p)
 	if n > 0 {
-		_, _ = r.buf.Write(p[:n])
+		r.bodySize += int64(n)
+		if !r.sizeOnly {
+			_, _ = r.buf.Write(p[:n])
+		}
 	}
 	if err == io.EOF {
 		r.log()
@@ -52,6 +60,10 @@ func (r *debugTraceReadCloser) Close() error {
 
 func (r *debugTraceReadCloser) log() {
 	r.once.Do(func() {
+		if r.sizeOnly {
+			logBodySizeTrace(r.ctx, r.info, r.label, r.method, r.url, r.status, r.header, r.bodySize, r.closeErr)
+			return
+		}
 		logBodyTrace(r.ctx, r.info, r.label, r.method, r.url, r.status, r.header, r.buf.Bytes(), r.closeErr)
 	})
 }
@@ -114,18 +126,28 @@ func WrapResponseBodyForDebugTrace(c *gin.Context, resp *http.Response, info *Re
 		}
 	}
 	resp.Body = &debugTraceReadCloser{
-		rc:     resp.Body,
-		ctx:    c,
-		info:   info,
-		label:  "upstream response",
-		method: method,
-		url:    urlText,
-		status: resp.StatusCode,
-		header: resp.Header.Clone(),
+		rc:       resp.Body,
+		ctx:      c,
+		info:     info,
+		label:    "upstream response",
+		method:   method,
+		url:      urlText,
+		status:   resp.StatusCode,
+		header:   resp.Header.Clone(),
+		sizeOnly: info != nil && info.IsStream,
 	}
 }
 
+func logBodySizeTrace(c *gin.Context, info *RelayInfo, label, method, urlText string, status int, header http.Header, bodySize int64, closeErr error) {
+	logBodyTraceText(c, info, label, method, urlText, status, header, bodySize, "size", fmt.Sprintf("Size(%d)", bodySize), closeErr)
+}
+
 func logBodyTrace(c *gin.Context, info *RelayInfo, label, method, urlText string, status int, header http.Header, body []byte, closeErr error) {
+	encoding, text := debugTraceBodyText(header, body)
+	logBodyTraceText(c, info, label, method, urlText, status, header, int64(len(body)), encoding, text, closeErr)
+}
+
+func logBodyTraceText(c *gin.Context, info *RelayInfo, label, method, urlText string, status int, header http.Header, bodySize int64, encoding, text string, closeErr error) {
 	var b strings.Builder
 	b.WriteString("[debug trace] ")
 	b.WriteString(label)
@@ -160,8 +182,7 @@ func logBodyTrace(c *gin.Context, info *RelayInfo, label, method, urlText string
 	}
 	b.WriteString(fmt.Sprintf("\nheaders: %s", formatDebugTraceHeaders(header)))
 
-	encoding, text := debugTraceBodyText(header, body)
-	b.WriteString(fmt.Sprintf("\nbody_bytes=%d body_encoding=%s\n", len(body), encoding))
+	b.WriteString(fmt.Sprintf("\nbody_bytes=%d body_encoding=%s\n", bodySize, encoding))
 	b.WriteString(text)
 	logger.LogInfo(c, b.String())
 }
@@ -192,10 +213,65 @@ func debugTraceBodyText(header http.Header, body []byte) (string, string) {
 	if len(body) == 0 {
 		return "text", ""
 	}
+	if sanitized, ok := sanitizeDebugTraceJSON(body); ok {
+		return "json", string(sanitized)
+	}
 	if !isBinaryContentType(header.Get("Content-Type")) && isTextBody(body) {
 		return "text", string(body)
 	}
 	return "base64", base64.StdEncoding.EncodeToString(body)
+}
+
+func sanitizeDebugTraceJSON(body []byte) ([]byte, bool) {
+	var value json.RawMessage
+	if err := rootcommon.Unmarshal(body, &value); err != nil {
+		return nil, false
+	}
+	sanitized, err := sanitizeDebugTraceJSONValue(value)
+	if err != nil {
+		return nil, false
+	}
+	return sanitized, true
+}
+
+func sanitizeDebugTraceJSONValue(value json.RawMessage) (json.RawMessage, error) {
+	switch rootcommon.GetJsonType(value) {
+	case "object":
+		var object map[string]json.RawMessage
+		if err := rootcommon.Unmarshal(value, &object); err != nil {
+			return nil, err
+		}
+		for key, item := range object {
+			sanitized, err := sanitizeDebugTraceJSONValue(item)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = sanitized
+		}
+		return rootcommon.Marshal(object)
+	case "array":
+		var array []json.RawMessage
+		if err := rootcommon.Unmarshal(value, &array); err != nil {
+			return nil, err
+		}
+		for index, item := range array {
+			sanitized, err := sanitizeDebugTraceJSONValue(item)
+			if err != nil {
+				return nil, err
+			}
+			array[index] = sanitized
+		}
+		return rootcommon.Marshal(array)
+	case "string":
+		var text string
+		if err := rootcommon.Unmarshal(value, &text); err != nil {
+			return nil, err
+		}
+		if len([]byte(text)) > debugTraceJSONFieldMaxBytes {
+			return rootcommon.Marshal(fmt.Sprintf("Size(%d)", len([]byte(text))))
+		}
+	}
+	return bytes.TrimSpace(value), nil
 }
 
 func isBinaryContentType(contentType string) bool {

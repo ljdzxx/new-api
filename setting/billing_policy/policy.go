@@ -24,11 +24,28 @@ type Prices struct {
 	Input        string `json:"input,omitempty"`
 	Output       string `json:"output,omitempty"`
 	CacheRead    string `json:"cache_read,omitempty"`
+	CacheWrite   string `json:"cache_write,omitempty"`
 	CacheWrite5m string `json:"cache_write_5m,omitempty"`
 	CacheWrite1h string `json:"cache_write_1h,omitempty"`
 	ImageInput   string `json:"image_input,omitempty"`
 	AudioInput   string `json:"audio_input,omitempty"`
 	AudioOutput  string `json:"audio_output,omitempty"`
+}
+
+func (p *Prices) UnmarshalJSON(data []byte) error {
+	type pricesWire Prices
+	var wire struct {
+		pricesWire
+		LegacyCacheRead string `json:"cache_hits_refreshes"`
+	}
+	if err := common.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	*p = Prices(wire.pricesWire)
+	if strings.TrimSpace(p.CacheRead) == "" {
+		p.CacheRead = wire.LegacyCacheRead
+	}
+	return nil
 }
 
 type TierCondition struct {
@@ -162,6 +179,7 @@ type LegacyValues struct {
 	CompletionRatio      float64
 	CacheRatio           float64
 	CacheCreationRatio   float64
+	CacheCreation5mRatio float64
 	CacheCreation1hRatio float64
 	ImageRatio           float64
 	AudioRatio           float64
@@ -203,6 +221,25 @@ func ToLegacyValuesForUsage(policy Policy, usage Usage) (LegacyValues, string, e
 	}
 	values, err := legacyValuesFromPrices(tier.Prices)
 	return values, tier.ID, err
+}
+
+// EffectivePricesForUsage resolves the concrete price table used by a request.
+// Tiered policies return the matched tier ID; other modes return an empty ID.
+func EffectivePricesForUsage(policy Policy, usage Usage) (Prices, string, error) {
+	if err := ValidatePolicy(policy); err != nil {
+		return Prices{}, "", err
+	}
+	if policy.Mode == "per_request" {
+		return Prices{}, "", nil
+	}
+	if policy.Mode == "per_token" {
+		return policy.Prices, "", nil
+	}
+	tier, ok := MatchTier(policy, usage)
+	if !ok {
+		return Prices{}, "", fmt.Errorf("tiered policy has no matching tier")
+	}
+	return tier.Prices, tier.ID, nil
 }
 
 func MatchTier(policy Policy, usage Usage) (Tier, bool) {
@@ -271,9 +308,21 @@ func legacyValuesFromPrices(prices Prices) (LegacyValues, error) {
 	if err != nil {
 		return LegacyValues{}, err
 	}
-	values.CacheCreationRatio, err = relativePrice(prices.CacheWrite5m, input, 0)
+	cacheWrite := prices.CacheWrite
+	if strings.TrimSpace(cacheWrite) == "" {
+		cacheWrite = prices.CacheWrite5m
+	}
+	values.CacheCreationRatio, err = relativePrice(cacheWrite, input, 0)
 	if err != nil {
 		return LegacyValues{}, err
+	}
+	if strings.TrimSpace(prices.CacheWrite5m) == "" {
+		values.CacheCreation5mRatio = values.CacheCreationRatio
+	} else {
+		values.CacheCreation5mRatio, err = relativePrice(prices.CacheWrite5m, input, 0)
+		if err != nil {
+			return LegacyValues{}, err
+		}
 	}
 	values.CacheCreation1hRatio, err = relativePrice(prices.CacheWrite1h, input, 0)
 	if err != nil {
@@ -316,17 +365,38 @@ func MarshalConfig() string {
 }
 
 func UpdateFromJSON(value string) error {
+	if common.DebugTraceEnabled {
+		common.SysLog("[billing-policy][config-parse] raw_json=" + value)
+	}
 	var next Config
 	if err := common.UnmarshalJsonStr(value, &next); err != nil {
+		if common.DebugTraceEnabled {
+			common.SysError("[billing-policy][config-parse] decode_failed=" + err.Error())
+		}
 		return err
 	}
 	if err := ValidateConfig(&next); err != nil {
+		if common.DebugTraceEnabled {
+			common.SysError("[billing-policy][config-parse] validation_failed=" + err.Error())
+		}
 		return err
 	}
 	store.Lock()
 	store.config = cloneConfig(next)
 	store.Unlock()
+	if common.DebugTraceEnabled {
+		common.SysLog(fmt.Sprintf("[billing-policy][config-parse] loaded schema_version=%d revision=%d state=%s policies=%d", next.SchemaVersion, next.Revision, next.State, len(next.Policies)))
+	}
 	return nil
+}
+
+// TraceCurrentConfig emits the complete in-memory policy JSON when debug trace
+// is enabled at runtime, including when the switch is turned on after startup.
+func TraceCurrentConfig(reason string) {
+	if !common.DebugTraceEnabled {
+		return
+	}
+	common.SysLog(fmt.Sprintf("[billing-policy][config-snapshot] reason=%s raw_json=%s", reason, MarshalConfig()))
 }
 
 func ValidateConfig(config *Config) error {
@@ -370,10 +440,20 @@ func ValidatePolicy(policy Policy) error {
 	}
 	switch policy.Mode {
 	case "per_request":
+		if policy.Unit != "per_request" {
+			return fmt.Errorf("per-request policy requires per_request unit")
+		}
 		if strings.TrimSpace(policy.Price) == "" {
 			return fmt.Errorf("per-request policy requires price")
 		}
+		price, err := decimal.NewFromString(policy.Price)
+		if err != nil || price.IsNegative() {
+			return fmt.Errorf("per-request price must be a non-negative decimal")
+		}
 	case "per_token":
+		if policy.Unit != "per_million_tokens" {
+			return fmt.Errorf("per-token policy requires per_million_tokens unit")
+		}
 		if strings.TrimSpace(policy.Prices.Input) == "" {
 			return fmt.Errorf("per-token policy requires input price")
 		}
@@ -381,6 +461,9 @@ func ValidatePolicy(policy Policy) error {
 			return err
 		}
 	case "tiered":
+		if policy.Unit != "per_million_tokens" {
+			return fmt.Errorf("tiered policy requires per_million_tokens unit")
+		}
 		if len(policy.Tiers) == 0 {
 			return fmt.Errorf("tiered policy requires tiers")
 		}
@@ -466,7 +549,7 @@ func validatePrices(prices Prices) error {
 	}
 	for name, raw := range map[string]string{
 		"input": prices.Input, "output": prices.Output, "cache_read": prices.CacheRead,
-		"cache_write_5m": prices.CacheWrite5m, "cache_write_1h": prices.CacheWrite1h,
+		"cache_write": prices.CacheWrite, "cache_write_5m": prices.CacheWrite5m, "cache_write_1h": prices.CacheWrite1h,
 		"image_input": prices.ImageInput, "audio_input": prices.AudioInput, "audio_output": prices.AudioOutput,
 	} {
 		if strings.TrimSpace(raw) == "" {

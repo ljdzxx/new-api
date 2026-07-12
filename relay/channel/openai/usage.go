@@ -11,6 +11,9 @@ func applyUsagePostProcessing(info *relaycommon.RelayInfo, usage *dto.Usage, res
 	if info == nil || usage == nil {
 		return
 	}
+	if usage.PromptTokensDetails.CacheWriteTokens == 0 && usage.InputTokensDetails != nil && usage.InputTokensDetails.CacheWriteTokens > 0 {
+		usage.PromptTokensDetails.CacheWriteTokens = usage.InputTokensDetails.CacheWriteTokens
+	}
 
 	switch info.ChannelType {
 	case constant.ChannelTypeDeepSeek:

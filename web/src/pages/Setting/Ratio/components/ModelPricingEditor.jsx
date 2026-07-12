@@ -350,7 +350,11 @@ export default function ModelPricingEditor({
 
           <Card
             style={isMobile ? { order: 1 } : undefined}
-            title={selectedModel ? selectedModel.name : t('模型计费编辑器')}
+            title={
+              <span className='font-semibold'>
+                {selectedModel ? selectedModel.name : t('模型计费编辑器')}
+              </span>
+            }
             headerExtraContent={
               selectedModel ? (
                 <Tag color='blue'>

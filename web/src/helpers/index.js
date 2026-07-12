@@ -32,3 +32,4 @@ export * from './passkey';
 export * from './statusCodeRules';
 export * from './payment';
 export * from './fingerprint';
+export * from './billingPolicyLog';

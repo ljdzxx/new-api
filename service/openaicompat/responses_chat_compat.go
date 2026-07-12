@@ -265,11 +265,16 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse) (*
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 	if usage.InputTokensDetails == nil {
+		textTokens := usage.PromptTokens - usage.PromptTokensDetails.CachedTokens - usage.PromptTokensDetails.CacheWriteTokens
+		if textTokens < 0 {
+			textTokens = 0
+		}
 		usage.InputTokensDetails = &dto.InputTokenDetails{
-			CachedTokens: usage.PromptTokensDetails.CachedTokens,
-			ImageTokens:  usage.PromptTokensDetails.ImageTokens,
-			AudioTokens:  usage.PromptTokensDetails.AudioTokens,
-			TextTokens:   usage.PromptTokens - usage.PromptTokensDetails.CachedTokens,
+			CachedTokens:     usage.PromptTokensDetails.CachedTokens,
+			CacheWriteTokens: usage.PromptTokensDetails.CacheWriteTokens,
+			ImageTokens:      usage.PromptTokensDetails.ImageTokens,
+			AudioTokens:      usage.PromptTokensDetails.AudioTokens,
+			TextTokens:       textTokens,
 		}
 	}
 

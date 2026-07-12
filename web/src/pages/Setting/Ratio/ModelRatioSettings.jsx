@@ -383,7 +383,9 @@ export default function ModelRatioSettings(props) {
           position={'top'}
           onConfirm={resetModelRatio}
         >
-          <Button type={'danger'}>{t('重置模型倍率')}</Button>
+          <span className='inline-flex'>
+            <Button type={'danger'}>{t('重置模型倍率')}</Button>
+          </span>
         </Popconfirm>
       </Space>
     </Spin>

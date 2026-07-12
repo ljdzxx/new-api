@@ -2,6 +2,7 @@ package performance_setting
 
 import (
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/config"
 )
 
@@ -54,6 +55,7 @@ func init() {
 
 // syncToCommon 将配置同步到 common 包
 func syncToCommon() {
+	debugTraceWasEnabled := common.DebugTraceEnabled
 	common.SetDiskCacheConfig(common.DiskCacheConfig{
 		Enabled:     performanceSetting.DiskCacheEnabled,
 		ThresholdMB: performanceSetting.DiskCacheThresholdMB,
@@ -70,6 +72,9 @@ func syncToCommon() {
 	common.DebugTraceEnabled = performanceSetting.DebugTraceEnabled
 	common.DebugTraceToken = performanceSetting.DebugTraceToken
 	common.ClaudeRelayDebugLogEnabled = performanceSetting.ClaudeRelayDebugLogEnabled
+	if common.DebugTraceEnabled && !debugTraceWasEnabled {
+		billing_policy.TraceCurrentConfig("debug_trace_enabled")
+	}
 }
 
 // GetPerformanceSetting 获取性能设置

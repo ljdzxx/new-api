@@ -70,8 +70,8 @@ func TestBuildMessageDeltaPatchUsage(t *testing.T) {
 			Usage: &dto.Usage{
 				PromptTokens: 100,
 				PromptTokensDetails: dto.InputTokenDetails{
-					CachedTokens:         30,
-					CachedCreationTokens: 50,
+					CachedTokens:     30,
+					CacheWriteTokens: 50,
 				},
 				ClaudeCacheCreation5mTokens: 10,
 				ClaudeCacheCreation1hTokens: 20,
@@ -98,8 +98,8 @@ func TestBuildMessageDeltaPatchUsage(t *testing.T) {
 		claudeInfo := &ClaudeResponseInfo{Usage: &dto.Usage{
 			PromptTokens: 100,
 			PromptTokensDetails: dto.InputTokenDetails{
-				CachedTokens:         30,
-				CachedCreationTokens: 50,
+				CachedTokens:     30,
+				CacheWriteTokens: 50,
 			},
 		}}
 
@@ -116,7 +116,7 @@ func TestBuildMessageDeltaPatchUsage(t *testing.T) {
 		}}
 		claudeInfo := &ClaudeResponseInfo{Usage: &dto.Usage{
 			PromptTokensDetails: dto.InputTokenDetails{
-				CachedCreationTokens: 50,
+				CacheWriteTokens: 50,
 			},
 		}}
 

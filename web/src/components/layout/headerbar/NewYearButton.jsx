@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Button, Dropdown } from '@douyinfe/semi-ui';
+import { Dropdown } from '@douyinfe/semi-ui';
 import fireworks from 'react-fireworks';
 
 const NewYearButton = ({ isNewYear }) => {
@@ -48,13 +48,13 @@ const NewYearButton = ({ isNewYear }) => {
         </Dropdown.Menu>
       }
     >
-      <Button
-        theme='borderless'
-        type='tertiary'
-        icon={<span className='text-xl'>🎉</span>}
+      <button
+        type='button'
         aria-label='New Year'
-        className='!p-1.5 !text-current focus:!bg-semi-color-fill-1 dark:focus:!bg-gray-700 rounded-full'
-      />
+        className='inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-1.5 text-current hover:bg-semi-color-fill-1 focus:bg-semi-color-fill-1 focus:outline-none dark:focus:bg-gray-700'
+      >
+        <span className='text-xl'>🎉</span>
+      </button>
     </Dropdown>
   );
 };

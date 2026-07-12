@@ -24,25 +24,27 @@ import {
   Button,
   Card,
   Input,
-  Modal,
   Space,
   Table,
   Tag,
-  TextArea,
   Typography,
 } from '@douyinfe/semi-ui';
-import { API, showError, showSuccess } from '../../../../helpers';
+import { API, showError, showSuccess, showWarning } from '../../../../helpers';
+import BillingPolicyVisualEditor from './BillingPolicyVisualEditor';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
-export default function BillingPolicyManager() {
+export default function BillingPolicyManager({
+  billingPolicyVersion = 0,
+  onBillingPolicyChanged,
+}) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [state, setState] = useState(null);
   const [preview, setPreview] = useState(null);
   const [query, setQuery] = useState('');
   const [editingModel, setEditingModel] = useState(null);
-  const [draft, setDraft] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -59,7 +61,7 @@ export default function BillingPolicyManager() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, billingPolicyVersion]);
 
   const runAction = async (action) => {
     setLoading(true);
@@ -94,29 +96,105 @@ export default function BillingPolicyManager() {
       .map(([name, policy]) => ({ key: name, name, policy }));
   }, [state, query]);
 
-  const savePolicy = async () => {
+  const savePolicy = async (policy) => {
+    if (!editingModel || saving) return;
+    setSaving(true);
     try {
-      const policy = JSON.parse(draft);
-      const config = structuredClone(state.config);
-      config.policies[editingModel] = policy;
-      const response = await API.put('/api/option/billing_policy', config);
+      const response = await API.put('/api/option/billing_policy/policy', {
+        model: editingModel,
+        policy,
+      });
       if (!response.data?.success) throw new Error(response.data?.message);
       showSuccess(t('保存成功'));
       setEditingModel(null);
+      onBillingPolicyChanged?.();
       await refresh();
     } catch (error) {
       showError(error.message);
+    } finally {
+      setSaving(false);
     }
   };
 
   const config = state?.config;
   const shadow = state?.shadow;
+  const openPolicyEditor = (modelName) => {
+    if (!config) {
+      showWarning(t('计费策略正在加载，请稍后重试'));
+      return;
+    }
+    if (config.state !== 'active') {
+      showWarning(
+        t('当前计费策略状态为 {{state}}，请先完成迁移并激活后再编辑', {
+          state: config.state || 'legacy',
+        }),
+      );
+      return;
+    }
+    if (!config.policies?.[modelName]) {
+      showWarning(t('未找到对应模型的计费策略'));
+      return;
+    }
+    setEditingModel(modelName);
+  };
+
+  const columns = useMemo(
+    () => [
+      {
+        title: t('模型'),
+        dataIndex: 'name',
+        render: (_, row) => (
+          <Button
+            theme='borderless'
+            type='tertiary'
+            style={{ padding: 0 }}
+            onClick={(event) => {
+              event.stopPropagation();
+              openPolicyEditor(row.name);
+            }}
+          >
+            {row.name}
+          </Button>
+        ),
+      },
+      {
+        title: t('模式'),
+        render: (_, row) => <Tag>{row.policy.mode}</Tag>,
+      },
+      {
+        title: t('摘要'),
+        render: (_, row) =>
+          row.policy.mode === 'tiered'
+            ? `${row.policy.tiers?.length || 0} ${t('个阶梯')}`
+            : row.policy.mode === 'per_request'
+              ? `$${row.policy.price} / request`
+              : `$${row.policy.prices?.input || 0} / 1M input`,
+      },
+      {
+        title: t('操作'),
+        render: (_, row) => (
+          <Button
+            onClick={(event) => {
+              event.stopPropagation();
+              openPolicyEditor(row.name);
+            }}
+          >
+            {t('编辑')}
+          </Button>
+        ),
+      },
+    ],
+    [t, config],
+  );
+
   return (
     <div className='space-y-4'>
       <Card>
         <div className='flex flex-col justify-between gap-4 lg:flex-row lg:items-center'>
           <div>
-            <Title heading={5}>{t('模型计费策略迁移')}</Title>
+            <h3 className='m-0 text-base font-semibold leading-6 text-semi-color-text-0'>
+              {t('模型计费策略迁移')}
+            </h3>
             <Space>
               <Tag color='blue'>{config?.state || 'legacy'}</Tag>
               <Text type='tertiary'>revision {config?.revision || 0}</Text>
@@ -184,7 +262,11 @@ export default function BillingPolicyManager() {
         )}
       </Card>
 
-      <Card title={t('模型计费策略')}>
+      <Card
+        title={
+          <span className='text-base font-semibold'>{t('模型计费策略')}</span>
+        }
+      >
         <Input
           className='mb-3 max-w-md'
           value={query}
@@ -194,55 +276,26 @@ export default function BillingPolicyManager() {
         />
         <Table
           loading={loading}
+          rowKey='key'
           dataSource={rows}
           pagination={{ pageSize: 20 }}
-          columns={[
-            { title: t('模型'), dataIndex: 'name' },
-            {
-              title: t('模式'),
-              render: (_, row) => <Tag>{row.policy.mode}</Tag>,
-            },
-            {
-              title: t('摘要'),
-              render: (_, row) =>
-                row.policy.mode === 'tiered'
-                  ? `${row.policy.tiers?.length || 0} ${t('个阶梯')}`
-                  : row.policy.mode === 'per_request'
-                    ? `$${row.policy.price} / request`
-                    : `$${row.policy.prices?.input || 0} / 1M input`,
-            },
-            {
-              title: t('操作'),
-              render: (_, row) => (
-                <Button
-                  disabled={config?.state !== 'active'}
-                  onClick={() => {
-                    setEditingModel(row.name);
-                    setDraft(JSON.stringify(row.policy, null, 2));
-                  }}
-                >
-                  {t('编辑')}
-                </Button>
-              ),
-            },
-          ]}
+          columns={columns}
+          onRow={(row) => ({
+            onClick: () => openPolicyEditor(row.name),
+            style: { cursor: 'pointer' },
+          })}
         />
       </Card>
 
-      <Modal
-        title={`${t('编辑模型计费策略')} · ${editingModel || ''}`}
+      <BillingPolicyVisualEditor
+        key={editingModel || 'billing-policy-editor'}
         visible={Boolean(editingModel)}
+        model={editingModel}
+        policy={editingModel ? config?.policies?.[editingModel] : null}
         onCancel={() => setEditingModel(null)}
-        onOk={savePolicy}
-        width={800}
-      >
-        <TextArea
-          value={draft}
-          onChange={setDraft}
-          autosize={{ minRows: 18, maxRows: 32 }}
-          style={{ fontFamily: 'monospace' }}
-        />
-      </Modal>
+        onSave={savePolicy}
+        saving={saving}
+      />
     </div>
   );
 }

@@ -253,11 +253,27 @@ type OpenAIVideoResponse struct {
 }
 
 type InputTokenDetails struct {
-	CachedTokens         int `json:"cached_tokens"`
-	CachedCreationTokens int `json:"cached_creation_tokens,omitempty"`
-	TextTokens           int `json:"text_tokens"`
-	AudioTokens          int `json:"audio_tokens"`
-	ImageTokens          int `json:"image_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
+	TextTokens       int `json:"text_tokens"`
+	AudioTokens      int `json:"audio_tokens"`
+	ImageTokens      int `json:"image_tokens"`
+}
+
+func (d *InputTokenDetails) UnmarshalJSON(data []byte) error {
+	type inputTokenDetails InputTokenDetails
+	var aux struct {
+		inputTokenDetails
+		LegacyCacheWriteTokens int `json:"cached_creation_tokens,omitempty"`
+	}
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*d = InputTokenDetails(aux.inputTokenDetails)
+	if d.CacheWriteTokens == 0 && aux.LegacyCacheWriteTokens > 0 {
+		d.CacheWriteTokens = aux.LegacyCacheWriteTokens
+	}
+	return nil
 }
 
 type OutputTokenDetails struct {

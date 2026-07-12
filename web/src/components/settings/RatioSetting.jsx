@@ -53,6 +53,10 @@ const RatioSetting = () => {
   });
 
   const [loading, setLoading] = useState(false);
+  const [billingPolicyVersion, setBillingPolicyVersion] = useState(0);
+  const notifyBillingPolicyChanged = () => {
+    setBillingPolicyVersion((version) => version + 1);
+  };
 
   const getOptions = async () => {
     const res = await API.get('/api/option/');
@@ -107,10 +111,19 @@ const RatioSetting = () => {
             <GroupRatioSettings options={inputs} refresh={onRefresh} />
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('价格设置')} itemKey='visual'>
-            <ModelSettingsVisualEditor options={inputs} refresh={onRefresh} />
+            <ModelSettingsVisualEditor
+              options={inputs}
+              refresh={onRefresh}
+              billingPolicyVersion={billingPolicyVersion}
+              onBillingPolicyChanged={notifyBillingPolicyChanged}
+            />
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('未设置价格模型')} itemKey='unset_models'>
-            <ModelRatioNotSetEditor options={inputs} refresh={onRefresh} />
+            <ModelRatioNotSetEditor
+              options={inputs}
+              refresh={onRefresh}
+              onBillingPolicyChanged={notifyBillingPolicyChanged}
+            />
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('上游倍率同步')} itemKey='upstream_sync'>
             <UpstreamRatioSync options={inputs} refresh={onRefresh} />

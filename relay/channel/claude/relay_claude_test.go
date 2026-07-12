@@ -41,8 +41,8 @@ func TestFormatClaudeResponseInfo_MessageStart(t *testing.T) {
 	if claudeInfo.Usage.PromptTokensDetails.CachedTokens != 30 {
 		t.Errorf("CachedTokens = %d, want 30", claudeInfo.Usage.PromptTokensDetails.CachedTokens)
 	}
-	if claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens != 50 {
-		t.Errorf("CachedCreationTokens = %d, want 50", claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens)
+	if claudeInfo.Usage.PromptTokensDetails.CacheWriteTokens != 50 {
+		t.Errorf("CacheWriteTokens = %d, want 50", claudeInfo.Usage.PromptTokensDetails.CacheWriteTokens)
 	}
 	if claudeInfo.ResponseId != "msg_123" {
 		t.Errorf("ResponseId = %s, want msg_123", claudeInfo.ResponseId)
@@ -58,8 +58,8 @@ func TestFormatClaudeResponseInfo_MessageDelta_FullUsage(t *testing.T) {
 		Usage: &dto.Usage{
 			PromptTokens: 100,
 			PromptTokensDetails: dto.InputTokenDetails{
-				CachedTokens:         30,
-				CachedCreationTokens: 50,
+				CachedTokens:     30,
+				CacheWriteTokens: 50,
 			},
 			CompletionTokens: 1,
 		},
@@ -100,8 +100,8 @@ func TestFormatClaudeResponseInfo_MessageDelta_OnlyOutputTokens(t *testing.T) {
 		Usage: &dto.Usage{
 			PromptTokens: 100,
 			PromptTokensDetails: dto.InputTokenDetails{
-				CachedTokens:         30,
-				CachedCreationTokens: 50,
+				CachedTokens:     30,
+				CacheWriteTokens: 50,
 			},
 			CompletionTokens:            1,
 			ClaudeCacheCreation5mTokens: 10,
@@ -136,8 +136,8 @@ func TestFormatClaudeResponseInfo_MessageDelta_OnlyOutputTokens(t *testing.T) {
 	if claudeInfo.Usage.PromptTokensDetails.CachedTokens != 30 {
 		t.Errorf("CachedTokens = %d, want 30", claudeInfo.Usage.PromptTokensDetails.CachedTokens)
 	}
-	if claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens != 50 {
-		t.Errorf("CachedCreationTokens = %d, want 50", claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens)
+	if claudeInfo.Usage.PromptTokensDetails.CacheWriteTokens != 50 {
+		t.Errorf("CacheWriteTokens = %d, want 50", claudeInfo.Usage.PromptTokensDetails.CacheWriteTokens)
 	}
 	if claudeInfo.Usage.ClaudeCacheCreation5mTokens != 10 {
 		t.Errorf("ClaudeCacheCreation5mTokens = %d, want 10", claudeInfo.Usage.ClaudeCacheCreation5mTokens)
@@ -185,8 +185,8 @@ func TestBuildOpenAIStyleUsageFromClaudeUsage(t *testing.T) {
 		PromptTokens:     100,
 		CompletionTokens: 20,
 		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens:         30,
-			CachedCreationTokens: 50,
+			CachedTokens:     30,
+			CacheWriteTokens: 50,
 		},
 		ClaudeCacheCreation5mTokens: 10,
 		ClaudeCacheCreation1hTokens: 20,
@@ -215,21 +215,21 @@ func TestBuildOpenAIStyleUsageFromClaudeUsage(t *testing.T) {
 func TestBuildOpenAIStyleUsageFromClaudeUsagePreservesCacheCreationRemainder(t *testing.T) {
 	tests := []struct {
 		name                    string
-		cachedCreationTokens    int
+		CacheWriteTokens        int
 		cacheCreationTokens5m   int
 		cacheCreationTokens1h   int
 		expectedTotalInputToken int
 	}{
 		{
 			name:                    "prefers aggregate when it includes remainder",
-			cachedCreationTokens:    50,
+			CacheWriteTokens:        50,
 			cacheCreationTokens5m:   10,
 			cacheCreationTokens1h:   20,
 			expectedTotalInputToken: 180,
 		},
 		{
 			name:                    "falls back to split tokens when aggregate missing",
-			cachedCreationTokens:    0,
+			CacheWriteTokens:        0,
 			cacheCreationTokens5m:   10,
 			cacheCreationTokens1h:   20,
 			expectedTotalInputToken: 160,
@@ -242,8 +242,8 @@ func TestBuildOpenAIStyleUsageFromClaudeUsagePreservesCacheCreationRemainder(t *
 				PromptTokens:     100,
 				CompletionTokens: 20,
 				PromptTokensDetails: dto.InputTokenDetails{
-					CachedTokens:         30,
-					CachedCreationTokens: tt.cachedCreationTokens,
+					CachedTokens:     30,
+					CacheWriteTokens: tt.CacheWriteTokens,
 				},
 				ClaudeCacheCreation5mTokens: tt.cacheCreationTokens5m,
 				ClaudeCacheCreation1hTokens: tt.cacheCreationTokens1h,
@@ -267,8 +267,8 @@ func TestBuildOpenAIStyleUsageFromClaudeUsageDefaultsAggregateCacheCreationTo5m(
 		PromptTokens:     100,
 		CompletionTokens: 20,
 		PromptTokensDetails: dto.InputTokenDetails{
-			CachedTokens:         30,
-			CachedCreationTokens: 50,
+			CachedTokens:     30,
+			CacheWriteTokens: 50,
 		},
 		UsageSemantic: "anthropic",
 	}

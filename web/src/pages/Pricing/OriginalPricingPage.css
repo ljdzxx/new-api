@@ -1,0 +1,448 @@
+/*
+  Model Plaza (Pricing) page styles.
+  NOTE: class names are intentionally prefixed with `plaza-` to avoid
+  collisions with the global `.pricing-*` rules in web/src/index.css
+  (which belong to components/table/model-pricing and use !important).
+
+  Visual language follows the original Semi Card based page
+  (git 1dc4b4268): native Semi colors, small radius, wide/short cards.
+*/
+
+/* ==================== Page shell ==================== */
+.plaza-page {
+  background-color: var(--semi-color-bg-0);
+  min-height: 100%;
+  /* Global header bar is position: fixed with h-16 (64px) — offset the page below it */
+  padding-top: 64px;
+}
+
+.plaza-page-inner {
+  /* Fill the whole viewport width, like the old full-bleed pricing layout */
+  width: 100%;
+  padding: 24px 32px 48px;
+}
+
+/* ==================== Header ==================== */
+.plaza-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px 32px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.plaza-page-header .semi-typography-paragraph {
+  margin: 4px 0 0;
+}
+
+.plaza-search {
+  width: min(400px, 100%);
+  flex-shrink: 0;
+}
+
+/* ==================== Layout grid: sidebar + content ==================== */
+.plaza-page-grid {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.plaza-sidebar {
+  position: sticky;
+  /* 64px fixed navbar + 16px breathing room */
+  top: 80px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.plaza-sidebar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.plaza-main {
+  min-width: 0;
+}
+
+/* ==================== Filter panel (Semi Card) ==================== */
+.plaza-filter-panel .semi-card-body {
+  padding-top: 0 !important;
+}
+
+.plaza-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--semi-color-border);
+}
+
+.plaza-filter-panel .plaza-filter-section:first-of-type {
+  border-top: none;
+}
+
+.plaza-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plaza-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border-radius: var(--semi-border-radius-medium, 6px);
+  border: 1px solid var(--semi-color-border);
+  background-color: transparent;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background-color 0.15s;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--semi-color-text-1);
+}
+
+.plaza-filter-chip:hover {
+  border-color: var(--semi-color-primary);
+  color: var(--semi-color-primary);
+}
+
+.plaza-filter-chip.active {
+  background-color: var(--semi-color-primary-light-default);
+  border-color: var(--semi-color-primary);
+  color: var(--semi-color-primary);
+  font-weight: 600;
+}
+
+.plaza-filter-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.plaza-filter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plaza-filter-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--semi-color-text-2);
+}
+
+.plaza-filter-chip.active .plaza-filter-count {
+  color: var(--semi-color-primary);
+}
+
+/* ==================== Toolbar ==================== */
+.plaza-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* ==================== Card grid (wide cards, like the original 2/3-col layout) ==================== */
+.plaza-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+/* Semi Card provides colors/radius/shadow; only layout tweaks here */
+.plaza-model-card .semi-card-header {
+  padding-bottom: 0 !important;
+}
+
+/* ==================== Model identity ==================== */
+.plaza-model-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.plaza-model-logo {
+  flex-shrink: 0;
+  width: var(--plaza-logo-size);
+  height: var(--plaza-logo-size);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--plaza-logo-size) * 0.42);
+  font-weight: 600;
+  color: var(--semi-color-text-1);
+  background-color: var(--semi-color-fill-0);
+  border: 1px solid var(--semi-color-border);
+  overflow: hidden;
+}
+
+.plaza-model-name {
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--semi-color-text-0);
+}
+
+/* ==================== Price summary ==================== */
+.plaza-summary {
+  display: flex;
+  gap: 8px 24px;
+  flex-wrap: wrap;
+}
+
+.plaza-summary.compact {
+  gap: 6px 14px;
+}
+
+.plaza-summary-item {
+  min-width: 0;
+}
+
+.plaza-summary-item > div {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.plaza-summary-item .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.plaza-request-price {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.plaza-request-price span {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--semi-color-text-2);
+}
+
+/* ==================== Empty state ==================== */
+.plaza-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: var(--semi-border-radius-medium, 6px);
+  background-color: var(--semi-color-bg-1);
+}
+
+/* ==================== Table view ==================== */
+.plaza-model-table {
+  border: 1px solid var(--semi-color-border);
+  border-radius: var(--semi-border-radius-medium, 6px);
+  overflow: hidden;
+  background: var(--semi-color-bg-1);
+}
+
+/* ==================== Detail SideSheet ==================== */
+.plaza-detail-sheet.is-resizing {
+  pointer-events: none;
+}
+
+.plaza-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.plaza-resize-handle > span {
+  display: block;
+  width: 2px;
+  height: 40px;
+  background-color: var(--semi-color-border);
+  border-radius: 2px;
+  transition: background-color 0.2s;
+}
+
+.plaza-resize-handle:hover > span,
+.plaza-resize-handle:focus > span {
+  background-color: var(--semi-color-primary);
+}
+
+.plaza-detail-content {
+  height: 100%;
+  overflow-y: auto;
+  padding: 0 28px 36px;
+}
+
+.plaza-detail-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 0 24px;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+
+.plaza-detail-description.semi-typography {
+  max-width: 760px;
+  margin: 8px 0 0;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.plaza-detail-section {
+  padding: 26px 0;
+  border-bottom: 1px solid var(--semi-color-border);
+}
+
+.plaza-detail-section:last-child {
+  border-bottom: 0;
+}
+
+.plaza-detail-request {
+  margin-top: 16px;
+}
+
+.plaza-detail-price-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.plaza-detail-price-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: var(--semi-border-radius-medium, 6px);
+  background: var(--semi-color-bg-0);
+}
+
+.plaza-detail-price-item .font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+.plaza-tier-block {
+  margin-top: 8px;
+}
+
+.plaza-detail-subheading {
+  margin: 10px 0 14px;
+}
+
+.plaza-tier-table {
+  border: 1px solid var(--semi-color-border);
+  border-radius: var(--semi-border-radius-medium, 6px);
+  overflow: hidden;
+}
+
+.plaza-tier-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plaza-condition-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--semi-color-text-1);
+}
+
+.plaza-time-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.plaza-time-rule {
+  padding: 14px 16px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: var(--semi-border-radius-medium, 6px);
+  background: var(--semi-color-bg-0);
+}
+
+.plaza-time-rule-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.plaza-time-rule-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ==================== Responsive ==================== */
+.plaza-mobile-filter-button {
+  display: none !important;
+}
+
+@media (max-width: 992px) {
+  .plaza-page-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plaza-sidebar {
+    display: none;
+  }
+
+  .plaza-mobile-filter-button {
+    display: inline-flex !important;
+  }
+
+  .plaza-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .plaza-page-inner {
+    padding: 16px 16px 40px;
+  }
+
+  .plaza-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .plaza-search {
+    width: 100%;
+  }
+
+  .plaza-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plaza-detail-content {
+    padding: 0 16px 28px;
+  }
+}

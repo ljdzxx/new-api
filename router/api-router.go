@@ -222,6 +222,7 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
 			optionRoute.GET("/billing_policy", controller.GetBillingPolicyState)
 			optionRoute.PUT("/billing_policy", controller.UpdateBillingPolicyConfig)
+			optionRoute.PUT("/billing_policy/policy", controller.UpsertBillingPolicyModelPolicy)
 			optionRoute.GET("/billing_policy/migration/preview", controller.PreviewBillingPolicyMigration)
 			optionRoute.POST("/billing_policy/shadow", controller.StartBillingPolicyShadow)
 			optionRoute.POST("/billing_policy/prepare", controller.PrepareBillingPolicySwitch)

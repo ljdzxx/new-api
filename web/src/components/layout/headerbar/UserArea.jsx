@@ -116,10 +116,9 @@ const UserArea = ({
             </Dropdown.Menu>
           }
         >
-          <Button
-            theme='borderless'
-            type='tertiary'
-            className='flex items-center gap-1.5 !p-1 !rounded-full hover:!bg-semi-color-fill-1 dark:hover:!bg-gray-700 !bg-semi-color-fill-0 dark:!bg-semi-color-fill-1 dark:hover:!bg-semi-color-fill-2'
+          <button
+            type='button'
+            className='flex cursor-pointer items-center gap-1.5 rounded-full border-0 bg-semi-color-fill-0 p-1 text-current hover:bg-semi-color-fill-1 focus:bg-semi-color-fill-1 focus:outline-none dark:bg-semi-color-fill-1 dark:hover:bg-semi-color-fill-2 dark:focus:bg-gray-700'
           >
             <Avatar
               size='extra-small'
@@ -137,7 +136,7 @@ const UserArea = ({
               size={14}
               className='text-xs text-semi-color-text-2 dark:text-gray-400'
             />
-          </Button>
+          </button>
         </Dropdown>
       </div>
     );

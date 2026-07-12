@@ -396,7 +396,7 @@ export function getLobeHubIcon(iconName, size = 14) {
   if (typeof iconName === 'string') iconName = iconName.trim();
   // 如果没有图标名称，返回 Avatar
   if (!iconName) {
-  return <Avatar size='extra-extra-small'>?</Avatar>;
+    return <Avatar size='extra-extra-small'>?</Avatar>;
   }
 
   // 解析组件路径与点号链式属性
@@ -408,11 +408,11 @@ export function getLobeHubIcon(iconName, size = 14) {
   let propStartIndex = 1;
 
   if (BaseIcon && segments.length > 1 && BaseIcon[segments[1]]) {
-  IconComponent = BaseIcon[segments[1]];
-  propStartIndex = 2;
+    IconComponent = BaseIcon[segments[1]];
+    propStartIndex = 2;
   } else {
-  IconComponent = LobeIcons[baseKey];
-  propStartIndex = 1;
+    IconComponent = LobeIcons[baseKey];
+    propStartIndex = 1;
   }
 
   // 失败兜底
@@ -420,8 +420,8 @@ export function getLobeHubIcon(iconName, size = 14) {
     !IconComponent ||
     (typeof IconComponent !== 'function' && typeof IconComponent !== 'object')
   ) {
-  const firstLetter = String(iconName).charAt(0).toUpperCase();
-  return <Avatar size='extra-extra-small'>{firstLetter}</Avatar>;
+    const firstLetter = String(iconName).charAt(0).toUpperCase();
+    return <Avatar size='extra-extra-small'>{firstLetter}</Avatar>;
   }
 
   // 解析点号链式属性，形如：key={...}、key='...'、key="..."、key=123、key、key=true/false
@@ -451,16 +451,16 @@ export function getLobeHubIcon(iconName, size = 14) {
   };
 
   for (let i = propStartIndex; i < segments.length; i++) {
-  const seg = segments[i];
-  if (!seg) continue;
-  const eqIdx = seg.indexOf('=');
-  if (eqIdx === -1) {
-    props[seg.trim()] = true;
-    continue;
-  }
-  const key = seg.slice(0, eqIdx).trim();
-  const valRaw = seg.slice(eqIdx + 1).trim();
-  props[key] = parseValue(valRaw);
+    const seg = segments[i];
+    if (!seg) continue;
+    const eqIdx = seg.indexOf('=');
+    if (eqIdx === -1) {
+      props[seg.trim()] = true;
+      continue;
+    }
+    const key = seg.slice(0, eqIdx).trim();
+    const valRaw = seg.slice(eqIdx + 1).trim();
+    props[key] = parseValue(valRaw);
   }
 
   // 兼容第二参数 size，若字符串中未显式指定 size，则使用函数入参
@@ -1106,15 +1106,20 @@ export function getPaymentCurrencyConfig() {
 
   if (paymentDisplayType === 'FOLLOW_QUOTA') {
     const fallbackCurrencyConfig = getCurrencyConfig();
-    console.log('[payment-debug][render] getPaymentCurrencyConfig fallback to quota display', {
-      paymentDisplayType,
-      fallbackCurrencyConfig,
-      localStorageType: localStorage.getItem('payment_display_currency_type'),
-      localStorageSymbol: localStorage.getItem('payment_display_currency_symbol'),
-      localStorageRate: localStorage.getItem(
-        'payment_display_currency_exchange_rate',
-      ),
-    });
+    console.log(
+      '[payment-debug][render] getPaymentCurrencyConfig fallback to quota display',
+      {
+        paymentDisplayType,
+        fallbackCurrencyConfig,
+        localStorageType: localStorage.getItem('payment_display_currency_type'),
+        localStorageSymbol: localStorage.getItem(
+          'payment_display_currency_symbol',
+        ),
+        localStorageRate: localStorage.getItem(
+          'payment_display_currency_exchange_rate',
+        ),
+      },
+    );
     return fallbackCurrencyConfig;
   }
 
@@ -1320,6 +1325,12 @@ function getGroupRatioText(groupRatio, user_group_ratio) {
     ratioType: label,
     ratio,
   });
+}
+
+function getUserLevelRatioText(userLevelRatio) {
+  const ratio = Number(userLevelRatio);
+  if (!Number.isFinite(ratio) || ratio === 1) return '';
+  return i18next.t('等级折扣 {{ratio}}', { ratio });
 }
 
 function formatRatioValue(value, digits = 6) {
@@ -1737,12 +1748,17 @@ export function renderModelPrice(
   imageGenerationCall = false,
   imageGenerationCallPrice = 0,
   displayMode = 'price',
+  userLevelRatio = 1,
 ) {
   const { ratio: effectiveGroupRatio, label: ratioLabel } = getEffectiveRatio(
     groupRatio,
     user_group_ratio,
   );
   groupRatio = effectiveGroupRatio;
+  userLevelRatio = Number.isFinite(Number(userLevelRatio))
+    ? Number(userLevelRatio)
+    : 1;
+  const billingRatio = groupRatio * userLevelRatio;
 
   const { symbol, rate } = getCurrencyConfig();
 
@@ -1755,15 +1771,19 @@ export function renderModelPrice(
           rate,
         }),
         buildBillingPriceText(
-          '按次 {{symbol}}{{price}} * {{ratioType}} {{ratio}} = {{symbol}}{{total}}',
+          '按次 {{symbol}}{{price}} * {{ratioType}} {{ratio}}{{levelDiscount}} = {{symbol}}{{total}}',
           {
             symbol,
             usdAmount: modelPrice,
             rate,
             ratioType: ratioLabel,
             ratio: groupRatio,
+            levelDiscount:
+              userLevelRatio === 1
+                ? ''
+                : ` * ${i18next.t('等级折扣')} ${userLevelRatio}`,
             amountKey: 'price',
-            total: formatBillingDisplayPrice(modelPrice * groupRatio, rate),
+            total: formatBillingDisplayPrice(modelPrice * billingRatio, rate),
           },
         ),
       ]);
@@ -1786,12 +1806,12 @@ export function renderModelPrice(
       effectiveInputTokens -= audioInputTokens;
     }
     const price =
-      (effectiveInputTokens / 1000000) * inputRatioPrice * groupRatio +
-      (audioInputTokens / 1000000) * audioInputPrice * groupRatio +
-      (completionTokens / 1000000) * completionRatioPrice * groupRatio +
-      (webSearchCallCount / 1000) * webSearchPrice * groupRatio +
-      (fileSearchCallCount / 1000) * fileSearchPrice * groupRatio +
-      imageGenerationCallPrice * groupRatio;
+      (effectiveInputTokens / 1000000) * inputRatioPrice * billingRatio +
+      (audioInputTokens / 1000000) * audioInputPrice * billingRatio +
+      (completionTokens / 1000000) * completionRatioPrice * billingRatio +
+      (webSearchCallCount / 1000) * webSearchPrice * billingRatio +
+      (fileSearchCallCount / 1000) * fileSearchPrice * billingRatio +
+      imageGenerationCallPrice * billingRatio;
 
     let inputDesc = '';
     if (image && imageOutputTokens > 0) {
@@ -1840,13 +1860,17 @@ export function renderModelPrice(
     }
 
     const outputDesc = buildBillingText(
-      '输出 {{completion}} tokens / 1M tokens * {{symbol}}{{compPrice}}) * {{ratioType}} {{ratio}}',
+      '输出 {{completion}} tokens / 1M tokens * {{symbol}}{{compPrice}}) * {{ratioType}} {{ratio}}{{levelDiscount}}',
       {
         completion: completionTokens,
         symbol,
         compPrice: formatBillingDisplayPrice(completionRatioPrice, rate),
         ratio: groupRatio,
         ratioType: ratioLabel,
+        levelDiscount:
+          userLevelRatio === 1
+            ? ''
+            : ` * ${i18next.t('等级折扣')} ${userLevelRatio}`,
       },
     );
 
@@ -1969,7 +1993,7 @@ export function renderModelPrice(
 
   if (modelPrice !== -1) {
     const displayPrice = (modelPrice * rate).toFixed(6);
-    const displayTotal = (modelPrice * groupRatio * rate).toFixed(6);
+    const displayTotal = (modelPrice * billingRatio * rate).toFixed(6);
     return i18next.t(
       '按次：{{symbol}}{{price}} * {{ratioType}}：{{ratio}} = {{symbol}}{{total}}',
       {
@@ -2006,26 +2030,26 @@ export function renderModelPrice(
   const cacheInputTokens = cacheTokens;
 
   const textInputAmount =
-    (textInputTokens / 1000000) * inputRatioPrice * groupRatio;
+    (textInputTokens / 1000000) * inputRatioPrice * billingRatio;
   const cacheInputAmount =
     (cacheInputTokens / 1000000) *
     inputRatioPrice *
     cacheRatioValue *
-    groupRatio;
+    billingRatio;
   const imageInputAmount =
     (imageInputTokens / 1000000) *
     inputRatioPrice *
     imageRatioValue *
-    groupRatio;
+    billingRatio;
   const audioInputAmount =
-    (audioInputTokens / 1000000) * audioInputPrice * groupRatio;
+    (audioInputTokens / 1000000) * audioInputPrice * billingRatio;
   const completionAmount =
-    (completionTokens / 1000000) * completionRatioPrice * groupRatio;
+    (completionTokens / 1000000) * completionRatioPrice * billingRatio;
   const webSearchAmount =
-    (webSearchCallCount / 1000) * webSearchPrice * groupRatio;
+    (webSearchCallCount / 1000) * webSearchPrice * billingRatio;
   const fileSearchAmount =
-    (fileSearchCallCount / 1000) * fileSearchPrice * groupRatio;
-  const imageGenerationAmount = imageGenerationCallPrice * groupRatio;
+    (fileSearchCallCount / 1000) * fileSearchPrice * billingRatio;
+  const imageGenerationAmount = imageGenerationCallPrice * billingRatio;
 
   const totalAmount =
     textInputAmount +
@@ -2184,6 +2208,7 @@ export function renderLogContent(
   fileSearch = false,
   fileSearchCallCount = 0,
   displayMode = 'price',
+  userLevelRatio = 1,
 ) {
   const {
     ratio,
@@ -2196,13 +2221,16 @@ export function renderLogContent(
 
   if (isPriceDisplayMode(displayMode, modelPrice)) {
     if (modelPrice !== -1) {
-      return joinBillingSummary([
+      const parts = [
         i18next.t('模型价格 {{symbol}}{{price}} / 次', {
           symbol,
           price: (modelPrice * rate).toFixed(6),
         }),
         getGroupRatioText(groupRatio, user_group_ratio),
-      ]);
+      ];
+      const levelText = getUserLevelRatioText(userLevelRatio);
+      if (levelText) parts.push(levelText);
+      return joinBillingSummary(parts);
     }
 
     const parts = [
@@ -2250,6 +2278,8 @@ export function renderLogContent(
       },
     );
     parts.push(getGroupRatioText(groupRatio, user_group_ratio));
+    const levelText = getUserLevelRatioText(userLevelRatio);
+    if (levelText) parts.push(levelText);
     return joinBillingSummary(parts);
   }
 

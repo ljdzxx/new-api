@@ -319,18 +319,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
-	if priceData.FreeModel {
-		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
-	} else {
-		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
-		if newAPIError != nil {
-			if relayFormat == types.RelayFormatClaude {
-				logClaudeRelayError(c, "pre-consume billing failed: request_id=%s status=%d err=%s origin_model=%q quota=%d", requestId, newAPIError.StatusCode, newAPIError.Error(), relayInfo.OriginModelName, priceData.QuotaToPreConsume)
-			}
-			return
-		}
-	}
-
 	defer func() {
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
@@ -365,6 +353,28 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		if relayFormat == types.RelayFormatClaude {
 			logClaudeRelayDebug(c, "channel selected: request_id=%s retry=%d channel_id=%d channel_type=%d channel_name=%q origin_model=%q", requestId, relayInfo.RetryIndex, channel.Id, channel.Type, channel.Name, relayInfo.OriginModelName)
+		}
+
+		// Pricing initially runs before distribution to validate the model policy.
+		// Rebuild it after every selection so retries and settlement use the
+		// currently selected channel's immutable multiplier snapshot.
+		relayInfo.InitChannelMeta(c)
+		helper.BindChannelModelRatio(relayInfo, channel.GetModelRatio())
+		priceData, err = helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+		if err != nil {
+			newAPIError = types.NewError(err, types.ErrorCodeModelPriceError)
+			break
+		}
+		if relayInfo.Billing == nil && !priceData.FreeModel {
+			newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
+			if newAPIError != nil {
+				if relayFormat == types.RelayFormatClaude {
+					logClaudeRelayError(c, "pre-consume billing failed: request_id=%s status=%d err=%s origin_model=%q quota=%d", requestId, newAPIError.StatusCode, newAPIError.Error(), relayInfo.OriginModelName, priceData.QuotaToPreConsume)
+				}
+				break
+			}
+		} else if relayInfo.Billing == nil && priceData.FreeModel {
+			logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 		}
 		if (relayInfo.RelayMode == relayconstant.RelayModeResponses ||
 			relayInfo.RelayMode == relayconstant.RelayModeResponsesCompact) &&

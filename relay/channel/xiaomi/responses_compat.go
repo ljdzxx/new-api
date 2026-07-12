@@ -158,9 +158,10 @@ func normalizeUsageForResponses(usage *dto.Usage) {
 	}
 	if usage.InputTokensDetails == nil {
 		usage.InputTokensDetails = &dto.InputTokenDetails{
-			CachedTokens: usage.PromptTokensDetails.CachedTokens,
-			ImageTokens:  usage.PromptTokensDetails.ImageTokens,
-			AudioTokens:  usage.PromptTokensDetails.AudioTokens,
+			CachedTokens:     usage.PromptTokensDetails.CachedTokens,
+			CacheWriteTokens: usage.PromptTokensDetails.CacheWriteTokens,
+			ImageTokens:      usage.PromptTokensDetails.ImageTokens,
+			AudioTokens:      usage.PromptTokensDetails.AudioTokens,
 		}
 	}
 }

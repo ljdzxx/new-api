@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -11,6 +12,11 @@ import (
 
 type billingPolicyTransitionRequest struct {
 	SourceChecksum string `json:"source_checksum"`
+}
+
+type billingPolicyModelPolicyRequest struct {
+	Model  string                `json:"model"`
+	Policy billing_policy.Policy `json:"policy"`
 }
 
 func PreviewBillingPolicyMigration(c *gin.Context) {
@@ -46,6 +52,40 @@ func UpdateBillingPolicyConfig(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": next})
+}
+
+func UpsertBillingPolicyModelPolicy(c *gin.Context) {
+	var req billingPolicyModelPolicyRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	modelName := strings.TrimSpace(req.Model)
+	if modelName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "model name is required"})
+		return
+	}
+	if err := billing_policy.ValidatePolicy(req.Policy); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	current := billing_policy.GetConfig()
+	if current.State != billing_policy.StateActive {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "billing policy editing is available only after activation"})
+		return
+	}
+	if current.Policies == nil {
+		current.Policies = map[string]billing_policy.Policy{}
+	}
+	current.Policies[modelName] = req.Policy
+	current.SchemaVersion = billing_policy.SchemaVersion
+	current.State = billing_policy.StateActive
+	current.Revision++
+	if err := persistBillingPolicyConfig(current); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": current})
 }
 
 // StartBillingPolicyShadow snapshots all legacy prices and enables comparison-only

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Button, Dropdown } from '@douyinfe/semi-ui';
+import { Dropdown } from '@douyinfe/semi-ui';
 import { Languages } from 'lucide-react';
 
 const LanguageSelector = ({ currentLang, onLanguageChange, t }) => {
@@ -72,13 +72,13 @@ const LanguageSelector = ({ currentLang, onLanguageChange, t }) => {
         </Dropdown.Menu>
       }
     >
-      <Button
-        icon={<Languages size={18} />}
+      <button
+        type='button'
         aria-label={t('common.changeLanguage')}
-        theme='borderless'
-        type='tertiary'
-        className='!p-1.5 !text-current focus:!bg-semi-color-fill-1 dark:focus:!bg-gray-700 !rounded-full !bg-semi-color-fill-0 dark:!bg-semi-color-fill-1 hover:!bg-semi-color-fill-1 dark:hover:!bg-semi-color-fill-2'
-      />
+        className='inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-0 bg-semi-color-fill-0 p-1.5 text-current hover:bg-semi-color-fill-1 focus:bg-semi-color-fill-1 focus:outline-none dark:bg-semi-color-fill-1 dark:hover:bg-semi-color-fill-2 dark:focus:bg-gray-700'
+      >
+        <Languages size={18} />
+      </button>
     </Dropdown>
   );
 };

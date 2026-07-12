@@ -33,6 +33,7 @@ import {
   getLogOther,
   renderModelTag,
   renderModelPriceSimple,
+  getBillingPolicyLogLines,
 } from '../../../helpers';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { Route, Sparkles } from 'lucide-react';
@@ -335,13 +336,24 @@ function getEquivalentBillingQuota(record) {
     return other?.fee_quota ?? record?.quota ?? 0;
   }
 
+  const policyQuota = Number(other?.billing_policy?.actual_quota);
+  if (Number.isFinite(policyQuota) && policyQuota >= 0) {
+    return policyQuota;
+  }
+
   const groupRatio = getEffectiveGroupRatioValue(
     other?.group_ratio,
     other?.user_group_ratio,
   );
   const modelPrice = toFiniteNumber(other?.model_price, -1);
 
-  if (modelPrice !== -1) {
+  const loggedModelRatio = toFiniteNumber(other?.model_ratio);
+  const isPerRequestBilling =
+    other?.use_price === true ||
+    other?.billing_mode === 'per_request' ||
+    (modelPrice > 0 && loggedModelRatio <= 0);
+
+  if (isPerRequestBilling && modelPrice >= 0) {
     return convertUsdAmountToQuota(modelPrice * groupRatio);
   }
 
@@ -529,6 +541,13 @@ function getUserLevelRatioSegments(other, t) {
   ].filter(Boolean);
 }
 
+function getBillingPolicySegments(other, t) {
+  return getBillingPolicyLogLines(other, t).map((text, index) => ({
+    text,
+    tone: index === 0 ? 'primary' : 'secondary',
+  }));
+}
+
 function renderCompactDetailSummary(summarySegments) {
   const segments = Array.isArray(summarySegments)
     ? summarySegments.filter((segment) => segment?.text)
@@ -545,22 +564,23 @@ function renderCompactDetailSummary(summarySegments) {
       }}
     >
       {segments.map((segment, index) => (
-        <Typography.Text
-          key={`${segment.text}-${index}`}
-          type={segment.tone === 'secondary' ? 'tertiary' : undefined}
-          size={segment.tone === 'secondary' ? 'small' : undefined}
-          style={{
-            display: 'block',
-            maxWidth: '100%',
-            fontSize: 12,
-            marginTop: index === 0 ? 0 : 2,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {segment.text}
-        </Typography.Text>
+        <Tooltip key={`${segment.text}-${index}`} content={segment.text}>
+          <Typography.Text
+            type={segment.tone === 'secondary' ? 'tertiary' : undefined}
+            size={segment.tone === 'secondary' ? 'small' : undefined}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              fontSize: 12,
+              marginTop: index === 0 ? 0 : 2,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {segment.text}
+          </Typography.Text>
+        </Tooltip>
       ))}
     </div>
   );
@@ -609,6 +629,16 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
         },
         text ? { text: `${t('详情')}：${text}`, tone: 'secondary' } : null,
       ].filter(Boolean),
+    };
+  }
+
+  const billingPolicySegments = getBillingPolicySegments(other, t);
+  if (billingPolicySegments.length > 0) {
+    return {
+      segments: [
+        ...getUserLevelRatioSegments(other, t),
+        ...billingPolicySegments,
+      ],
     };
   }
 

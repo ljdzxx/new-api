@@ -66,6 +66,51 @@ func TestTieredPolicyRequiresSingleFallback(t *testing.T) {
 	assert.Error(t, ValidatePolicy(policy))
 }
 
+func TestCacheWritePolicySupportsGenericAndTTLSpecificPrices(t *testing.T) {
+	policy := testTokenPolicy("2")
+	policy.Prices.CacheWrite = "3"
+	policy.Prices.CacheWrite5m = "4"
+	policy.Prices.CacheWrite1h = "8"
+
+	values, err := ToLegacyValues(policy)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1.5, values.CacheCreationRatio)
+	assert.Equal(t, 2.0, values.CacheCreation5mRatio)
+	assert.Equal(t, 4.0, values.CacheCreation1hRatio)
+}
+
+func TestCacheWritePolicyFallsBackToLegacy5mField(t *testing.T) {
+	policy := testTokenPolicy("2")
+	policy.Prices.CacheWrite5m = "4"
+
+	values, err := ToLegacyValues(policy)
+
+	require.NoError(t, err)
+	assert.Equal(t, 2.0, values.CacheCreationRatio)
+	assert.Equal(t, 2.0, values.CacheCreation5mRatio)
+}
+
+func TestLegacyCacheHitsRefreshesMigratesToCacheRead(t *testing.T) {
+	var prices Prices
+	require.NoError(t, common.UnmarshalJsonStr(`{"input":"2","cache_hits_refreshes":"4"}`, &prices))
+	assert.Equal(t, "4", prices.CacheRead)
+
+	encoded := marshalForTest(t, prices)
+	assert.Contains(t, encoded, `"cache_read":"4"`)
+	assert.NotContains(t, encoded, "cache_hits_refreshes")
+}
+
+func TestCacheRatioFallsBackToLegacyCacheRead(t *testing.T) {
+	policy := testTokenPolicy("2")
+	policy.Prices.CacheRead = "6"
+
+	values, err := ToLegacyValues(policy)
+
+	require.NoError(t, err)
+	assert.Equal(t, 3.0, values.CacheRatio)
+}
+
 func testTokenPolicy(input string) Policy {
 	return Policy{Version: SchemaVersion, Mode: "per_token", Currency: "USD", Unit: "per_million_tokens", Prices: Prices{Input: input}}
 }

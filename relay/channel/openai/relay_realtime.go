@@ -130,6 +130,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 						usage.OutputTokens += realtimeUsage.OutputTokens
 						usage.InputTokenDetails.AudioTokens += realtimeUsage.InputTokenDetails.AudioTokens
 						usage.InputTokenDetails.CachedTokens += realtimeUsage.InputTokenDetails.CachedTokens
+						usage.InputTokenDetails.CacheWriteTokens += realtimeUsage.InputTokenDetails.CacheWriteTokens
 						usage.InputTokenDetails.TextTokens += realtimeUsage.InputTokenDetails.TextTokens
 						usage.OutputTokenDetails.AudioTokens += realtimeUsage.OutputTokenDetails.AudioTokens
 						usage.OutputTokenDetails.TextTokens += realtimeUsage.OutputTokenDetails.TextTokens
@@ -232,6 +233,7 @@ func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.R
 	totalUsage.InputTokens += usage.InputTokens
 	totalUsage.OutputTokens += usage.OutputTokens
 	totalUsage.InputTokenDetails.CachedTokens += usage.InputTokenDetails.CachedTokens
+	totalUsage.InputTokenDetails.CacheWriteTokens += usage.InputTokenDetails.CacheWriteTokens
 	totalUsage.InputTokenDetails.TextTokens += usage.InputTokenDetails.TextTokens
 	totalUsage.InputTokenDetails.AudioTokens += usage.InputTokenDetails.AudioTokens
 	totalUsage.OutputTokenDetails.TextTokens += usage.OutputTokenDetails.TextTokens

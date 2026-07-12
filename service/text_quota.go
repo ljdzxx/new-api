@@ -30,6 +30,9 @@ type textQuotaSummary struct {
 	CacheCreationTokens1h    int
 	ImageTokens              int
 	AudioTokens              int
+	AudioOutputTokens        int
+	PolicyInputTotalTokens   int64
+	PolicyOutputTotalTokens  int64
 	ModelName                string
 	TokenName                string
 	UseTimeSeconds           int64
@@ -54,6 +57,7 @@ type textQuotaSummary struct {
 	FileSearchCallCount      int
 	AudioInputPrice          float64
 	ImageGenerationCallPrice float64
+	PolicyCalculation        *billing_policy.BillingCalculation
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -65,6 +69,16 @@ func cacheWriteTokensTotal(summary textQuotaSummary) int {
 		return splitCacheWriteTokens
 	}
 	return summary.CacheCreationTokens
+}
+
+func hasBillableTokenUsage(summary textQuotaSummary) bool {
+	return summary.PromptTokens > 0 ||
+		summary.CompletionTokens > 0 ||
+		summary.CacheTokens > 0 ||
+		cacheWriteTokensTotal(summary) > 0 ||
+		summary.ImageTokens > 0 ||
+		summary.AudioTokens > 0 ||
+		summary.AudioOutputTokens > 0
 }
 
 func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
@@ -123,12 +137,18 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CompletionTokens = usage.CompletionTokens
 	summary.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	summary.CacheTokens = usage.PromptTokensDetails.CachedTokens
-	summary.CacheCreationTokens = usage.PromptTokensDetails.CachedCreationTokens
+	summary.CacheCreationTokens = usage.PromptTokensDetails.CacheWriteTokens
 	summary.CacheCreationTokens5m = usage.ClaudeCacheCreation5mTokens
 	summary.CacheCreationTokens1h = usage.ClaudeCacheCreation1hTokens
 	summary.ImageTokens = usage.PromptTokensDetails.ImageTokens
 	summary.AudioTokens = usage.PromptTokensDetails.AudioTokens
+	summary.AudioOutputTokens = usage.CompletionTokenDetails.AudioTokens
+	summary.PolicyInputTotalTokens = int64(usage.PromptTokens)
+	summary.PolicyOutputTotalTokens = int64(usage.CompletionTokens)
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
+	if summary.IsClaudeUsageSemantic {
+		summary.PolicyInputTotalTokens += int64(summary.CacheTokens + summary.CacheCreationTokens)
+	}
 
 	if relayInfo.ChannelMeta != nil && relayInfo.ChannelType == constant.ChannelTypeOpenRouter {
 		summary.PromptTokens -= summary.CacheTokens
@@ -158,13 +178,14 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				summary.CompletionRatio = values.CompletionRatio
 				summary.CacheRatio = values.CacheRatio
 				summary.CacheCreationRatio = values.CacheCreationRatio
-				summary.CacheCreationRatio5m = values.CacheCreationRatio
+				summary.CacheCreationRatio5m = values.CacheCreation5mRatio
 				summary.CacheCreationRatio1h = values.CacheCreation1hRatio
 				summary.ImageRatio = values.ImageRatio
 				relayInfo.PriceData.ModelRatio = values.ModelRatio
 				relayInfo.PriceData.CompletionRatio = values.CompletionRatio
 				relayInfo.PriceData.CacheRatio = values.CacheRatio
 				relayInfo.PriceData.CacheCreationRatio = values.CacheCreationRatio
+				relayInfo.PriceData.CacheCreation5mRatio = values.CacheCreation5mRatio
 				relayInfo.PriceData.ImageRatio = values.ImageRatio
 				ctx.Set("billing_policy_tier", tierID)
 			}
@@ -189,13 +210,14 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.CacheCreationTokens1h = relayhelper.ScaleTokensByGlobalModelRatio(summary.CacheCreationTokens1h, summary.GlobalModelRatio)
 	summary.ImageTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.ImageTokens, summary.GlobalModelRatio)
 	summary.AudioTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.AudioTokens, summary.GlobalModelRatio)
+	summary.AudioOutputTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.AudioOutputTokens, summary.GlobalModelRatio)
 
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
 	dCacheTokens := decimal.NewFromInt(int64(summary.CacheTokens))
 	dImageTokens := decimal.NewFromInt(int64(summary.ImageTokens))
 	dAudioTokens := decimal.NewFromInt(int64(summary.AudioTokens))
 	dCompletionTokens := decimal.NewFromInt(int64(summary.CompletionTokens))
-	dCachedCreationTokens := decimal.NewFromInt(int64(summary.CacheCreationTokens))
+	dCacheWriteTokens := decimal.NewFromInt(int64(summary.CacheCreationTokens))
 	dCompletionRatio := decimal.NewFromFloat(summary.CompletionRatio)
 	dCacheRatio := decimal.NewFromFloat(summary.CacheRatio)
 	dImageRatio := decimal.NewFromFloat(summary.ImageRatio)
@@ -256,7 +278,85 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 
 	var audioInputQuota decimal.Decimal
-	if !relayInfo.PriceData.UsePrice {
+	if !relayInfo.PriceData.UsePrice && !dAudioTokens.IsZero() {
+		summary.AudioInputPrice = operation_setting.GetGeminiInputAudioPricePerMillionTokens(summary.ModelName)
+		if summary.AudioInputPrice > 0 {
+			audioInputQuota = decimal.NewFromFloat(summary.AudioInputPrice).
+				Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+		}
+	}
+
+	activePolicyCalculated := false
+	if !relayInfo.PriceData.UsePrice && billing_policy.IsActive() {
+		if policy, ok := billing_policy.Resolve(summary.ModelName); ok {
+			effectivePrices, _, priceErr := billing_policy.EffectivePricesForUsage(policy, billing_policy.Usage{
+				InputTotalTokens: summary.PolicyInputTotalTokens, OutputTotalTokens: summary.PolicyOutputTotalTokens,
+			})
+			if priceErr != nil {
+				logger.LogWarn(ctx, "active billing policy price resolution failed, falling back to compatibility ratios: "+priceErr.Error())
+			}
+			cacheWriteRemaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
+			if cacheWriteRemaining < 0 {
+				cacheWriteRemaining = 0
+			}
+			inputTokens := summary.PromptTokens
+			cacheReadTokens := summary.CacheTokens
+			if !summary.IsClaudeUsageSemantic {
+				inputTokens -= summary.CacheTokens + summary.CacheCreationTokens + summary.ImageTokens
+				if priceErr == nil && (summary.AudioInputPrice > 0 || strings.TrimSpace(effectivePrices.AudioInput) != "") {
+					inputTokens -= summary.AudioTokens
+				}
+				if inputTokens < 0 {
+					inputTokens = 0
+				}
+				cacheWriteRemaining = summary.CacheCreationTokens
+			}
+			outputTokens := summary.CompletionTokens
+			if priceErr == nil && strings.TrimSpace(effectivePrices.AudioOutput) != "" {
+				outputTokens -= summary.AudioOutputTokens
+				if outputTokens < 0 {
+					outputTokens = 0
+				}
+			}
+			calculation, err := billing_policy.CalculateBilling(policy, billing_policy.BillingUsage{
+				TierInputTotalTokens:  summary.PolicyInputTotalTokens,
+				TierOutputTotalTokens: summary.PolicyOutputTotalTokens,
+				InputTokens:           int64(inputTokens),
+				OutputTokens:          int64(outputTokens),
+				CacheReadTokens:       int64(cacheReadTokens),
+				CacheWriteTokens:      int64(cacheWriteRemaining),
+				CacheWrite5mTokens:    int64(summary.CacheCreationTokens5m),
+				CacheWrite1hTokens:    int64(summary.CacheCreationTokens1h),
+				ImageInputTokens:      int64(summary.ImageTokens),
+				AudioInputTokens:      int64(summary.AudioTokens),
+				AudioOutputTokens:     int64(summary.AudioOutputTokens),
+			}, billingPolicyRequestContext(ctx))
+			if err != nil {
+				logger.LogWarn(ctx, "active billing policy calculation failed, falling back to compatibility ratios: "+err.Error())
+			} else if policyCost, err := decimal.NewFromString(calculation.TotalUSD); err != nil {
+				logger.LogWarn(ctx, "active billing policy returned invalid total, falling back to compatibility ratios: "+err.Error())
+			} else {
+				quotaCalculateDecimal := policyCost.Mul(dQuotaPerUnit).Mul(dGroupRatio)
+				quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
+				quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
+				quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
+				quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
+				quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
+				for key, otherRatio := range relayInfo.PriceData.OtherRatios() {
+					if key != "billing_policy" {
+						quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
+					}
+				}
+				quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
+				summary.Quota = quota
+				summary.PolicyCalculation = &calculation
+				noteQuotaClamp(relayInfo, clamp)
+				activePolicyCalculated = true
+			}
+		}
+	}
+
+	if !relayInfo.PriceData.UsePrice && !activePolicyCalculated {
 		baseTokens := dPromptTokens
 
 		var cachedTokensWithRatio decimal.Decimal
@@ -267,20 +367,20 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			cachedTokensWithRatio = dCacheTokens.Mul(dCacheRatio)
 		}
 
-		var cachedCreationTokensWithRatio decimal.Decimal
+		var cacheWriteTokensWithRatio decimal.Decimal
 		hasSplitCacheCreationTokens := summary.CacheCreationTokens5m > 0 || summary.CacheCreationTokens1h > 0
-		if !dCachedCreationTokens.IsZero() || hasSplitCacheCreationTokens {
+		if !dCacheWriteTokens.IsZero() || hasSplitCacheCreationTokens {
 			if !summary.IsClaudeUsageSemantic && !legacyClaudeDerived {
-				baseTokens = baseTokens.Sub(dCachedCreationTokens)
-				cachedCreationTokensWithRatio = dCachedCreationTokens.Mul(dCacheCreationRatio)
+				baseTokens = baseTokens.Sub(dCacheWriteTokens)
+				cacheWriteTokensWithRatio = dCacheWriteTokens.Mul(dCacheCreationRatio)
 			} else {
 				remaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
 				if remaining < 0 {
 					remaining = 0
 				}
-				cachedCreationTokensWithRatio = decimal.NewFromInt(int64(remaining)).Mul(dCacheCreationRatio)
-				cachedCreationTokensWithRatio = cachedCreationTokensWithRatio.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens5m)).Mul(dCacheCreationRatio5m))
-				cachedCreationTokensWithRatio = cachedCreationTokensWithRatio.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens1h)).Mul(dCacheCreationRatio1h))
+				cacheWriteTokensWithRatio = decimal.NewFromInt(int64(remaining)).Mul(dCacheCreationRatio)
+				cacheWriteTokensWithRatio = cacheWriteTokensWithRatio.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens5m)).Mul(dCacheCreationRatio5m))
+				cacheWriteTokensWithRatio = cacheWriteTokensWithRatio.Add(decimal.NewFromInt(int64(summary.CacheCreationTokens1h)).Mul(dCacheCreationRatio1h))
 			}
 		}
 
@@ -290,16 +390,11 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			imageTokensWithRatio = dImageTokens.Mul(dImageRatio)
 		}
 
-		if !dAudioTokens.IsZero() {
-			summary.AudioInputPrice = operation_setting.GetGeminiInputAudioPricePerMillionTokens(summary.ModelName)
-			if summary.AudioInputPrice > 0 {
-				baseTokens = baseTokens.Sub(dAudioTokens)
-				audioInputQuota = decimal.NewFromFloat(summary.AudioInputPrice).
-					Div(decimal.NewFromInt(1000000)).Mul(dAudioTokens).Mul(dGroupRatio).Mul(dQuotaPerUnit)
-			}
+		if !dAudioTokens.IsZero() && summary.AudioInputPrice > 0 {
+			baseTokens = baseTokens.Sub(dAudioTokens)
 		}
 
-		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cachedCreationTokensWithRatio)
+		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cacheWriteTokensWithRatio)
 		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
 		quotaCalculateDecimal := promptQuota.Add(completionQuota).Mul(ratio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
@@ -315,7 +410,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 		summary.Quota = quota
 		noteQuotaClamp(relayInfo, clamp)
-	} else {
+	} else if relayInfo.PriceData.UsePrice {
 		quotaCalculateDecimal := dModelPrice.Mul(dQuotaPerUnit).Mul(dGroupRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
@@ -328,7 +423,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		noteQuotaClamp(relayInfo, clamp)
 	}
 
-	if summary.TotalTokens == 0 {
+	if !hasBillableTokenUsage(summary) {
 		summary.Quota = 0
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
@@ -428,7 +523,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, fmt.Sprintf("Image Generation Call 花费 %s", decimal.NewFromFloat(summary.ImageGenerationCallPrice).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
 
-	if summary.TotalTokens == 0 {
+	if !hasBillableTokenUsage(summary) {
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
 		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
 	} else {
@@ -464,6 +559,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	} else {
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
+	attachBillingPolicySnapshot(ctx, relayInfo, summary, other)
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
 	}
@@ -555,7 +651,7 @@ func observeTextQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 		inputTotal = int64(usage.PromptTokens)
 		outputTotal = int64(usage.CompletionTokens)
 		if usageSemanticFromUsage(relayInfo, usage) == "anthropic" {
-			inputTotal += int64(usage.PromptTokensDetails.CachedTokens + usage.PromptTokensDetails.CachedCreationTokens)
+			inputTotal += int64(usage.PromptTokensDetails.CachedTokens + usage.PromptTokensDetails.CacheWriteTokens)
 		}
 	}
 	values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: inputTotal, OutputTotalTokens: outputTotal})
@@ -573,7 +669,7 @@ func observeTextQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	shadowPriceData.CompletionRatio = values.CompletionRatio
 	shadowPriceData.CacheRatio = values.CacheRatio
 	shadowPriceData.CacheCreationRatio = values.CacheCreationRatio
-	shadowPriceData.CacheCreation5mRatio = values.CacheCreationRatio
+	shadowPriceData.CacheCreation5mRatio = values.CacheCreation5mRatio
 	shadowPriceData.CacheCreation1hRatio = values.CacheCreation1hRatio
 	shadowPriceData.ImageRatio = values.ImageRatio
 	shadowPriceData.AudioRatio = values.AudioRatio

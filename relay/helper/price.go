@@ -64,6 +64,21 @@ func getChannelModelRatio(info *relaycommon.RelayInfo) float64 {
 	return info.ChannelMeta.ChannelModelRatio
 }
 
+// BindChannelModelRatio updates relay metadata before price calculation so the
+// selected channel participates in both token scaling and the billing snapshot.
+func BindChannelModelRatio(info *relaycommon.RelayInfo, channelRatio float64) {
+	if info == nil {
+		return
+	}
+	if math.IsNaN(channelRatio) || math.IsInf(channelRatio, 0) || channelRatio < 0 {
+		channelRatio = ratio_setting.DefaultGlobalModelRatio
+	}
+	if info.ChannelMeta == nil {
+		info.ChannelMeta = &relaycommon.ChannelMeta{}
+	}
+	info.ChannelMeta.ChannelModelRatio = channelRatio
+}
+
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
 func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.GroupRatioInfo {
 	groupRatioInfo := types.GroupRatioInfo{
@@ -103,23 +118,29 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 	var activePolicyValues *billing_policy.LegacyValues
+	var activePolicy *billing_policy.Policy
+	activePolicyTier := ""
 	if billing_policy.IsActive() {
 		policy, ok := billing_policy.Resolve(info.OriginModelName)
 		if !ok {
 			return types.PriceData{}, fmt.Errorf("模型 %s 未配置新版计费策略", info.OriginModelName)
 		}
-		values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: int64(promptTokens)})
+		values, tierID, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: int64(promptTokens)})
 		if err != nil {
 			return types.PriceData{}, fmt.Errorf("模型 %s 计费策略无效: %w", info.OriginModelName, err)
 		}
 		activePolicyValues = &values
+		activePolicy = &policy
+		activePolicyTier = tierID
 		modelPrice, usePrice = values.ModelPrice, values.UsePrice
 	}
 	policyAdjustmentMultiplier := 1.0
+	var policyAppliedAdjustments []billing_policy.AppliedAdjustment
 	if billing_policy.IsActive() {
 		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
 			multiplier, applied := evaluatePolicyAdjustments(c, policy)
 			policyAdjustmentMultiplier, _ = multiplier.Float64()
+			policyAppliedAdjustments = applied
 			if len(applied) > 0 {
 				c.Set("billing_policy_adjustments", applied)
 			}
@@ -165,6 +186,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			completionRatio = activePolicyValues.CompletionRatio
 			cacheRatio = activePolicyValues.CacheRatio
 			cacheCreationRatio = activePolicyValues.CacheCreationRatio
+			cacheCreationRatio5m = activePolicyValues.CacheCreation5mRatio
 			imageRatio = activePolicyValues.ImageRatio
 			audioRatio = activePolicyValues.AudioRatio
 			audioCompletionRatio = activePolicyValues.AudioCompletionRatio
@@ -176,7 +198,9 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			audioRatio = ratio_setting.GetAudioRatio(info.OriginModelName)
 			audioCompletionRatio = ratio_setting.GetAudioCompletionRatio(info.OriginModelName)
 		}
-		cacheCreationRatio5m = cacheCreationRatio
+		if activePolicyValues == nil {
+			cacheCreationRatio5m = cacheCreationRatio
+		}
 		// 固定1h和5min缓存写入价格的比例
 		cacheCreationRatio1h = cacheCreationRatio * claudeCacheCreation1hMultiplier
 		if activePolicyValues != nil {
@@ -256,6 +280,14 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		println(fmt.Sprintf("model_price_helper result: %s", priceData.ToSetting()))
 	}
 	info.PriceData = priceData
+	if activePolicy != nil && common.DebugTraceEnabledForContext(c) {
+		logger.LogInfo(c, fmt.Sprintf(
+			"[billing-policy][pre-consume] model=%s revision=%d prompt_tokens=%d matched_tier=%s policy=%s legacy_values=%s adjustments=%s adjustment_multiplier=%.10g price_data=%s",
+			info.OriginModelName, billing_policy.GetConfig().Revision, promptTokens, activePolicyTier,
+			common.GetJsonString(activePolicy), common.GetJsonString(activePolicyValues),
+			common.GetJsonString(policyAppliedAdjustments), policyAdjustmentMultiplier, common.GetJsonString(priceData),
+		))
+	}
 	observeShadowPreConsume(c, info, promptTokens, meta, priceData)
 	return priceData, nil
 }
@@ -406,6 +438,15 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		billing_policy.ObserveShadow(info.OriginModelName, quota, policyQuota)
 		if quota != policyQuota {
 			logger.LogWarn(c, fmt.Sprintf("shadow per-call billing mismatch: model=%s legacy=%d policy=%d", info.OriginModelName, quota, policyQuota))
+		}
+	}
+	if billing_policy.IsActive() && common.DebugTraceEnabledForContext(c) {
+		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
+			logger.LogInfo(c, fmt.Sprintf(
+				"[billing-policy][per-request-pre-consume] model=%s revision=%d policy=%s adjustment_multiplier=%.10g quota=%d price_data=%s",
+				info.OriginModelName, billing_policy.GetConfig().Revision, common.GetJsonString(policy),
+				policyAdjustmentMultiplier, quota, common.GetJsonString(priceData),
+			))
 		}
 	}
 	return priceData, nil
