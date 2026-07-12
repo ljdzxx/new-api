@@ -98,6 +98,24 @@ func TestStreamScannerHandler_EmptyBody(t *testing.T) {
 	assert.False(t, called.Load(), "handler should not be called for empty body")
 }
 
+func TestCopyCodexSSEHeaders(t *testing.T) {
+	t.Parallel()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	resp := &http.Response{Header: http.Header{
+		"X-Reasoning-Included": {"true"},
+		"X-Codex-Turn-State":   {"turn-1", "turn-2"},
+		"Server":               {"upstream"},
+	}}
+
+	copyCodexSSEHeaders(c, resp)
+
+	require.Equal(t, "true", recorder.Header().Get("X-Reasoning-Included"))
+	require.Equal(t, []string{"turn-1", "turn-2"}, recorder.Header().Values("X-Codex-Turn-State"))
+	require.Empty(t, recorder.Header().Get("Server"))
+}
+
 func TestStreamScannerHandler_1000Chunks(t *testing.T) {
 	t.Parallel()
 

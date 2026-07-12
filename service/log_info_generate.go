@@ -161,20 +161,21 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 }
 
 type billingPolicyLogSnapshot struct {
-	SchemaVersion        int                               `json:"schema_version"`
-	Revision             int64                             `json:"revision"`
-	Model                string                            `json:"model"`
-	Policy               *billing_policy.Policy            `json:"policy,omitempty"`
-	Calculation          billing_policy.BillingCalculation `json:"calculation"`
-	ActualQuota          int                               `json:"actual_quota"`
-	PreConsumedQuota     int                               `json:"pre_consumed_quota"`
-	GroupRatio           float64                           `json:"group_ratio"`
-	GlobalModelRatio     float64                           `json:"global_model_ratio"`
-	OtherRatioMultiplier float64                           `json:"other_ratio_multiplier"`
-	OtherRatios          map[string]float64                `json:"other_ratios,omitempty"`
-	AdditionalCharges    []billingPolicyAdditionalCharge   `json:"additional_charges"`
-	AdditionalChargesUSD string                            `json:"additional_charges_usd"`
-	BillableSubtotalUSD  string                            `json:"billable_subtotal_usd"`
+	SchemaVersion              int                               `json:"schema_version"`
+	Revision                   int64                             `json:"revision"`
+	Model                      string                            `json:"model"`
+	Policy                     *billing_policy.Policy            `json:"policy,omitempty"`
+	Calculation                billing_policy.BillingCalculation `json:"calculation"`
+	ActualQuota                int                               `json:"actual_quota"`
+	PreConsumedQuota           int                               `json:"pre_consumed_quota"`
+	GroupRatio                 float64                           `json:"group_ratio"`
+	GlobalModelRatio           float64                           `json:"global_model_ratio"`
+	PolicyAdjustmentMultiplier float64                           `json:"policy_adjustment_multiplier"`
+	OtherRatioMultiplier       float64                           `json:"other_ratio_multiplier"`
+	OtherRatios                map[string]float64                `json:"other_ratios,omitempty"`
+	AdditionalCharges          []billingPolicyAdditionalCharge   `json:"additional_charges"`
+	AdditionalChargesUSD       string                            `json:"additional_charges_usd"`
+	BillableSubtotalUSD        string                            `json:"billable_subtotal_usd"`
 }
 
 type billingPolicyAdditionalCharge struct {
@@ -231,7 +232,6 @@ func buildBillingPolicyAdditionalCharges(summary textQuotaSummary) ([]billingPol
 
 func billingPolicyBusinessRatios(priceData types.PriceData) (map[string]float64, float64) {
 	ratios := priceData.OtherRatios()
-	delete(ratios, "billing_policy")
 	if len(ratios) == 0 {
 		return nil, 1
 	}
@@ -314,19 +314,20 @@ func attachBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 		modelTotalUSD = decimal.Zero
 	}
 	snapshot := billingPolicyLogSnapshot{
-		SchemaVersion:        config.SchemaVersion,
-		Revision:             config.Revision,
-		Model:                relayInfo.OriginModelName,
-		Calculation:          calculation,
-		ActualQuota:          summary.Quota,
-		PreConsumedQuota:     relayInfo.FinalPreConsumedQuota,
-		GroupRatio:           summary.GroupRatio,
-		GlobalModelRatio:     summary.GlobalModelRatio,
-		OtherRatioMultiplier: otherRatioMultiplier,
-		OtherRatios:          otherRatios,
-		AdditionalCharges:    additionalCharges,
-		AdditionalChargesUSD: additionalChargesUSD.String(),
-		BillableSubtotalUSD:  modelTotalUSD.Add(additionalChargesUSD).String(),
+		SchemaVersion:              config.SchemaVersion,
+		Revision:                   config.Revision,
+		Model:                      relayInfo.OriginModelName,
+		Calculation:                calculation,
+		ActualQuota:                summary.Quota,
+		PreConsumedQuota:           relayInfo.FinalPreConsumedQuota,
+		GroupRatio:                 summary.GroupRatio,
+		GlobalModelRatio:           summary.GlobalModelRatio,
+		PolicyAdjustmentMultiplier: relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier(),
+		OtherRatioMultiplier:       otherRatioMultiplier,
+		OtherRatios:                otherRatios,
+		AdditionalCharges:          additionalCharges,
+		AdditionalChargesUSD:       additionalChargesUSD.String(),
+		BillableSubtotalUSD:        modelTotalUSD.Add(additionalChargesUSD).String(),
 	}
 	if common.DebugTraceEnabledForContext(ctx) {
 		snapshot.Policy = &policy
@@ -397,18 +398,19 @@ func attachPerRequestBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycom
 	config := billing_policy.GetConfig()
 	otherRatios, otherRatioMultiplier := billingPolicyBusinessRatios(relayInfo.PriceData)
 	snapshot := billingPolicyLogSnapshot{
-		SchemaVersion:        config.SchemaVersion,
-		Revision:             config.Revision,
-		Model:                relayInfo.OriginModelName,
-		Calculation:          calculation,
-		ActualQuota:          quota,
-		PreConsumedQuota:     relayInfo.FinalPreConsumedQuota,
-		GroupRatio:           relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-		GlobalModelRatio:     relayInfo.PriceData.GlobalModelRatio,
-		OtherRatioMultiplier: otherRatioMultiplier,
-		OtherRatios:          otherRatios,
-		AdditionalChargesUSD: "0",
-		BillableSubtotalUSD:  calculation.TotalUSD,
+		SchemaVersion:              config.SchemaVersion,
+		Revision:                   config.Revision,
+		Model:                      relayInfo.OriginModelName,
+		Calculation:                calculation,
+		ActualQuota:                quota,
+		PreConsumedQuota:           relayInfo.FinalPreConsumedQuota,
+		GroupRatio:                 relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+		GlobalModelRatio:           relayInfo.PriceData.GlobalModelRatio,
+		PolicyAdjustmentMultiplier: relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier(),
+		OtherRatioMultiplier:       otherRatioMultiplier,
+		OtherRatios:                otherRatios,
+		AdditionalChargesUSD:       "0",
+		BillableSubtotalUSD:        calculation.TotalUSD,
 	}
 	if common.DebugTraceEnabledForContext(ctx) {
 		snapshot.Policy = &policy

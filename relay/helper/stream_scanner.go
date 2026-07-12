@@ -61,6 +61,19 @@ func NewStreamScanner(reader io.Reader) *bufio.Scanner {
 	return scanner
 }
 
+func copyCodexSSEHeaders(c *gin.Context, resp *http.Response) {
+	if c == nil || c.Writer == nil || resp == nil {
+		return
+	}
+	for _, name := range []string{"X-Reasoning-Included", "X-Codex-Turn-State"} {
+		for _, value := range resp.Header.Values(name) {
+			if value != "" {
+				c.Writer.Header().Add(name, value)
+			}
+		}
+	}
+}
+
 func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler any) {
 	_ = StreamScannerHandlerWithOptions(c, resp, info, dataHandler, StreamScannerOptions{})
 }
@@ -145,6 +158,7 @@ func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *
 	}()
 
 	scanner.Split(bufio.ScanLines)
+	copyCodexSSEHeaders(c, resp)
 	SetEventStreamHeaders(c)
 
 	ctx, cancel := context.WithCancel(context.Background())

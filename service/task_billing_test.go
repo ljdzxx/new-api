@@ -160,6 +160,32 @@ func TestPriceDataOtherRatiosFilterAndSnapshot(t *testing.T) {
 	assert.NotContains(t, nextSnapshot, "new")
 }
 
+func TestPriceDataPolicyAdjustmentIsSeparateFromOtherRatios(t *testing.T) {
+	priceData := types.PriceData{}
+	priceData.SetPolicyAdjustmentMultiplier(2)
+	priceData.AddOtherRatio("duration", 3)
+
+	assert.Equal(t, 2.0, priceData.EffectivePolicyAdjustmentMultiplier())
+	assert.Equal(t, 3.0, priceData.OtherRatioMultiplier())
+	assert.Equal(t, map[string]float64{"duration": 3}, priceData.OtherRatios())
+
+	priceData.SetPolicyAdjustmentMultiplier(math.NaN())
+	assert.Equal(t, 1.0, priceData.EffectivePolicyAdjustmentMultiplier())
+}
+
+func TestCalculateAudioQuotaCombinesPolicyAndBusinessMultipliers(t *testing.T) {
+	quota, clamp := calculateAudioQuota(QuotaInfo{
+		UsePrice:                   true,
+		ModelPrice:                 1,
+		GroupRatio:                 1,
+		PolicyAdjustmentMultiplier: 2,
+		OtherRatioMultiplier:       3,
+	})
+
+	assert.Nil(t, clamp)
+	assert.Equal(t, common.QuotaFromFloat(common.QuotaPerUnit*6), quota)
+}
+
 func TestPriceDataReplaceAndApplyOtherRatios(t *testing.T) {
 	priceData := types.PriceData{}
 

@@ -42,6 +42,35 @@ func fullTextBillingPolicy() billing_policy.Policy {
 	}
 }
 
+func TestCalculateTextQuotaSummaryFixedPriceAppliesImageCountOnceAndAllowsOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	priceData := types.PriceData{
+		ModelPrice:       0.12,
+		UsePrice:         true,
+		GlobalModelRatio: 1,
+		GroupRatioInfo: types.GroupRatioInfo{
+			GroupRatio: 1,
+		},
+	}
+	priceData.AddOtherRatio("n", 3)
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "dall-e-3",
+		PriceData:       priceData,
+		StartTime:       time.Now(),
+	}
+	usage := &dto.Usage{PromptTokens: 1, TotalTokens: 1}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, 180000, summary.Quota)
+
+	// The adaptor-reported actual count replaces the requested count instead
+	// of multiplying a second count into the charge.
+	relayInfo.PriceData.AddOtherRatio("n", 2)
+	summary = calculateTextQuotaSummary(ctx, relayInfo, usage)
+	require.Equal(t, 120000, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryUsesActivePolicyFieldsForOpenAIUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -61,7 +90,7 @@ func TestCalculateTextQuotaSummaryUsesActivePolicyFieldsForOpenAIUsage(t *testin
 		AudioCompletionRatio: 10.0 / 9.0, GlobalModelRatio: 1,
 		GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
 	}
-	priceData.AddOtherRatio("billing_policy", 2)
+	priceData.SetPolicyAdjustmentMultiplier(2)
 	priceData.AddOtherRatio("batch", 3)
 	relayInfo := &relaycommon.RelayInfo{
 		OriginModelName: "complete-openai", RelayFormat: types.RelayFormatOpenAI,
@@ -96,6 +125,7 @@ func TestCalculateTextQuotaSummaryUsesActivePolicyFieldsForOpenAIUsage(t *testin
 	require.Equal(t, int64(99), snapshot.Revision)
 	require.Equal(t, map[string]float64{"batch": 3}, snapshot.OtherRatios)
 	require.Equal(t, float64(3), snapshot.OtherRatioMultiplier)
+	require.Equal(t, float64(2), snapshot.PolicyAdjustmentMultiplier)
 }
 
 func TestBuildBillingPolicyAdditionalCharges(t *testing.T) {

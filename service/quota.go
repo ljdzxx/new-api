@@ -32,19 +32,20 @@ type TokenDetails struct {
 }
 
 type QuotaInfo struct {
-	InputDetails         TokenDetails
-	OutputDetails        TokenDetails
-	ModelName            string
-	UsePrice             bool
-	ModelPrice           float64
-	ModelRatio           float64
-	GroupRatio           float64
-	GlobalRatio          float64
-	CompletionRatio      float64
-	AudioRatio           float64
-	AudioCompletionRatio float64
-	UseResolvedRatios    bool
-	OtherRatioMultiplier float64
+	InputDetails               TokenDetails
+	OutputDetails              TokenDetails
+	ModelName                  string
+	UsePrice                   bool
+	ModelPrice                 float64
+	ModelRatio                 float64
+	GroupRatio                 float64
+	GlobalRatio                float64
+	CompletionRatio            float64
+	AudioRatio                 float64
+	AudioCompletionRatio       float64
+	UseResolvedRatios          bool
+	PolicyAdjustmentMultiplier float64
+	OtherRatioMultiplier       float64
 }
 
 func hasCustomModelRatio(modelName string, currentRatio float64) bool {
@@ -60,6 +61,11 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 	if otherRatioMultiplier <= 0 {
 		otherRatioMultiplier = 1
 	}
+	policyAdjustmentMultiplier := info.PolicyAdjustmentMultiplier
+	if policyAdjustmentMultiplier <= 0 || math.IsNaN(policyAdjustmentMultiplier) || math.IsInf(policyAdjustmentMultiplier, 0) {
+		policyAdjustmentMultiplier = 1
+	}
+	totalMultiplier := otherRatioMultiplier * policyAdjustmentMultiplier
 	scaledInputTextTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.InputDetails.TextTokens, info.GlobalRatio)
 	scaledOutputTextTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.OutputDetails.TextTokens, info.GlobalRatio)
 	scaledInputAudioTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.InputDetails.AudioTokens, info.GlobalRatio)
@@ -70,7 +76,7 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 		groupRatio := decimal.NewFromFloat(info.GroupRatio)
 
-		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio).Mul(decimal.NewFromFloat(otherRatioMultiplier))
+		quota := modelPrice.Mul(quotaPerUnit).Mul(groupRatio).Mul(decimal.NewFromFloat(totalMultiplier))
 		return common.QuotaFromDecimalChecked(quota)
 	}
 
@@ -101,7 +107,7 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 	quota = quota.Add(inputAudioTokens.Mul(audioRatio))
 	quota = quota.Add(outputAudioTokens.Mul(audioRatio).Mul(audioCompletionRatio))
 
-	quota = quota.Mul(ratio).Mul(decimal.NewFromFloat(otherRatioMultiplier))
+	quota = quota.Mul(ratio).Mul(decimal.NewFromFloat(totalMultiplier))
 
 	// If ratio is not zero and quota is less than or equal to zero, set quota to 1
 	if !ratio.IsZero() && quota.LessThanOrEqual(decimal.Zero) {
@@ -161,16 +167,17 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:            modelName,
-		UsePrice:             relayInfo.UsePrice,
-		ModelRatio:           modelRatio,
-		GroupRatio:           actualGroupRatio,
-		GlobalRatio:          relayInfo.PriceData.GlobalModelRatio,
-		CompletionRatio:      relayInfo.PriceData.CompletionRatio,
-		AudioRatio:           relayInfo.PriceData.AudioRatio,
-		AudioCompletionRatio: relayInfo.PriceData.AudioCompletionRatio,
-		UseResolvedRatios:    useResolvedRatios,
-		OtherRatioMultiplier: relayInfo.PriceData.OtherRatioMultiplier(),
+		ModelName:                  modelName,
+		UsePrice:                   relayInfo.UsePrice,
+		ModelRatio:                 modelRatio,
+		GroupRatio:                 actualGroupRatio,
+		GlobalRatio:                relayInfo.PriceData.GlobalModelRatio,
+		CompletionRatio:            relayInfo.PriceData.CompletionRatio,
+		AudioRatio:                 relayInfo.PriceData.AudioRatio,
+		AudioCompletionRatio:       relayInfo.PriceData.AudioCompletionRatio,
+		UseResolvedRatios:          useResolvedRatios,
+		PolicyAdjustmentMultiplier: relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier(),
+		OtherRatioMultiplier:       relayInfo.PriceData.OtherRatioMultiplier(),
 	}
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
@@ -242,16 +249,17 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:            modelName,
-		UsePrice:             usePrice,
-		ModelRatio:           modelRatio,
-		GroupRatio:           groupRatio,
-		GlobalRatio:          globalModelRatio,
-		CompletionRatio:      relayInfo.PriceData.CompletionRatio,
-		AudioRatio:           relayInfo.PriceData.AudioRatio,
-		AudioCompletionRatio: relayInfo.PriceData.AudioCompletionRatio,
-		UseResolvedRatios:    true,
-		OtherRatioMultiplier: relayInfo.PriceData.OtherRatioMultiplier(),
+		ModelName:                  modelName,
+		UsePrice:                   usePrice,
+		ModelRatio:                 modelRatio,
+		GroupRatio:                 groupRatio,
+		GlobalRatio:                globalModelRatio,
+		CompletionRatio:            relayInfo.PriceData.CompletionRatio,
+		AudioRatio:                 relayInfo.PriceData.AudioRatio,
+		AudioCompletionRatio:       relayInfo.PriceData.AudioCompletionRatio,
+		UseResolvedRatios:          true,
+		PolicyAdjustmentMultiplier: relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier(),
+		OtherRatioMultiplier:       relayInfo.PriceData.OtherRatioMultiplier(),
 	}
 
 	quota, clamp := calculateAudioQuota(quotaInfo)
@@ -356,16 +364,17 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 			TextTokens:  textOutTokens,
 			AudioTokens: audioOutTokens,
 		},
-		ModelName:            relayInfo.OriginModelName,
-		UsePrice:             usePrice,
-		ModelRatio:           modelRatio,
-		GroupRatio:           groupRatio,
-		GlobalRatio:          globalModelRatio,
-		CompletionRatio:      relayInfo.PriceData.CompletionRatio,
-		AudioRatio:           relayInfo.PriceData.AudioRatio,
-		AudioCompletionRatio: relayInfo.PriceData.AudioCompletionRatio,
-		UseResolvedRatios:    true,
-		OtherRatioMultiplier: relayInfo.PriceData.OtherRatioMultiplier(),
+		ModelName:                  relayInfo.OriginModelName,
+		UsePrice:                   usePrice,
+		ModelRatio:                 modelRatio,
+		GroupRatio:                 groupRatio,
+		GlobalRatio:                globalModelRatio,
+		CompletionRatio:            relayInfo.PriceData.CompletionRatio,
+		AudioRatio:                 relayInfo.PriceData.AudioRatio,
+		AudioCompletionRatio:       relayInfo.PriceData.AudioCompletionRatio,
+		UseResolvedRatios:          true,
+		PolicyAdjustmentMultiplier: relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier(),
+		OtherRatioMultiplier:       relayInfo.PriceData.OtherRatioMultiplier(),
 	}
 
 	quota, clamp := calculateAudioQuota(quotaInfo)

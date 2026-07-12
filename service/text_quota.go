@@ -342,11 +342,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
 				quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
 				quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
-				for key, otherRatio := range relayInfo.PriceData.OtherRatios() {
-					if key != "billing_policy" {
-						quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(otherRatio))
-					}
-				}
+				quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
 				quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 				summary.Quota = quota
 				summary.PolicyCalculation = &calculation
@@ -402,6 +398,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier()))
 		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
 
 		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
@@ -417,6 +414,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier()))
 		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
 		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 		summary.Quota = quota

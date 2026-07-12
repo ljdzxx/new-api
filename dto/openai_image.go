@@ -155,15 +155,19 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		}
 	}
 
-	// not support token count for dalle
-	n := uint(1)
-	if i.N != nil {
-		n = *i.N
+	imageN := uint(1)
+	if i.N != nil && *i.N > 0 {
+		imageN = *i.N
 	}
+
+	// Keep the requested count separate from size/quality so fixed-price
+	// pre-consume and settlement apply it exactly once. Channel adaptors may
+	// later replace the same "n" ratio with the actual upstream image count.
 	return &types.TokenCountMeta{
 		CombineText:     i.Prompt,
 		MaxTokens:       1584,
-		ImagePriceRatio: sizeRatio * qualityRatio * float64(n),
+		ImagePriceRatio: sizeRatio * qualityRatio,
+		BillingRatios:   map[string]float64{"n": float64(imageN)},
 	}
 }
 

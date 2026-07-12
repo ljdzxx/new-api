@@ -123,6 +123,7 @@ func taskBillingOther(task *model.Task) map[string]interface{} {
 		other["user_global_model_ratio"] = bc.UserGlobalModelRatio
 		other["channel_model_ratio"] = bc.ChannelModelRatio
 		other["global_model_ratio"] = bc.GlobalModelRatio
+		other["policy_adjustment_multiplier"] = effectiveTaskPolicyAdjustmentMultiplier(bc)
 		if bc.BillingPolicyRevision != 0 {
 			other["billing_policy_revision"] = bc.BillingPolicyRevision
 		}
@@ -149,6 +150,15 @@ func taskBillingContextPriceData(bc *model.TaskBillingContext) *types.PriceData 
 		return nil
 	}
 	return priceData
+}
+
+func effectiveTaskPolicyAdjustmentMultiplier(bc *model.TaskBillingContext) float64 {
+	if bc == nil {
+		return 1
+	}
+	priceData := types.PriceData{}
+	priceData.SetPolicyAdjustmentMultiplier(bc.PolicyAdjustmentMultiplier)
+	return priceData.EffectivePolicyAdjustmentMultiplier()
 }
 
 // taskModelName 从 BillingContext 或 Properties 中获取模型名称。
@@ -327,8 +337,9 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	if priceData := taskBillingContextPriceData(task.PrivateData.BillingContext); priceData != nil {
 		otherMultiplier = priceData.OtherRatioMultiplier()
 	}
+	policyAdjustmentMultiplier := effectiveTaskPolicyAdjustmentMultiplier(task.PrivateData.BillingContext)
 	scaledTotalTokens := relayhelper.ScaleTokensByGlobalModelRatio(totalTokens, globalModelRatio)
-	actualQuota, clamp := common.QuotaFromFloatChecked(float64(scaledTotalTokens) * modelRatio * finalGroupRatio * otherMultiplier)
+	actualQuota, clamp := common.QuotaFromFloatChecked(float64(scaledTotalTokens) * modelRatio * finalGroupRatio * policyAdjustmentMultiplier * otherMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
 	if globalModelRatio != 1 || (common.DebugTraceEnabled && common.NormalizeDebugTraceToken(common.DebugTraceToken) == "") {
@@ -341,6 +352,6 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 			scaledTotalTokens, modelRatio, finalGroupRatio, actualQuota,
 		))
 	}
-	reason = fmt.Sprintf("token recalculation: tokens=%d, scaledTokens=%d, globalModelRatio=%.2f, modelRatio=%.2f, groupRatio=%.2f, otherMultiplier=%.4f", totalTokens, scaledTotalTokens, globalModelRatio, modelRatio, finalGroupRatio, otherMultiplier)
+	reason = fmt.Sprintf("token recalculation: tokens=%d, scaledTokens=%d, globalModelRatio=%.2f, modelRatio=%.2f, groupRatio=%.2f, policyAdjustmentMultiplier=%.4f, otherMultiplier=%.4f", totalTokens, scaledTotalTokens, globalModelRatio, modelRatio, finalGroupRatio, policyAdjustmentMultiplier, otherMultiplier)
 	RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)
 }

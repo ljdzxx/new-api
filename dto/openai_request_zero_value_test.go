@@ -71,3 +71,41 @@ func TestOpenAIResponsesRequestPreserveExplicitZeroValues(t *testing.T) {
 	require.True(t, gjson.GetBytes(encoded, "stream").Exists())
 	require.True(t, gjson.GetBytes(encoded, "top_p").Exists())
 }
+
+func TestOpenAIResponsesRequestPreservesCodexFields(t *testing.T) {
+	raw := []byte(`{
+		"model":"gpt-5.6-sol",
+		"client_metadata":{"session_id":"session-1"},
+		"reasoning":{"effort":"high","mode":"auto","context":{"turn":2}}
+	}`)
+
+	var req OpenAIResponsesRequest
+	require.NoError(t, common.Unmarshal(raw, &req))
+
+	encoded, err := common.Marshal(req)
+	require.NoError(t, err)
+	require.Equal(t, "session-1", gjson.GetBytes(encoded, "client_metadata.session_id").String())
+	require.Equal(t, "auto", gjson.GetBytes(encoded, "reasoning.mode").String())
+	require.Equal(t, int64(2), gjson.GetBytes(encoded, "reasoning.context.turn").Int())
+}
+
+func TestOpenAIResponsesCompactionRequestPreservesCodexFields(t *testing.T) {
+	raw := []byte(`{
+		"model":"gpt-5.6-sol",
+		"tools":[],
+		"parallel_tool_calls":false,
+		"reasoning":{"mode":"auto","context":{}},
+		"service_tier":"default",
+		"prompt_cache_key":"cache-1",
+		"text":{"format":{"type":"text"}}
+	}`)
+
+	var req OpenAIResponsesCompactionRequest
+	require.NoError(t, common.Unmarshal(raw, &req))
+
+	encoded, err := common.Marshal(req)
+	require.NoError(t, err)
+	for _, path := range []string{"tools", "parallel_tool_calls", "reasoning.mode", "reasoning.context", "service_tier", "prompt_cache_key", "text.format.type"} {
+		require.True(t, gjson.GetBytes(encoded, path).Exists(), path)
+	}
+}

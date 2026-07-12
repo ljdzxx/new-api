@@ -17,26 +17,42 @@ type GroupRatioInfo struct {
 }
 
 type PriceData struct {
-	FreeModel              bool
-	ModelPrice             float64
-	ModelRatio             float64
-	SystemGlobalModelRatio float64
-	UserGlobalModelRatio   float64
-	ChannelModelRatio      float64
-	GlobalModelRatio       float64
-	CompletionRatio        float64
-	CacheRatio             float64
-	CacheCreationRatio     float64
-	CacheCreation5mRatio   float64
-	CacheCreation1hRatio   float64
-	ImageRatio             float64
-	AudioRatio             float64
-	AudioCompletionRatio   float64
-	otherRatios            map[string]float64
-	UsePrice               bool
-	Quota                  int // 按次计费的最终额度（MJ / Task）
-	QuotaToPreConsume      int // 按量计费的预消耗额度
-	GroupRatioInfo         GroupRatioInfo
+	FreeModel                  bool
+	ModelPrice                 float64
+	ModelRatio                 float64
+	SystemGlobalModelRatio     float64
+	UserGlobalModelRatio       float64
+	ChannelModelRatio          float64
+	GlobalModelRatio           float64
+	CompletionRatio            float64
+	CacheRatio                 float64
+	CacheCreationRatio         float64
+	CacheCreation5mRatio       float64
+	CacheCreation1hRatio       float64
+	ImageRatio                 float64
+	AudioRatio                 float64
+	AudioCompletionRatio       float64
+	PolicyAdjustmentMultiplier float64
+	otherRatios                map[string]float64
+	UsePrice                   bool
+	Quota                      int // 按次计费的最终额度（MJ / Task）
+	QuotaToPreConsume          int // 按量计费的预消耗额度
+	GroupRatioInfo             GroupRatioInfo
+}
+
+func (p *PriceData) SetPolicyAdjustmentMultiplier(ratio float64) {
+	if !isValidOtherRatio(ratio) {
+		p.PolicyAdjustmentMultiplier = 0
+		return
+	}
+	p.PolicyAdjustmentMultiplier = ratio
+}
+
+func (p *PriceData) EffectivePolicyAdjustmentMultiplier() float64 {
+	if !isValidOtherRatio(p.PolicyAdjustmentMultiplier) {
+		return 1
+	}
+	return p.PolicyAdjustmentMultiplier
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {
@@ -117,5 +133,5 @@ func isValidOtherRatio(ratio float64) bool {
 }
 
 func (p *PriceData) ToSetting() string {
-	return fmt.Sprintf("ModelPrice: %f, ModelRatio: %f, SystemGlobalModelRatio: %f, UserGlobalModelRatio: %f, ChannelModelRatio: %f, GlobalModelRatio: %f, CompletionRatio: %f, CacheRatio: %f, GroupRatio: %f, UsePrice: %t, CacheCreationRatio: %f, CacheCreation5mRatio: %f, CacheCreation1hRatio: %f, QuotaToPreConsume: %d, ImageRatio: %f, AudioRatio: %f, AudioCompletionRatio: %f", p.ModelPrice, p.ModelRatio, p.SystemGlobalModelRatio, p.UserGlobalModelRatio, p.ChannelModelRatio, p.GlobalModelRatio, p.CompletionRatio, p.CacheRatio, p.GroupRatioInfo.GroupRatio, p.UsePrice, p.CacheCreationRatio, p.CacheCreation5mRatio, p.CacheCreation1hRatio, p.QuotaToPreConsume, p.ImageRatio, p.AudioRatio, p.AudioCompletionRatio)
+	return fmt.Sprintf("ModelPrice: %f, ModelRatio: %f, SystemGlobalModelRatio: %f, UserGlobalModelRatio: %f, ChannelModelRatio: %f, GlobalModelRatio: %f, CompletionRatio: %f, CacheRatio: %f, GroupRatio: %f, UsePrice: %t, CacheCreationRatio: %f, CacheCreation5mRatio: %f, CacheCreation1hRatio: %f, QuotaToPreConsume: %d, ImageRatio: %f, AudioRatio: %f, AudioCompletionRatio: %f, PolicyAdjustmentMultiplier: %f", p.ModelPrice, p.ModelRatio, p.SystemGlobalModelRatio, p.UserGlobalModelRatio, p.ChannelModelRatio, p.GlobalModelRatio, p.CompletionRatio, p.CacheRatio, p.GroupRatioInfo.GroupRatio, p.UsePrice, p.CacheCreationRatio, p.CacheCreation5mRatio, p.CacheCreation1hRatio, p.QuotaToPreConsume, p.ImageRatio, p.AudioRatio, p.AudioCompletionRatio, p.EffectivePolicyAdjustmentMultiplier())
 }
