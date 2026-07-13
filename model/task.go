@@ -423,6 +423,27 @@ func (t *Task) UpdateWithStatus(fromStatus TaskStatus) (bool, error) {
 	return result.RowsAffected > 0, nil
 }
 
+// CompareAndSwapQuota atomically replaces a task's billed quota when the
+// persisted value still equals oldQuota. Billing callers must win this CAS
+// before changing wallet/subscription/token balances, which makes repeated or
+// concurrent polling idempotent across processes and nodes.
+func (t *Task) CompareAndSwapQuota(oldQuota, newQuota int) (bool, error) {
+	if t == nil || t.ID == 0 {
+		return false, nil
+	}
+	result := DB.Model(&Task{}).
+		Where("id = ? AND quota = ?", t.ID, oldQuota).
+		Updates(map[string]interface{}{"quota": newQuota, "updated_at": time.Now().Unix()})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	t.Quota = newQuota
+	return true, nil
+}
+
 // TaskBulkUpdateByID performs an unconditional bulk UPDATE by primary key IDs.
 // WARNING: This function has NO CAS (Compare-And-Swap) guard — it will overwrite
 // any concurrent status changes. DO NOT use in billing/quota lifecycle flows

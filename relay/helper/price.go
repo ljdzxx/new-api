@@ -138,7 +138,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	var activePolicy *billing_policy.Policy
 	activePolicyTier := ""
 	if billing_policy.IsActive() {
-		policy, ok := billing_policy.Resolve(info.OriginModelName)
+		policy, ok := frozenBillingPolicy(c, info)
 		if !ok {
 			return types.PriceData{}, fmt.Errorf("模型 %s 未配置新版计费策略", info.OriginModelName)
 		}
@@ -154,8 +154,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	policyAdjustmentMultiplier := 1.0
 	var policyAppliedAdjustments []billing_policy.AppliedAdjustment
 	if billing_policy.IsActive() {
-		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
-			multiplier, applied := evaluatePolicyAdjustments(c, policy)
+		if policy, ok := frozenBillingPolicy(c, info); ok {
+			multiplier, applied := frozenPolicyAdjustments(info, policy)
 			policyAdjustmentMultiplier, _ = multiplier.Float64()
 			policyAppliedAdjustments = applied
 			if len(applied) > 0 {
@@ -389,6 +389,31 @@ func evaluatePolicyAdjustments(c *gin.Context, policy billing_policy.Policy) (de
 	return billing_policy.EvaluateAdjustments(policy, billingPolicyRequestContext(c))
 }
 
+func frozenBillingPolicy(c *gin.Context, info *relaycommon.RelayInfo) (billing_policy.Policy, bool) {
+	if info == nil {
+		return billing_policy.Policy{}, false
+	}
+	if info.BillingPolicySnapshot == nil {
+		snapshot, ok := billing_policy.CaptureSnapshot(info.OriginModelName, billingPolicyRequestContext(c))
+		if !ok {
+			return billing_policy.Policy{}, false
+		}
+		info.BillingPolicySnapshot = snapshot
+	}
+	return info.BillingPolicySnapshot.Policy, true
+}
+
+func frozenPolicyAdjustments(info *relaycommon.RelayInfo, policy billing_policy.Policy) (decimal.Decimal, []billing_policy.AppliedAdjustment) {
+	if info != nil && info.BillingPolicySnapshot != nil {
+		return billing_policy.EvaluateAdjustments(policy, billing_policy.RequestContext{
+			FreezeAdjustments:    true,
+			AdjustmentMultiplier: info.BillingPolicySnapshot.AdjustmentMultiplier,
+			AppliedAdjustments:   info.BillingPolicySnapshot.AppliedAdjustments,
+		})
+	}
+	return decimal.NewFromInt(1), nil
+}
+
 func billingPolicyRequestContext(c *gin.Context) billing_policy.RequestContext {
 	requestContext := billing_policy.RequestContext{}
 	if c == nil || c.Request == nil {
@@ -480,7 +505,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	if billing_policy.IsActive() {
-		policy, ok := billing_policy.Resolve(info.OriginModelName)
+		policy, ok := frozenBillingPolicy(c, info)
 		if !ok {
 			return types.PriceData{}, fmt.Errorf("模型 %s 未配置新版计费策略", info.OriginModelName)
 		}
@@ -521,8 +546,8 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	}
 	policyAdjustmentMultiplier := 1.0
 	if billing_policy.IsActive() {
-		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
-			multiplier, applied := evaluatePolicyAdjustments(c, policy)
+		if policy, ok := frozenBillingPolicy(c, info); ok {
+			multiplier, applied := frozenPolicyAdjustments(info, policy)
 			policyAdjustmentMultiplier, _ = multiplier.Float64()
 			if len(applied) > 0 {
 				c.Set("billing_policy_adjustments", applied)
@@ -539,7 +564,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	// 免费模型检测（与 ModelPriceHelper 对齐）
 	freeModel := false
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
-		if groupRatioInfo.GroupRatio == 0 || modelPrice == 0 || globalModelRatio == 0 {
+		if groupRatioInfo.GroupRatio == 0 || modelPrice == 0 {
 			quota = 0
 			freeModel = true
 		}

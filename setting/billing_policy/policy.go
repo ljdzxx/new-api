@@ -82,15 +82,29 @@ type Adjustment struct {
 }
 
 type Policy struct {
-	Version     int          `json:"version"`
-	Mode        string       `json:"mode"`
-	Currency    string       `json:"currency"`
-	Unit        string       `json:"unit"`
-	Price       string       `json:"price,omitempty"`
-	Prices      Prices       `json:"prices,omitempty"`
-	Tiers       []Tier       `json:"tiers,omitempty"`
-	Adjustments []Adjustment `json:"adjustments,omitempty"`
+	Version     int                  `json:"version"`
+	Mode        string               `json:"mode"`
+	Currency    string               `json:"currency"`
+	Unit        string               `json:"unit"`
+	Price       string               `json:"price,omitempty"`
+	Prices      Prices               `json:"prices,omitempty"`
+	Tiers       []Tier               `json:"tiers,omitempty"`
+	Adjustments []Adjustment         `json:"adjustments,omitempty"`
+	Tools       map[string]ToolPrice `json:"tools,omitempty"`
 }
+
+type ToolPrice struct {
+	Unit  string `json:"unit"`
+	Price string `json:"price"`
+}
+
+const (
+	ToolWebSearchStandard = "web_search.standard"
+	ToolWebSearchPremium  = "web_search.premium"
+	ToolClaudeWebSearch   = "claude_web_search"
+	ToolFileSearch        = "file_search"
+	ToolImagePrefix       = "image_generation."
+)
 
 type MigrationMeta struct {
 	Version        int    `json:"version"`
@@ -104,6 +118,19 @@ type Config struct {
 	State         string            `json:"state"`
 	Migration     MigrationMeta     `json:"migration"`
 	Policies      map[string]Policy `json:"policies"`
+}
+
+// Snapshot freezes every pricing input that is allowed to change while a
+// request is in flight. Settlement and logging must use this value instead of
+// resolving the live policy again.
+type Snapshot struct {
+	SchemaVersion        int                 `json:"schema_version"`
+	Revision             int64               `json:"revision"`
+	Model                string              `json:"model"`
+	Policy               Policy              `json:"policy"`
+	AdjustmentMultiplier string              `json:"adjustment_multiplier"`
+	AppliedAdjustments   []AppliedAdjustment `json:"applied_adjustments,omitempty"`
+	EvaluatedAtUnixNano  int64               `json:"evaluated_at_unix_nano"`
 }
 
 var store = struct {
@@ -133,12 +160,16 @@ func IsActive() bool { return GetState() == StateActive }
 func Resolve(modelName string) (Policy, bool) {
 	store.RLock()
 	defer store.RUnlock()
-	if policy, ok := store.config.Policies[modelName]; ok {
-		return policy, true
+	return resolvePolicy(store.config.Policies, modelName)
+}
+
+func resolvePolicy(policies map[string]Policy, modelName string) (Policy, bool) {
+	if policy, ok := policies[modelName]; ok {
+		return clonePolicy(policy), true
 	}
 	bestKey := ""
 	var best Policy
-	for key, policy := range store.config.Policies {
+	for key, policy := range policies {
 		if !strings.Contains(key, "*") || !wildcardMatch(key, modelName) {
 			continue
 		}
@@ -149,7 +180,33 @@ func Resolve(modelName string) (Policy, bool) {
 			best = policy
 		}
 	}
-	return best, bestKey != ""
+	return clonePolicy(best), bestKey != ""
+}
+
+func CaptureSnapshot(modelName string, requestCtx RequestContext) (*Snapshot, bool) {
+	store.RLock()
+	defer store.RUnlock()
+	config := store.config
+	if config.State != StateActive {
+		return nil, false
+	}
+	policy, ok := resolvePolicy(config.Policies, modelName)
+	if !ok {
+		return nil, false
+	}
+	if requestCtx.Now.IsZero() {
+		requestCtx.Now = time.Now()
+	}
+	multiplier, applied := EvaluateAdjustments(policy, requestCtx)
+	return &Snapshot{
+		SchemaVersion:        config.SchemaVersion,
+		Revision:             config.Revision,
+		Model:                modelName,
+		Policy:               policy,
+		AdjustmentMultiplier: multiplier.String(),
+		AppliedAdjustments:   append([]AppliedAdjustment(nil), applied...),
+		EvaluatedAtUnixNano:  requestCtx.Now.UnixNano(),
+	}, true
 }
 
 func wildcardMatch(pattern, value string) bool {
@@ -421,14 +478,42 @@ func ValidateConfig(config *Config) error {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("billing policy contains an empty model name")
 		}
+		ensureDefaultToolPrices(&policy)
 		if err := ValidatePolicy(policy); err != nil {
 			return fmt.Errorf("model %s: %w", name, err)
 		}
+		config.Policies[name] = policy
 	}
 	if config.State != StateLegacy && len(config.Policies) == 0 {
 		return fmt.Errorf("billing policy state %s requires migrated policies", config.State)
 	}
 	return nil
+}
+
+func ensureDefaultToolPrices(policy *Policy) {
+	if policy.Tools == nil {
+		policy.Tools = make(map[string]ToolPrice)
+	}
+	defaults := map[string]ToolPrice{
+		ToolWebSearchStandard:                {Unit: "per_thousand_calls", Price: "10"},
+		ToolWebSearchPremium:                 {Unit: "per_thousand_calls", Price: "25"},
+		ToolClaudeWebSearch:                  {Unit: "per_thousand_calls", Price: "10"},
+		ToolFileSearch:                       {Unit: "per_thousand_calls", Price: "2.5"},
+		ToolImagePrefix + "low.1024x1024":    {Unit: "per_request", Price: "0.011"},
+		ToolImagePrefix + "low.1024x1536":    {Unit: "per_request", Price: "0.016"},
+		ToolImagePrefix + "low.1536x1024":    {Unit: "per_request", Price: "0.016"},
+		ToolImagePrefix + "medium.1024x1024": {Unit: "per_request", Price: "0.042"},
+		ToolImagePrefix + "medium.1024x1536": {Unit: "per_request", Price: "0.063"},
+		ToolImagePrefix + "medium.1536x1024": {Unit: "per_request", Price: "0.063"},
+		ToolImagePrefix + "high.1024x1024":   {Unit: "per_request", Price: "0.167"},
+		ToolImagePrefix + "high.1024x1536":   {Unit: "per_request", Price: "0.25"},
+		ToolImagePrefix + "high.1536x1024":   {Unit: "per_request", Price: "0.25"},
+	}
+	for name, price := range defaults {
+		if _, exists := policy.Tools[name]; !exists {
+			policy.Tools[name] = price
+		}
+	}
 }
 
 func ValidatePolicy(policy Policy) error {
@@ -519,6 +604,20 @@ func ValidatePolicy(policy Policy) error {
 			}
 		}
 	}
+	for name, tool := range policy.Tools {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("tool price contains an empty name")
+		}
+		switch tool.Unit {
+		case "per_thousand_calls", "per_request":
+		default:
+			return fmt.Errorf("tool %s has unsupported unit %s", name, tool.Unit)
+		}
+		price, err := decimal.NewFromString(tool.Price)
+		if err != nil || price.IsNegative() {
+			return fmt.Errorf("tool %s price must be a non-negative decimal", name)
+		}
+	}
 	return nil
 }
 
@@ -604,7 +703,30 @@ func cloneConfig(config Config) Config {
 	copyConfig := config
 	copyConfig.Policies = make(map[string]Policy, len(config.Policies))
 	for name, policy := range config.Policies {
-		copyConfig.Policies[name] = policy
+		copyConfig.Policies[name] = clonePolicy(policy)
 	}
 	return copyConfig
+}
+
+func clonePolicy(policy Policy) Policy {
+	copyPolicy := policy
+	if policy.Tiers != nil {
+		copyPolicy.Tiers = make([]Tier, len(policy.Tiers))
+		for i, tier := range policy.Tiers {
+			copyPolicy.Tiers[i] = tier
+			copyPolicy.Tiers[i].Conditions = append([]TierCondition(nil), tier.Conditions...)
+		}
+	}
+	if policy.Adjustments != nil {
+		copyPolicy.Adjustments = make([]Adjustment, len(policy.Adjustments))
+		for i, adjustment := range policy.Adjustments {
+			copyPolicy.Adjustments[i] = adjustment
+			copyPolicy.Adjustments[i].Conditions = append([]AdjustmentCondition(nil), adjustment.Conditions...)
+		}
+	}
+	copyPolicy.Tools = make(map[string]ToolPrice, len(policy.Tools))
+	for name, price := range policy.Tools {
+		copyPolicy.Tools[name] = price
+	}
+	return copyPolicy
 }

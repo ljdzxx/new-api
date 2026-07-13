@@ -13,6 +13,12 @@ type RequestContext struct {
 	Headers map[string]string
 	Body    []byte
 	Now     time.Time
+	// Frozen adjustment values are populated from the request's billing
+	// snapshot. They prevent time/header/body rules from being re-evaluated at
+	// settlement after the request or policy has changed.
+	FreezeAdjustments    bool
+	AdjustmentMultiplier string
+	AppliedAdjustments   []AppliedAdjustment
 }
 
 type AppliedAdjustment struct {
@@ -21,6 +27,13 @@ type AppliedAdjustment struct {
 }
 
 func EvaluateAdjustments(policy Policy, ctx RequestContext) (decimal.Decimal, []AppliedAdjustment) {
+	if ctx.FreezeAdjustments {
+		value, err := decimal.NewFromString(ctx.AdjustmentMultiplier)
+		if err == nil && value.IsPositive() {
+			return value, append([]AppliedAdjustment(nil), ctx.AppliedAdjustments...)
+		}
+		return decimal.NewFromInt(1), nil
+	}
 	multiplier := decimal.NewFromInt(1)
 	applied := make([]AppliedAdjustment, 0)
 	for _, adjustment := range policy.Adjustments {

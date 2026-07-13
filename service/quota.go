@@ -455,7 +455,8 @@ func applyActivePolicyUsage(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	if !billing_policy.IsActive() || relayInfo == nil {
 		return
 	}
-	policy, ok := billing_policy.Resolve(relayInfo.OriginModelName)
+	ensureBillingPolicySnapshot(ctx, relayInfo)
+	policy, ok := requestBillingPolicy(relayInfo)
 	if !ok || policy.Mode != "tiered" {
 		return
 	}

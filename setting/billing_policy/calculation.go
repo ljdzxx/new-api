@@ -8,17 +8,18 @@ import (
 )
 
 type BillingUsage struct {
-	TierInputTotalTokens  int64 `json:"tier_input_total_tokens,omitempty"`
-	TierOutputTotalTokens int64 `json:"tier_output_total_tokens,omitempty"`
-	InputTokens           int64 `json:"input_tokens"`
-	OutputTokens          int64 `json:"output_tokens"`
-	CacheReadTokens       int64 `json:"cache_read_tokens"`
-	CacheWriteTokens      int64 `json:"cache_write_tokens"`
-	CacheWrite5mTokens    int64 `json:"cache_write_5m_tokens"`
-	CacheWrite1hTokens    int64 `json:"cache_write_1h_tokens"`
-	ImageInputTokens      int64 `json:"image_input_tokens"`
-	AudioInputTokens      int64 `json:"audio_input_tokens"`
-	AudioOutputTokens     int64 `json:"audio_output_tokens"`
+	TierInputTotalTokens  int64            `json:"tier_input_total_tokens,omitempty"`
+	TierOutputTotalTokens int64            `json:"tier_output_total_tokens,omitempty"`
+	InputTokens           int64            `json:"input_tokens"`
+	OutputTokens          int64            `json:"output_tokens"`
+	CacheReadTokens       int64            `json:"cache_read_tokens"`
+	CacheWriteTokens      int64            `json:"cache_write_tokens"`
+	CacheWrite5mTokens    int64            `json:"cache_write_5m_tokens"`
+	CacheWrite1hTokens    int64            `json:"cache_write_1h_tokens"`
+	ImageInputTokens      int64            `json:"image_input_tokens"`
+	AudioInputTokens      int64            `json:"audio_input_tokens"`
+	AudioOutputTokens     int64            `json:"audio_output_tokens"`
+	ToolUsage             map[string]int64 `json:"tool_usage,omitempty"`
 }
 
 type BillingLineItem struct {
@@ -66,6 +67,11 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 	} {
 		if tokens < 0 {
 			return BillingCalculation{}, fmt.Errorf("%s tokens cannot be negative", field)
+		}
+	}
+	for name, units := range usage.ToolUsage {
+		if units < 0 {
+			return BillingCalculation{}, fmt.Errorf("tool %s units cannot be negative", name)
 		}
 	}
 	result := BillingCalculation{
@@ -141,6 +147,27 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 				Field: field.name, Tokens: field.tokens, PricePerMillion: price.String(), CostUSD: cost.String(),
 			})
 		}
+	}
+	for name, units := range usage.ToolUsage {
+		if units == 0 {
+			continue
+		}
+		tool, ok := policy.Tools[name]
+		if !ok {
+			return BillingCalculation{}, fmt.Errorf("tool %s price is not configured in policy", name)
+		}
+		price, err := parseBillingPrice(tool.Price, "tool "+name)
+		if err != nil {
+			return BillingCalculation{}, err
+		}
+		cost := price.Mul(decimal.NewFromInt(units))
+		if tool.Unit == "per_thousand_calls" {
+			cost = cost.Div(decimal.NewFromInt(1000))
+		}
+		subtotal = subtotal.Add(cost)
+		result.LineItems = append(result.LineItems, BillingLineItem{
+			Field: name, Units: units, UnitPrice: price.String(), CostUSD: cost.String(),
+		})
 	}
 
 	multiplier, applied := EvaluateAdjustments(policy, requestCtx)

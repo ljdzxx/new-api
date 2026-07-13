@@ -226,6 +226,11 @@ func buildClaudeUsageFromOpenAIUsage(oaiUsage *dto.Usage) *dto.ClaudeUsage {
 	if oaiUsage == nil {
 		return nil
 	}
+	if billingUsage := dto.CloneBillingUsage(oaiUsage.BillingUsage); billingUsage != nil && billingUsage.ClaudeUsage != nil {
+		if billingUsage.Source == dto.BillingUsageSourceClaudeMessages || billingUsage.Semantic == dto.BillingUsageSemanticAnthropic {
+			return billingUsage.ClaudeUsage
+		}
+	}
 	cacheWriteTokens := oaiUsage.PromptTokensDetails.CacheCreationTokensTotal()
 	cacheCreation5m, cacheCreation1h := NormalizeCacheCreationSplit(
 		cacheWriteTokens,
@@ -851,6 +856,9 @@ func ResponseOpenAI2Gemini(openAIResponse *dto.OpenAITextResponse, info *relayco
 	if geminiResponse.UsageMetadata.BillingUsage == nil {
 		geminiResponse.UsageMetadata.BillingUsage = dto.NewOpenAIChatBillingUsage(&openAIResponse.Usage)
 	}
+	if metadata, ok := geminiBillingMetadataFromOpenAIUsage(&openAIResponse.Usage); ok {
+		geminiResponse.UsageMetadata = metadata
+	}
 
 	for _, choice := range openAIResponse.Choices {
 		candidate := dto.GeminiChatCandidate{
@@ -956,6 +964,9 @@ func StreamResponseOpenAI2Gemini(openAIResponse *dto.ChatCompletionsStreamRespon
 		if geminiResponse.UsageMetadata.BillingUsage == nil {
 			geminiResponse.UsageMetadata.BillingUsage = dto.NewOpenAIChatBillingUsage(openAIResponse.Usage)
 		}
+		if metadata, ok := geminiBillingMetadataFromOpenAIUsage(openAIResponse.Usage); ok {
+			geminiResponse.UsageMetadata = metadata
+		}
 	}
 
 	for _, choice := range openAIResponse.Choices {
@@ -1025,4 +1036,18 @@ func StreamResponseOpenAI2Gemini(openAIResponse *dto.ChatCompletionsStreamRespon
 	}
 
 	return geminiResponse
+}
+
+func geminiBillingMetadataFromOpenAIUsage(usage *dto.Usage) (dto.GeminiUsageMetadata, bool) {
+	if usage == nil || usage.BillingUsage == nil || usage.BillingUsage.GeminiUsageMetadata == nil {
+		return dto.GeminiUsageMetadata{}, false
+	}
+	if usage.BillingUsage.Source != dto.BillingUsageSourceGeminiChat && usage.BillingUsage.Semantic != dto.BillingUsageSemanticGemini {
+		return dto.GeminiUsageMetadata{}, false
+	}
+	billingUsage := dto.CloneBillingUsage(usage.BillingUsage)
+	if billingUsage == nil || billingUsage.GeminiUsageMetadata == nil {
+		return dto.GeminiUsageMetadata{}, false
+	}
+	return *billingUsage.GeminiUsageMetadata, true
 }

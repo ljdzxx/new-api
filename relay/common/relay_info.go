@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -163,6 +164,9 @@ type RelayInfo struct {
 	UpstreamRequestBodySize int64
 
 	PriceData types.PriceData
+	// BillingPolicySnapshot freezes policy revision, policy contents and the
+	// evaluated adjustment result for the whole request lifecycle.
+	BillingPolicySnapshot *billing_policy.Snapshot
 
 	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
 	// int32 bound (or NaN fallback) while computing this request's charge.

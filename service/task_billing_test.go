@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/glebarez/sqlite"
 	"github.com/shopspring/decimal"
@@ -486,9 +487,57 @@ func TestRecalculate_ActualQuotaZero(t *testing.T) {
 
 	RecalculateTaskQuota(ctx, task, 0, "zero actual")
 
-	// No change (early return)
-	assert.Equal(t, initQuota, getUserQuota(t, userID))
-	assert.Equal(t, int64(0), countLogs(t))
+	// A legitimate zero actual charge refunds the full pre-consume.
+	assert.Equal(t, initQuota+5000, getUserQuota(t, userID))
+	assert.Equal(t, 0, task.Quota)
+	assert.Equal(t, int64(1), countLogs(t))
+}
+
+func TestTaskQuotaSettlementAndRefundAreDatabaseIdempotent(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	seedUser(t, 14, 10000)
+	seedToken(t, 14, 14, "sk-idempotent", 5000)
+	seedChannel(t, 14)
+
+	settled := makeTask(14, 14, 4000, 14, BillingSourceWallet, 0)
+	require.NoError(t, model.DB.Create(settled).Error)
+	RecalculateTaskQuota(ctx, settled, 2500, "first settlement")
+	RecalculateTaskQuota(ctx, settled, 2500, "repeated settlement")
+	assert.Equal(t, 11500, getUserQuota(t, 14))
+	assert.Equal(t, int64(1), countLogs(t))
+	var reloaded model.Task
+	require.NoError(t, model.DB.First(&reloaded, settled.ID).Error)
+	assert.Equal(t, 2500, reloaded.Quota)
+
+	refunded := makeTask(14, 14, 1200, 14, BillingSourceWallet, 0)
+	require.NoError(t, model.DB.Create(refunded).Error)
+	RefundTaskQuota(ctx, refunded, "first refund")
+	RefundTaskQuota(ctx, refunded, "repeated refund")
+	assert.Equal(t, 12700, getUserQuota(t, 14))
+	assert.Equal(t, int64(2), countLogs(t))
+	reloaded = model.Task{}
+	require.NoError(t, model.DB.First(&reloaded, refunded.ID).Error)
+	assert.Equal(t, 0, reloaded.Quota)
+}
+
+func TestTaskTokenRecalculationUsesFrozenBillingPolicy(t *testing.T) {
+	truncate(t)
+	seedUser(t, 15, 10000)
+	policy := billing_policy.Policy{
+		Version: billing_policy.SchemaVersion, Mode: "per_token", Currency: "USD", Unit: "per_million_tokens",
+		Prices: billing_policy.Prices{Input: "4", Output: "4"},
+	}
+	task := makeTask(15, 0, 100, 0, BillingSourceWallet, 0)
+	task.PrivateData.BillingContext.ModelRatio = 1
+	task.PrivateData.BillingContext.GroupRatio = 1
+	task.PrivateData.BillingContext.GlobalModelRatio = 1
+	task.PrivateData.BillingContext.BillingPolicy = common.GetJsonString(policy)
+	require.NoError(t, model.DB.Create(task).Error)
+
+	RecalculateTaskQuotaByTokens(context.Background(), task, 100)
+	assert.Equal(t, 200, task.Quota)
+	assert.Equal(t, 9900, getUserQuota(t, 15))
 }
 
 // ===========================================================================

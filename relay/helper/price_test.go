@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_policy"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,34 @@ func TestBindChannelModelRatio(t *testing.T) {
 
 	BindChannelModelRatio(info, math.NaN())
 	require.Equal(t, ratio_setting.DefaultGlobalModelRatio, info.ChannelMeta.ChannelModelRatio)
+}
+
+func TestPerCallPriceIgnoresZeroGlobalTokenRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalPolicy := billing_policy.GetConfig()
+	originalPrices := ratio_setting.ModelPrice2JSONString()
+	originalGroups := ratio_setting.GroupRatio2JSONString()
+	originalGlobal := ratio_setting.GetGlobalModelRatio()
+	originalFreePreConsume := operation_setting.GetQuotaSetting().EnableFreeModelPreConsume
+	t.Cleanup(func() {
+		require.NoError(t, billing_policy.UpdateFromJSON(common.GetJsonString(originalPolicy)))
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalPrices))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroups))
+		ratio_setting.SetGlobalModelRatio(originalGlobal)
+		operation_setting.GetQuotaSetting().EnableFreeModelPreConsume = originalFreePreConsume
+	})
+	require.NoError(t, billing_policy.UpdateFromJSON(common.GetJsonString(billing_policy.NewConfig())))
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"per-call-global-zero":0.02}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1}`))
+	ratio_setting.SetGlobalModelRatio(0)
+	operation_setting.GetQuotaSetting().EnableFreeModelPreConsume = false
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "default")
+	info := &relaycommon.RelayInfo{OriginModelName: "per-call-global-zero", UserGroup: "default", UsingGroup: "default", ChannelMeta: &relaycommon.ChannelMeta{ChannelModelRatio: 1}}
+	priceData, err := ModelPriceHelperPerCall(ctx, info)
+	require.NoError(t, err)
+	require.False(t, priceData.FreeModel)
+	require.Equal(t, 10000, priceData.Quota)
 }
 
 func TestBillingPolicyPreConsumeEstimatesOutputByPrice(t *testing.T) {

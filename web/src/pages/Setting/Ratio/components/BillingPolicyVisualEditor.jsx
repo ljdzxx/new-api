@@ -47,6 +47,66 @@ const priceFields = [
   ['audio_input', '音频输入'],
   ['audio_output', '音频输出'],
 ];
+const toolPriceFields = [
+  ['web_search.standard', 'Web Search 标准模型', 'per_thousand_calls', '10'],
+  ['web_search.premium', 'Web Search 高价模型', 'per_thousand_calls', '25'],
+  ['claude_web_search', 'Claude Web Search', 'per_thousand_calls', '10'],
+  ['file_search', 'File Search', 'per_thousand_calls', '2.5'],
+  [
+    'image_generation.low.1024x1024',
+    '图片生成 low 1024x1024',
+    'per_request',
+    '0.011',
+  ],
+  [
+    'image_generation.low.1024x1536',
+    '图片生成 low 1024x1536',
+    'per_request',
+    '0.016',
+  ],
+  [
+    'image_generation.low.1536x1024',
+    '图片生成 low 1536x1024',
+    'per_request',
+    '0.016',
+  ],
+  [
+    'image_generation.medium.1024x1024',
+    '图片生成 medium 1024x1024',
+    'per_request',
+    '0.042',
+  ],
+  [
+    'image_generation.medium.1024x1536',
+    '图片生成 medium 1024x1536',
+    'per_request',
+    '0.063',
+  ],
+  [
+    'image_generation.medium.1536x1024',
+    '图片生成 medium 1536x1024',
+    'per_request',
+    '0.063',
+  ],
+  [
+    'image_generation.high.1024x1024',
+    '图片生成 high 1024x1024',
+    'per_request',
+    '0.167',
+  ],
+  [
+    'image_generation.high.1024x1536',
+    '图片生成 high 1024x1536',
+    'per_request',
+    '0.25',
+  ],
+  [
+    'image_generation.high.1536x1024',
+    '图片生成 high 1536x1024',
+    'per_request',
+    '0.25',
+  ],
+];
 
 const newPrices = () => ({ input: '', output: '' });
 const newTier = (index) => ({
@@ -99,6 +159,17 @@ function normalizePrices(prices = {}) {
   const next = {};
   for (const [key] of priceFields) {
     next[key] = normalizePriceValue(prices?.[key]);
+  }
+  return next;
+}
+
+function normalizeToolPrices(tools = {}) {
+  const next = JSON.parse(JSON.stringify(tools || {}));
+  for (const [key, , unit, defaultPrice] of toolPriceFields) {
+    next[key] = {
+      unit: next[key]?.unit || unit,
+      price: normalizePriceValue(next[key]?.price ?? defaultPrice),
+    };
   }
   return next;
 }
@@ -161,6 +232,7 @@ function normalizePolicyForEditor(policy) {
             : [],
         }))
       : [],
+    tools: normalizeToolPrices(source.tools),
   };
 }
 
@@ -368,6 +440,26 @@ function PriceFields({ value = {}, onChange }) {
             value={value[key] || ''}
             onChange={(next) => onChange({ ...value, [key]: next })}
             placeholder={key === 'input' ? t('必填') : t('留空表示不单独计价')}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ToolPriceFields({ value = {}, onChange }) {
+  const { t } = useTranslation();
+  return (
+    <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
+      {toolPriceFields.map(([key, label, unit]) => (
+        <div key={key}>
+          <Text type='tertiary'>
+            {t(label)} (
+            {unit === 'per_request' ? '$ / request' : '$ / 1K calls'})
+          </Text>
+          <Input
+            value={value[key]?.price || ''}
+            onChange={(price) => onChange({ ...value, [key]: { unit, price } })}
           />
         </div>
       ))}
@@ -816,6 +908,12 @@ export default function BillingPolicyVisualEditor({
               onChange={(adjustments) => setDraft({ ...draft, adjustments })}
             />
           </div>
+        </TabPane>
+        <TabPane tab={t('工具定价')} itemKey='tools'>
+          <ToolPriceFields
+            value={draft.tools || {}}
+            onChange={(tools) => setDraft({ ...draft, tools })}
+          />
         </TabPane>
         <TabPane tab={t('JSON 预览')} itemKey='json'>
           <TextArea

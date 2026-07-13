@@ -165,3 +165,50 @@ func TestValidatePolicyRejectsInvalidUnitAndPerRequestPrice(t *testing.T) {
 	invalidPrice := Policy{Version: SchemaVersion, Mode: "per_request", Currency: "USD", Unit: "per_request", Price: "-1"}
 	require.ErrorContains(t, ValidatePolicy(invalidPrice), "non-negative decimal")
 }
+
+func TestCalculateBillingIncludesPolicyToolPricesAndFrozenAdjustment(t *testing.T) {
+	policy := testTokenPolicy("1")
+	policy.Tools = map[string]ToolPrice{
+		ToolWebSearchStandard:             {Unit: "per_thousand_calls", Price: "10"},
+		ToolImagePrefix + "low.1024x1024": {Unit: "per_request", Price: "0.011"},
+	}
+	policy.Adjustments = []Adjustment{{
+		ID: "live-rule", Multiplier: "9",
+		Conditions: []AdjustmentCondition{{Source: "header", Path: "x-plan", Operator: "eq", Value: "live"}},
+	}}
+	calculation, err := CalculateBilling(policy, BillingUsage{ToolUsage: map[string]int64{
+		ToolWebSearchStandard:             2,
+		ToolImagePrefix + "low.1024x1024": 1,
+	}}, RequestContext{
+		Headers:           map[string]string{"x-plan": "live"},
+		FreezeAdjustments: true, AdjustmentMultiplier: "2",
+		AppliedAdjustments: []AppliedAdjustment{{ID: "frozen-rule", Multiplier: "2"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "0.031", calculation.SubtotalUSD)
+	assert.Equal(t, "0.062", calculation.TotalUSD)
+	assert.Equal(t, []AppliedAdjustment{{ID: "frozen-rule", Multiplier: "2"}}, calculation.AppliedAdjustments)
+}
+
+func TestConfigAndSnapshotAreDeepCopies(t *testing.T) {
+	backup := GetConfig()
+	t.Cleanup(func() { require.NoError(t, UpdateFromJSON(marshalForTest(t, backup))) })
+	policy := testTokenPolicy("1")
+	policy.Tiers = nil
+	policy.Adjustments = []Adjustment{{ID: "a", Multiplier: "2", Conditions: []AdjustmentCondition{{Source: "header", Path: "x", Operator: "exists"}}}}
+	config := NewConfig()
+	config.State = StateActive
+	config.Policies = map[string]Policy{"copy-model": policy}
+	require.NoError(t, UpdateFromJSON(marshalForTest(t, config)))
+
+	copyConfig := GetConfig()
+	copyPolicy := copyConfig.Policies["copy-model"]
+	copyPolicy.Adjustments[0].Conditions[0].Path = "mutated"
+	copyPolicy.Tools[ToolFileSearch] = ToolPrice{Unit: "per_request", Price: "999"}
+	copyConfig.Policies["copy-model"] = copyPolicy
+
+	resolved, ok := Resolve("copy-model")
+	require.True(t, ok)
+	assert.Equal(t, "x", resolved.Adjustments[0].Conditions[0].Path)
+	assert.Equal(t, "2.5", resolved.Tools[ToolFileSearch].Price)
+}

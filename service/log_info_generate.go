@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -246,7 +247,7 @@ func attachBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 	if relayInfo == nil || other == nil || !billing_policy.IsActive() {
 		return
 	}
-	policy, ok := billing_policy.Resolve(relayInfo.OriginModelName)
+	policy, ok := requestBillingPolicy(relayInfo)
 	if !ok {
 		if common.DebugTraceEnabledForContext(ctx) {
 			logger.LogWarn(ctx, "[billing-policy][settlement] active policy missing for model "+relayInfo.OriginModelName)
@@ -298,7 +299,8 @@ func attachBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 			ImageInputTokens:      int64(summary.ImageTokens),
 			AudioInputTokens:      int64(summary.AudioTokens),
 			AudioOutputTokens:     int64(summary.AudioOutputTokens),
-		}, billingPolicyRequestContext(ctx))
+			ToolUsage:             billingPolicyToolUsage(ctx, summary),
+		}, frozenBillingPolicyRequestContext(ctx, relayInfo))
 		if err != nil {
 			if common.DebugTraceEnabledForContext(ctx) {
 				logger.LogWarn(ctx, "[billing-policy][settlement] calculation failed: "+err.Error())
@@ -307,8 +309,11 @@ func attachBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 		}
 	}
 	config := billing_policy.GetConfig()
+	if relayInfo.BillingPolicySnapshot != nil {
+		config.SchemaVersion = relayInfo.BillingPolicySnapshot.SchemaVersion
+		config.Revision = relayInfo.BillingPolicySnapshot.Revision
+	}
 	otherRatios, otherRatioMultiplier := billingPolicyBusinessRatios(relayInfo.PriceData)
-	additionalCharges, additionalChargesUSD := buildBillingPolicyAdditionalCharges(summary)
 	modelTotalUSD, err := decimal.NewFromString(calculation.TotalUSD)
 	if err != nil {
 		modelTotalUSD = decimal.Zero
@@ -325,9 +330,9 @@ func attachBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 		PolicyAdjustmentMultiplier: relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier(),
 		OtherRatioMultiplier:       otherRatioMultiplier,
 		OtherRatios:                otherRatios,
-		AdditionalCharges:          additionalCharges,
-		AdditionalChargesUSD:       additionalChargesUSD.String(),
-		BillableSubtotalUSD:        modelTotalUSD.Add(additionalChargesUSD).String(),
+		AdditionalCharges:          nil,
+		AdditionalChargesUSD:       "0",
+		BillableSubtotalUSD:        modelTotalUSD.String(),
 	}
 	if common.DebugTraceEnabledForContext(ctx) {
 		snapshot.Policy = &policy
@@ -359,6 +364,40 @@ func billingPolicyRequestContext(ctx *gin.Context) billing_policy.RequestContext
 	return requestContext
 }
 
+func requestBillingPolicy(relayInfo *relaycommon.RelayInfo) (billing_policy.Policy, bool) {
+	if relayInfo == nil || relayInfo.BillingPolicySnapshot == nil {
+		return billing_policy.Policy{}, false
+	}
+	return relayInfo.BillingPolicySnapshot.Policy, true
+}
+
+func ensureBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) bool {
+	if relayInfo == nil || !billing_policy.IsActive() {
+		return false
+	}
+	if relayInfo.BillingPolicySnapshot != nil {
+		return true
+	}
+	snapshot, ok := billing_policy.CaptureSnapshot(relayInfo.OriginModelName, billingPolicyRequestContext(ctx))
+	if ok {
+		relayInfo.BillingPolicySnapshot = snapshot
+	}
+	return ok
+}
+
+func frozenBillingPolicyRequestContext(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) billing_policy.RequestContext {
+	requestContext := billingPolicyRequestContext(ctx)
+	if relayInfo == nil || relayInfo.BillingPolicySnapshot == nil {
+		return requestContext
+	}
+	snapshot := relayInfo.BillingPolicySnapshot
+	requestContext.FreezeAdjustments = true
+	requestContext.AdjustmentMultiplier = snapshot.AdjustmentMultiplier
+	requestContext.AppliedAdjustments = append([]billing_policy.AppliedAdjustment(nil), snapshot.AppliedAdjustments...)
+	requestContext.Now = time.Unix(0, snapshot.EvaluatedAtUnixNano)
+	return requestContext
+}
+
 func attachAudioBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inputText, outputText, inputAudio, outputAudio, tierInputTotal, tierOutputTotal, quota int, other map[string]interface{}) {
 	if relayInfo == nil {
 		return
@@ -384,11 +423,11 @@ func attachPerRequestBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycom
 	if relayInfo == nil || other == nil || !billing_policy.IsActive() {
 		return
 	}
-	policy, ok := billing_policy.Resolve(relayInfo.OriginModelName)
+	policy, ok := requestBillingPolicy(relayInfo)
 	if !ok || policy.Mode != "per_request" {
 		return
 	}
-	calculation, err := billing_policy.CalculateBilling(policy, billing_policy.BillingUsage{}, billingPolicyRequestContext(ctx))
+	calculation, err := billing_policy.CalculateBilling(policy, billing_policy.BillingUsage{}, frozenBillingPolicyRequestContext(ctx, relayInfo))
 	if err != nil {
 		if common.DebugTraceEnabledForContext(ctx) {
 			logger.LogWarn(ctx, "[billing-policy][per-request] calculation failed: "+err.Error())

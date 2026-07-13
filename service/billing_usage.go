@@ -40,6 +40,7 @@ func usageFromBillingUsage(usage *dto.Usage) (*dto.Usage, bool) {
 
 func usageFromOpenAIBillingUsage(billingUsage *dto.BillingUsage) *dto.Usage {
 	usage := *billingUsage.OpenAIUsage
+	mergeOpenAIInputTokenDetails(&usage.PromptTokensDetails, usage.InputTokensDetails)
 	if usage.PromptTokens == 0 && usage.InputTokens > 0 {
 		usage.PromptTokens = usage.InputTokens
 	}
@@ -59,6 +60,32 @@ func usageFromOpenAIBillingUsage(billingUsage *dto.BillingUsage) *dto.Usage {
 	usage.UsageSource = billingUsage.Source
 	usage.BillingUsage = dto.CloneBillingUsage(billingUsage)
 	return &usage
+}
+
+// OpenAI Responses reports input sub-categories under input_tokens_details,
+// while the canonical billing paths read prompt_tokens_details. BillingUsage
+// intentionally preserves the upstream-native shape, so rebuilding Usage from
+// that snapshot must normalize the two representations without overwriting a
+// value already supplied by a converter or adaptor.
+func mergeOpenAIInputTokenDetails(target *dto.InputTokenDetails, source *dto.InputTokenDetails) {
+	if target == nil || source == nil {
+		return
+	}
+	if target.CachedTokens == 0 {
+		target.CachedTokens = source.CachedTokens
+	}
+	if target.CacheWriteTokens == 0 {
+		target.CacheWriteTokens = source.CacheWriteTokens
+	}
+	if target.TextTokens == 0 {
+		target.TextTokens = source.TextTokens
+	}
+	if target.ImageTokens == 0 {
+		target.ImageTokens = source.ImageTokens
+	}
+	if target.AudioTokens == 0 {
+		target.AudioTokens = source.AudioTokens
+	}
 }
 
 func usageFromClaudeBillingUsage(billingUsage *dto.BillingUsage) *dto.Usage {

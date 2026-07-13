@@ -71,7 +71,7 @@ func HasOpenAIUsageTokens(usage *Usage) bool {
 		return true
 	}
 	if usage.CompletionTokenDetails.ReasoningTokens != 0 || usage.CompletionTokenDetails.TextTokens != 0 ||
-		usage.CompletionTokenDetails.AudioTokens != 0 {
+		usage.CompletionTokenDetails.AudioTokens != 0 || usage.CompletionTokenDetails.ImageTokens != 0 {
 		return true
 	}
 	return usage.InputTokensDetails != nil
@@ -149,6 +149,7 @@ func cloneClaudeUsage(usage *ClaudeUsage) *ClaudeUsage {
 func cloneGeminiUsageMetadata(metadata GeminiUsageMetadata) GeminiUsageMetadata {
 	metadata.PromptTokensDetails = append([]GeminiPromptTokensDetails(nil), metadata.PromptTokensDetails...)
 	metadata.ToolUsePromptTokensDetails = append([]GeminiPromptTokensDetails(nil), metadata.ToolUsePromptTokensDetails...)
+	metadata.CandidatesTokensDetails = append([]GeminiPromptTokensDetails(nil), metadata.CandidatesTokensDetails...)
 	metadata.BillingUsage = nil
 	return metadata
 }
@@ -167,6 +168,11 @@ func HasGeminiUsageMetadataTokens(metadata *GeminiUsageMetadata) bool {
 		}
 	}
 	for _, detail := range metadata.ToolUsePromptTokensDetails {
+		if detail.TokenCount != 0 {
+			return true
+		}
+	}
+	for _, detail := range metadata.CandidatesTokensDetails {
 		if detail.TokenCount != 0 {
 			return true
 		}

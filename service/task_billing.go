@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/setting/billing_policy"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -176,9 +177,19 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 	if quota == 0 {
 		return
 	}
+	won, err := claimTaskQuota(task, quota, 0)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("领取任务退款失败 task %s: %s", task.TaskID, err.Error()))
+		return
+	}
+	if !won {
+		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 已完成退款或结算，跳过重复退款", task.TaskID))
+		return
+	}
 
 	// 1. 退还资金来源（钱包或订阅）
 	if err := taskAdjustFunding(task, -quota); err != nil {
+		_, _ = claimTaskQuota(task, 0, quota)
 		logger.LogWarn(ctx, fmt.Sprintf("退还资金来源失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}
@@ -208,7 +219,8 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
 // reason 用于日志记录（例如 "token重算" 或 "adaptor调整"）。
 // clamps 可选：若计算 actualQuota 时发生额度饱和，将其记入日志 admin_info（仅管理员可见）。
 func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) {
-	if actualQuota <= 0 {
+	if actualQuota < 0 {
+		logger.LogWarn(ctx, fmt.Sprintf("拒绝负数任务结算 task %s: actualQuota=%d", task.TaskID, actualQuota))
 		return
 	}
 	preConsumedQuota := task.Quota
@@ -217,6 +229,15 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	if quotaDelta == 0 {
 		logger.LogInfo(ctx, fmt.Sprintf("任务 %s 预扣费准确（%s，%s）",
 			task.TaskID, logger.LogQuota(actualQuota), reason))
+		return
+	}
+	won, err := claimTaskQuota(task, preConsumedQuota, actualQuota)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("任务 quota CAS 失败 task %s: %s", task.TaskID, err.Error()))
+		return
+	}
+	if !won {
+		logger.LogInfo(ctx, fmt.Sprintf("任务 %s quota 已被其他结算者更新，跳过重复结算", task.TaskID))
 		return
 	}
 
@@ -230,14 +251,13 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 
 	// 调整资金来源
 	if err := taskAdjustFunding(task, quotaDelta); err != nil {
+		_, _ = claimTaskQuota(task, actualQuota, preConsumedQuota)
 		logger.LogError(ctx, fmt.Sprintf("差额结算资金调整失败 task %s: %s", task.TaskID, err.Error()))
 		return
 	}
 
 	// 调整令牌额度
 	taskAdjustTokenQuota(ctx, task, quotaDelta)
-
-	task.Quota = actualQuota
 
 	var logType int
 	var logQuota int
@@ -271,6 +291,19 @@ func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int
 	})
 }
 
+func claimTaskQuota(task *model.Task, oldQuota, newQuota int) (bool, error) {
+	if task == nil || task.Quota != oldQuota {
+		return false, nil
+	}
+	// Unpersisted tasks only occur in unit-level callers. Production tasks have
+	// an ID and use the database CAS below.
+	if task.ID == 0 {
+		task.Quota = newQuota
+		return true, nil
+	}
+	return task.CompareAndSwapQuota(oldQuota, newQuota)
+}
+
 // RecalculateTaskQuotaByTokens 根据实际 token 消耗重新计费（异步差额结算）。
 // 当任务成功且返回了 totalTokens 时，根据模型倍率和分组倍率重新计算实际扣费额度，
 // 与预扣费的差额进行补扣或退还。支持钱包和订阅计费来源。
@@ -281,8 +314,27 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 
 	modelName := taskModelName(task)
 
-	// 获取模型价格和倍率
-	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
+	// 优先使用任务提交时冻结的策略/倍率。只有历史任务缺少快照时才
+	// 回退当前配置，避免长任务在管理员改价后按新价格结算。
+	modelRatio := 0.0
+	hasRatioSetting := false
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		if bc.BillingPolicy != "" {
+			var policy billing_policy.Policy
+			if err := common.UnmarshalJsonStr(bc.BillingPolicy, &policy); err == nil {
+				values, _, resolveErr := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: int64(totalTokens)})
+				if resolveErr == nil && !values.UsePrice {
+					modelRatio, hasRatioSetting = values.ModelRatio, true
+				}
+			}
+		}
+		if !hasRatioSetting && bc.ModelRatio > 0 {
+			modelRatio, hasRatioSetting = bc.ModelRatio, true
+		}
+	}
+	if !hasRatioSetting {
+		modelRatio, hasRatioSetting, _ = ratio_setting.GetModelRatio(modelName)
+	}
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
 	if !hasRatioSetting || modelRatio <= 0 {
 		return
@@ -300,14 +352,17 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		return
 	}
 
-	groupRatio := ratio_setting.GetGroupRatio(group)
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
-
-	var finalGroupRatio float64
-	if hasUserGroupRatio {
-		finalGroupRatio = userGroupRatio
-	} else {
+	finalGroupRatio := 0.0
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		finalGroupRatio = bc.GroupRatio
+	}
+	if finalGroupRatio == 0 {
+		groupRatio := ratio_setting.GetGroupRatio(group)
+		userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(group, group)
 		finalGroupRatio = groupRatio
+		if hasUserGroupRatio {
+			finalGroupRatio = userGroupRatio
+		}
 	}
 
 	// 计算实际应扣费额度: totalTokens * modelRatio * groupRatio * globalModelRatio

@@ -42,6 +42,52 @@ func fullTextBillingPolicy() billing_policy.Policy {
 	}
 }
 
+func TestRequestBillingSnapshotSurvivesPolicyAndTimeRuleChanges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	ctx.Request.Header.Set("x-price", "discount")
+	policy := fullTextBillingPolicy()
+	policy.Prices.Input = "1"
+	policy.Adjustments = []billing_policy.Adjustment{{
+		ID: "discount", Multiplier: "0.5",
+		Conditions: []billing_policy.AdjustmentCondition{{Source: "header", Path: "x-price", Operator: "eq", Value: "discount"}},
+	}}
+	installActiveBillingPolicyForTest(t, "snapshot-model", policy)
+	relayInfo := &relaycommon.RelayInfo{OriginModelName: "snapshot-model", PriceData: types.PriceData{GlobalModelRatio: 1, GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}}}
+	require.True(t, ensureBillingPolicySnapshot(ctx, relayInfo))
+
+	changed := fullTextBillingPolicy()
+	changed.Prices.Input = "100"
+	config := billing_policy.GetConfig()
+	config.Revision++
+	config.Policies["snapshot-model"] = changed
+	require.NoError(t, billing_policy.UpdateFromJSON(common.GetJsonString(config)))
+	ctx.Request.Header.Set("x-price", "changed")
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, &dto.Usage{PromptTokens: 1_000, TotalTokens: 1_000})
+	require.Equal(t, 250, summary.Quota)
+	require.NotNil(t, relayInfo.BillingPolicySnapshot)
+	require.Equal(t, int64(99), relayInfo.BillingPolicySnapshot.Revision)
+	require.Equal(t, "0.5", relayInfo.BillingPolicySnapshot.AdjustmentMultiplier)
+}
+
+func TestActivePolicyFailureSettlesAtPreConsumeWithoutLegacyFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	installActiveBillingPolicyForTest(t, "broken-snapshot", fullTextBillingPolicy())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "broken-snapshot", FinalPreConsumedQuota: 777,
+		PriceData: types.PriceData{ModelRatio: 99, GlobalModelRatio: 1, GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}},
+	}
+	require.True(t, ensureBillingPolicySnapshot(ctx, relayInfo))
+	relayInfo.BillingPolicySnapshot.Policy.Prices.Input = "invalid"
+	summary := calculateTextQuotaSummary(ctx, relayInfo, &dto.Usage{PromptTokens: 1_000, TotalTokens: 1_000})
+	require.Error(t, summary.PolicyError)
+	require.Equal(t, 777, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryFixedPriceAppliesImageCountOnceAndAllowsOverride(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

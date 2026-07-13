@@ -58,6 +58,7 @@ type textQuotaSummary struct {
 	AudioInputPrice          float64
 	ImageGenerationCallPrice float64
 	PolicyCalculation        *billing_policy.BillingCalculation
+	PolicyError              error
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -78,7 +79,39 @@ func hasBillableTokenUsage(summary textQuotaSummary) bool {
 		cacheWriteTokensTotal(summary) > 0 ||
 		summary.ImageTokens > 0 ||
 		summary.AudioTokens > 0 ||
-		summary.AudioOutputTokens > 0
+		summary.AudioOutputTokens > 0 ||
+		summary.WebSearchCallCount > 0 ||
+		summary.ClaudeWebSearchCallCount > 0 ||
+		summary.FileSearchCallCount > 0 ||
+		summary.ImageGenerationCallPrice > 0
+}
+
+func billingPolicyToolUsage(ctx *gin.Context, summary textQuotaSummary) map[string]int64 {
+	usage := make(map[string]int64)
+	if summary.WebSearchCallCount > 0 {
+		key := billing_policy.ToolWebSearchPremium
+		if strings.HasPrefix(summary.ModelName, "o3") || strings.HasPrefix(summary.ModelName, "o4") || strings.HasPrefix(summary.ModelName, "gpt-5") {
+			key = billing_policy.ToolWebSearchStandard
+		}
+		usage[key] = int64(summary.WebSearchCallCount)
+	}
+	if summary.ClaudeWebSearchCallCount > 0 {
+		usage[billing_policy.ToolClaudeWebSearch] = int64(summary.ClaudeWebSearchCallCount)
+	}
+	if summary.FileSearchCallCount > 0 {
+		usage[billing_policy.ToolFileSearch] = int64(summary.FileSearchCallCount)
+	}
+	if summary.ImageGenerationCallPrice > 0 {
+		quality, size := ctx.GetString("image_generation_call_quality"), ctx.GetString("image_generation_call_size")
+		if quality == "" || size == "" {
+			quality, size = "high", "1024x1024"
+		}
+		usage[billing_policy.ToolImagePrefix+quality+"."+size] = 1
+	}
+	if len(usage) == 0 {
+		return nil
+	}
+	return usage
 }
 
 func isLegacyClaudeDerivedOpenAIUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) bool {
@@ -107,6 +140,7 @@ func noteQuotaClamp(relayInfo *relaycommon.RelayInfo, clamp *common.QuotaClamp) 
 }
 
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
+	ensureBillingPolicySnapshot(ctx, relayInfo)
 	summary := textQuotaSummary{
 		ModelName:            relayInfo.OriginModelName,
 		TokenName:            ctx.GetString("token_name"),
@@ -163,7 +197,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 
 	if billing_policy.IsActive() {
-		if policy, ok := billing_policy.Resolve(summary.ModelName); ok && policy.Mode == "tiered" {
+		if policy, ok := requestBillingPolicy(relayInfo); ok && policy.Mode == "tiered" {
 			inputTotal := int64(usage.PromptTokens)
 			if summary.IsClaudeUsageSemantic {
 				inputTotal += int64(summary.CacheTokens + summary.CacheCreationTokens)
@@ -287,13 +321,13 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	}
 
 	activePolicyCalculated := false
-	if !relayInfo.PriceData.UsePrice && billing_policy.IsActive() {
-		if policy, ok := billing_policy.Resolve(summary.ModelName); ok {
+	if billing_policy.IsActive() {
+		if policy, ok := requestBillingPolicy(relayInfo); ok {
 			effectivePrices, _, priceErr := billing_policy.EffectivePricesForUsage(policy, billing_policy.Usage{
 				InputTotalTokens: summary.PolicyInputTotalTokens, OutputTotalTokens: summary.PolicyOutputTotalTokens,
 			})
 			if priceErr != nil {
-				logger.LogWarn(ctx, "active billing policy price resolution failed, falling back to compatibility ratios: "+priceErr.Error())
+				logger.LogWarn(ctx, "active billing policy price resolution failed: "+priceErr.Error())
 			}
 			cacheWriteRemaining := summary.CacheCreationTokens - summary.CacheCreationTokens5m - summary.CacheCreationTokens1h
 			if cacheWriteRemaining < 0 {
@@ -330,18 +364,16 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				ImageInputTokens:      int64(summary.ImageTokens),
 				AudioInputTokens:      int64(summary.AudioTokens),
 				AudioOutputTokens:     int64(summary.AudioOutputTokens),
-			}, billingPolicyRequestContext(ctx))
+				ToolUsage:             billingPolicyToolUsage(ctx, summary),
+			}, frozenBillingPolicyRequestContext(ctx, relayInfo))
 			if err != nil {
-				logger.LogWarn(ctx, "active billing policy calculation failed, falling back to compatibility ratios: "+err.Error())
+				summary.PolicyError = err
+				logger.LogError(ctx, "active billing policy calculation failed; settling at frozen pre-consume instead of legacy fallback: "+err.Error())
 			} else if policyCost, err := decimal.NewFromString(calculation.TotalUSD); err != nil {
-				logger.LogWarn(ctx, "active billing policy returned invalid total, falling back to compatibility ratios: "+err.Error())
+				summary.PolicyError = err
+				logger.LogError(ctx, "active billing policy returned invalid total; settling at frozen pre-consume instead of legacy fallback: "+err.Error())
 			} else {
 				quotaCalculateDecimal := policyCost.Mul(dQuotaPerUnit).Mul(dGroupRatio)
-				quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
-				quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
-				quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
-				quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
-				quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
 				quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
 				quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
 				summary.Quota = quota
@@ -350,6 +382,13 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				activePolicyCalculated = true
 			}
 		}
+	}
+	if billing_policy.IsActive() && !activePolicyCalculated {
+		if summary.PolicyError == nil {
+			summary.PolicyError = fmt.Errorf("active billing policy snapshot is missing for model %s", summary.ModelName)
+		}
+		summary.Quota = relayInfo.FinalPreConsumedQuota
+		return summary
 	}
 
 	if !relayInfo.PriceData.UsePrice && !activePolicyCalculated {

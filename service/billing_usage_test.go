@@ -36,3 +36,43 @@ func TestEffectiveBillingUsagePrefersGeminiNativeUsage(t *testing.T) {
 	require.Equal(t, 7, effective.PromptTokensDetails.CachedTokens)
 	require.Equal(t, dto.BillingUsageSemanticGemini, effective.UsageSemantic)
 }
+
+func TestEffectiveBillingUsageNormalizesOpenAIResponsesInputDetails(t *testing.T) {
+	native := &dto.Usage{
+		InputTokens: 100, OutputTokens: 9, TotalTokens: 109,
+		InputTokensDetails: &dto.InputTokenDetails{
+			CachedTokens: 70, CacheWriteTokens: 6, TextTokens: 20, ImageTokens: 3, AudioTokens: 1,
+		},
+	}
+	usage := &dto.Usage{
+		PromptTokens: 100, CompletionTokens: 9,
+		PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 70, CacheWriteTokens: 6},
+		BillingUsage:        dto.NewOpenAIResponsesBillingUsage(native),
+	}
+
+	effective := effectiveBillingUsage(usage)
+	require.Equal(t, 100, effective.PromptTokens)
+	require.Equal(t, 9, effective.CompletionTokens)
+	require.Equal(t, 70, effective.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 6, effective.PromptTokensDetails.CacheWriteTokens)
+	require.Equal(t, 20, effective.PromptTokensDetails.TextTokens)
+	require.Equal(t, 3, effective.PromptTokensDetails.ImageTokens)
+	require.Equal(t, 1, effective.PromptTokensDetails.AudioTokens)
+	require.Equal(t, dto.BillingUsageSourceOAIResponses, effective.UsageSource)
+}
+
+func TestEffectiveBillingUsageDoesNotOverwriteCanonicalOpenAIDetails(t *testing.T) {
+	native := &dto.Usage{
+		InputTokens: 100,
+		InputTokensDetails: &dto.InputTokenDetails{
+			CachedTokens: 70, CacheWriteTokens: 6, TextTokens: 20, ImageTokens: 3, AudioTokens: 1,
+		},
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 71, CacheWriteTokens: 7, TextTokens: 21, ImageTokens: 4, AudioTokens: 2,
+		},
+	}
+	effective := effectiveBillingUsage(&dto.Usage{BillingUsage: dto.NewOpenAIResponsesBillingUsage(native)})
+	require.Equal(t, dto.InputTokenDetails{
+		CachedTokens: 71, CacheWriteTokens: 7, TextTokens: 21, ImageTokens: 4, AudioTokens: 2,
+	}, effective.PromptTokensDetails)
+}
