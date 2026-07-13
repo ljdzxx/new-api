@@ -569,8 +569,8 @@ type ClaudeUsage struct {
 }
 
 type ClaudeCacheCreationUsage struct {
-	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens,omitempty"`
-	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens,omitempty"`
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
 }
 
 func (u *ClaudeUsage) GetCacheCreation5mTokens() int {

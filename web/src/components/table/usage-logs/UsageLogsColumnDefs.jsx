@@ -33,7 +33,7 @@ import {
   getLogOther,
   renderModelTag,
   renderModelPriceSimple,
-  getBillingPolicyLogLines,
+  getCurrencyConfig,
 } from '../../../helpers';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { Route, Sparkles } from 'lucide-react';
@@ -541,11 +541,72 @@ function getUserLevelRatioSegments(other, t) {
   ].filter(Boolean);
 }
 
+const compactBillingPolicyLabels = {
+  input: '输入 {{price}} / 1M tokens',
+  cache_read: '缓存读 {{price}} / 1M tokens',
+  cache_write: '缓存创建 {{price}} / 1M tokens',
+  cache_write_5m: '5m缓存创建 {{price}} / 1M tokens',
+  cache_write_1h: '1h缓存创建 {{price}} / 1M tokens',
+  image_input: '图片输入 {{price}} / 1M tokens',
+};
+
+function formatCompactPrice(value) {
+  const { symbol, rate } = getCurrencyConfig();
+  const price = Number(value);
+  const exchangeRate = Number(rate);
+  const converted =
+    (Number.isFinite(price) ? price : 0) *
+    (Number.isFinite(exchangeRate) ? exchangeRate : 1);
+  return `${symbol}${Number(converted.toFixed(6))}`;
+}
+
+function formatCompactRatio(value) {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) ? String(Number(ratio.toFixed(6))) : '-';
+}
+
 function getBillingPolicySegments(other, t) {
-  return getBillingPolicyLogLines(other, t).map((text, index) => ({
-    text,
-    tone: index === 0 ? 'primary' : 'secondary',
-  }));
+  const snapshot = other?.billing_policy;
+  const lineItems = snapshot?.calculation?.line_items;
+  if (!Array.isArray(lineItems)) {
+    return [];
+  }
+
+  const ratioLabel =
+    other?.group_ratio_source === 'user_group_special'
+      ? t('专属倍率')
+      : t('分组倍率');
+  const segments = [
+    {
+      text: `${ratioLabel} ${formatCompactRatio(snapshot.group_ratio)}x`,
+      tone: 'primary',
+    },
+  ];
+
+  for (const item of lineItems) {
+    if (item.field === 'request') {
+      segments.push({
+        text: t('模型价格 {{price}}', {
+          price: formatCompactPrice(item.unit_price),
+        }),
+        tone: 'secondary',
+      });
+      continue;
+    }
+
+    const template = compactBillingPolicyLabels[item.field];
+    if (!template) {
+      continue;
+    }
+    segments.push({
+      text: t(template, {
+        price: formatCompactPrice(item.price_per_million),
+      }),
+      tone: 'secondary',
+    });
+  }
+
+  return segments;
 }
 
 function renderCompactDetailSummary(summarySegments) {
@@ -635,10 +696,7 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
   const billingPolicySegments = getBillingPolicySegments(other, t);
   if (billingPolicySegments.length > 0) {
     return {
-      segments: [
-        ...getUserLevelRatioSegments(other, t),
-        ...billingPolicySegments,
-      ],
+      segments: billingPolicySegments,
     };
   }
 

@@ -190,6 +190,21 @@ func TestCalculateBillingIncludesPolicyToolPricesAndFrozenAdjustment(t *testing.
 	assert.Equal(t, []AppliedAdjustment{{ID: "frozen-rule", Multiplier: "2"}}, calculation.AppliedAdjustments)
 }
 
+func TestCalculateBillingCacheWrite1hFallsBackTo5mPrice(t *testing.T) {
+	policy := testTokenPolicy("2")
+	policy.Prices.CacheWrite = "2.5"
+
+	calculation, err := CalculateBilling(policy, BillingUsage{
+		CacheWrite1hTokens: 1_000_000,
+	}, RequestContext{})
+
+	require.NoError(t, err)
+	// cache_write_1h 未配置：回退为 cache_write(兼 5m) 2.5 × 1.6 = 4
+	require.Len(t, calculation.LineItems, 1)
+	assert.Equal(t, "cache_write_1h", calculation.LineItems[0].Field)
+	assert.Equal(t, "4", calculation.LineItems[0].CostUSD)
+}
+
 func TestConfigAndSnapshotAreDeepCopies(t *testing.T) {
 	backup := GetConfig()
 	t.Cleanup(func() { require.NoError(t, UpdateFromJSON(marshalForTest(t, backup))) })

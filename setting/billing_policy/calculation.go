@@ -7,6 +7,11 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// claudeCacheWrite1hFallbackMultiplier 是 1h 缓存写与 5m 缓存写的官方价格比
+// （Anthropic: 1h 写 = 2x 输入价，5m 写 = 1.25x 输入价，2 / 1.25 = 1.6）。
+// 当策略未配置 cache_write_1h 时，按 5m 写价 × 1.6 兜底，避免 1h 缓存写被漏计费。
+var claudeCacheWrite1hFallbackMultiplier = decimal.NewFromFloat(1.6)
+
 type BillingUsage struct {
 	TierInputTotalTokens  int64            `json:"tier_input_total_tokens,omitempty"`
 	TierOutputTotalTokens int64            `json:"tier_output_total_tokens,omitempty"`
@@ -114,6 +119,12 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 		if strings.TrimSpace(cacheWrite5mPrice) == "" {
 			cacheWrite5mPrice = prices.CacheWrite
 		}
+		cacheWrite1hPrice := prices.CacheWrite1h
+		if strings.TrimSpace(cacheWrite1hPrice) == "" && strings.TrimSpace(cacheWrite5mPrice) != "" {
+			if basePrice, err := parseBillingPrice(cacheWrite5mPrice, "cache_write_5m"); err == nil {
+				cacheWrite1hPrice = basePrice.Mul(claudeCacheWrite1hFallbackMultiplier).String()
+			}
+		}
 		fields := []struct {
 			name   string
 			raw    string
@@ -124,7 +135,7 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 			{"cache_read", prices.CacheRead, usage.CacheReadTokens},
 			{"cache_write", prices.CacheWrite, usage.CacheWriteTokens},
 			{"cache_write_5m", cacheWrite5mPrice, usage.CacheWrite5mTokens},
-			{"cache_write_1h", prices.CacheWrite1h, usage.CacheWrite1hTokens},
+			{"cache_write_1h", cacheWrite1hPrice, usage.CacheWrite1hTokens},
 			{"image_input", prices.ImageInput, usage.ImageInputTokens},
 			{"audio_input", prices.AudioInput, usage.AudioInputTokens},
 			{"audio_output", prices.AudioOutput, usage.AudioOutputTokens},

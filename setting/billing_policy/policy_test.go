@@ -91,6 +91,18 @@ func TestCacheWritePolicyFallsBackToLegacy5mField(t *testing.T) {
 	assert.Equal(t, 2.0, values.CacheCreation5mRatio)
 }
 
+func TestCacheWrite1hFallsBackTo5mTimesOfficialMultiplier(t *testing.T) {
+	policy := testTokenPolicy("2")
+	policy.Prices.CacheWrite5m = "2.5"
+
+	values, err := ToLegacyValues(policy)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1.25, values.CacheCreation5mRatio)
+	// 1h 未配置时按 5m × 1.6 兜底（官方 2x / 1.25x）
+	assert.Equal(t, 2.0, values.CacheCreation1hRatio)
+}
+
 func TestLegacyCacheHitsRefreshesMigratesToCacheRead(t *testing.T) {
 	var prices Prices
 	require.NoError(t, common.UnmarshalJsonStr(`{"input":"2","cache_hits_refreshes":"4"}`, &prices))

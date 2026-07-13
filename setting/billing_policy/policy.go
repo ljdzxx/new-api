@@ -381,9 +381,16 @@ func legacyValuesFromPrices(prices Prices) (LegacyValues, error) {
 			return LegacyValues{}, err
 		}
 	}
-	values.CacheCreation1hRatio, err = relativePrice(prices.CacheWrite1h, input, 0)
-	if err != nil {
-		return LegacyValues{}, err
+	if strings.TrimSpace(prices.CacheWrite1h) == "" {
+		// 未配置 1h 写价时按 5m 写价 × 1.6 兜底（Anthropic 官方 2x/1.25x）。
+		fallback1h, _ := decimal.NewFromFloat(values.CacheCreation5mRatio).
+			Mul(claudeCacheWrite1hFallbackMultiplier).Float64()
+		values.CacheCreation1hRatio = fallback1h
+	} else {
+		values.CacheCreation1hRatio, err = relativePrice(prices.CacheWrite1h, input, 0)
+		if err != nil {
+			return LegacyValues{}, err
+		}
 	}
 	values.ImageRatio, err = relativePrice(prices.ImageInput, input, 0)
 	if err != nil {
