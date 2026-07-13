@@ -7,10 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestSendResponsesKeepAliveWritesIgnoredResponsesEvent(t *testing.T) {
@@ -28,6 +31,55 @@ func TestSendResponsesKeepAliveWritesIgnoredResponsesEvent(t *testing.T) {
 	assert.Contains(t, body, "event: response.keepalive\n")
 	assert.Contains(t, body, `data: {"type":"response.keepalive"}`)
 	assert.True(t, strings.HasSuffix(body, "\n\n"), "SSE event must end with a blank line")
+}
+
+func TestOaiResponsesHandlerScalesClientUsageWithoutMutatingBillingUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":101,"output_tokens":9,"total_tokens":110,"input_tokens_details":{"cached_tokens":11}}}`)),
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelSetting: dto.ChannelSettings{}},
+		PriceData:   types.PriceData{GlobalModelRatio: 1.25},
+	}
+
+	usage, apiErr := OaiResponsesHandler(c, info, resp)
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	assert.Equal(t, 101, usage.PromptTokens)
+	assert.Equal(t, 9, usage.CompletionTokens)
+	assert.Equal(t, 11, usage.PromptTokensDetails.CachedTokens)
+	assert.EqualValues(t, 126, gjson.Get(recorder.Body.String(), "usage.input_tokens").Int())
+	assert.EqualValues(t, 11, gjson.Get(recorder.Body.String(), "usage.output_tokens").Int())
+	assert.EqualValues(t, 137, gjson.Get(recorder.Body.String(), "usage.total_tokens").Int())
+	assert.EqualValues(t, 13, gjson.Get(recorder.Body.String(), "usage.input_tokens_details.cached_tokens").Int())
+}
+
+func TestOaiResponsesHandlerSkipsClientUsageScalingForPassThroughChannel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":101,"output_tokens":9,"total_tokens":110}}`)),
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelSetting: dto.ChannelSettings{PassThroughBodyEnabled: true}},
+		PriceData:   types.PriceData{GlobalModelRatio: 2},
+	}
+
+	_, apiErr := OaiResponsesHandler(c, info, resp)
+	require.Nil(t, apiErr)
+	assert.EqualValues(t, 101, gjson.Get(recorder.Body.String(), "usage.input_tokens").Int())
+	assert.EqualValues(t, 9, gjson.Get(recorder.Body.String(), "usage.output_tokens").Int())
+	assert.EqualValues(t, 110, gjson.Get(recorder.Body.String(), "usage.total_tokens").Int())
 }
 
 func TestOaiResponsesHandlerPreservesInputTokenDetailsForBilling(t *testing.T) {

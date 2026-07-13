@@ -129,7 +129,7 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			usage.CompletionTokens = baiduResponse.Usage.TotalTokens - baiduResponse.Usage.PromptTokens
 		}
 		response := streamResponseBaidu2OpenAI(&baiduResponse)
-		err = helper.ObjectData(c, response)
+		err = helper.ObjectDataWithScaledUsage(c, info, types.RelayFormatOpenAI, response)
 		if err != nil {
 			common.SysLog("error sending stream response: " + err.Error())
 		}
@@ -158,6 +158,12 @@ func baiduHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
+	if helper.ShouldScaleResponseUsage(info) {
+		jsonResponse, err = helper.PatchResponseUsageJSON(jsonResponse, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+		}
+	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, err = c.Writer.Write(jsonResponse)
@@ -182,6 +188,12 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	jsonResponse, err := json.Marshal(fullTextResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		jsonResponse, err = helper.PatchResponseUsageJSON(jsonResponse, types.RelayFormatEmbedding, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+		}
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)

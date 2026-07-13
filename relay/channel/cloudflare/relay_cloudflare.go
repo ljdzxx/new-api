@@ -62,7 +62,7 @@ func cfStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 		}
 		response.Id = id
 		response.Model = info.UpstreamModelName
-		err = helper.ObjectData(c, response)
+		err = helper.ObjectDataWithScaledUsage(c, info, types.RelayFormatOpenAI, response)
 		if isFirst {
 			isFirst = false
 			info.FirstResponseTime = time.Now()
@@ -78,7 +78,7 @@ func cfStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	usage := service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens())
 	if info.ShouldIncludeUsage {
 		response := helper.GenerateFinalUsageResponse(id, info.StartTime.Unix(), info.UpstreamModelName, *usage)
-		err := helper.ObjectData(c, response)
+		err := helper.ObjectDataWithScaledUsage(c, info, types.RelayFormatOpenAI, response)
 		if err != nil {
 			logger.LogError(c, "error_rendering_final_usage_response: "+err.Error())
 		}
@@ -112,6 +112,12 @@ func cfHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response)
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		jsonResponse, err = helper.PatchResponseUsageJSON(jsonResponse, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+		}
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)

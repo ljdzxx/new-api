@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
@@ -62,6 +63,9 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 	rerankResponse := dto.RerankResponse{
 		Results: aliResponse.Output.Results,
 		Usage:   usage,
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		rerankResponse.Usage = *helper.ScaleOpenAIUsageForResponse(&usage, helper.ResponseUsageRatio(info))
 	}
 
 	jsonResponse, err := json.Marshal(rerankResponse)

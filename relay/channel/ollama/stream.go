@@ -288,6 +288,12 @@ func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		Usage: *usage,
 	}
 	out, _ := common.Marshal(full)
+	if helper.ShouldScaleResponseUsage(info) {
+		out, err = helper.PatchResponseUsageJSON(out, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
 	service.IOCopyBytesGracefully(c, resp, out)
 	return usage, nil
 }

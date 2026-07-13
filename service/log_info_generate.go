@@ -151,6 +151,10 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
+	adminInfo["response_usage_scaled"] = relayhelper.ShouldScaleResponseUsage(relayInfo)
+	if relayhelper.ShouldScaleResponseUsage(relayInfo) {
+		adminInfo["response_usage_scale_ratio"] = relayhelper.ResponseUsageRatio(relayInfo)
+	}
 
 	other["admin_info"] = adminInfo
 	appendRequestPath(ctx, relayInfo, other)

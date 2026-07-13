@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
@@ -32,6 +33,9 @@ func siliconflowRerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	rerankResp := &dto.RerankResponse{
 		Results: siliconflowResp.Results,
 		Usage:   *usage,
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		rerankResp.Usage = *helper.ScaleOpenAIUsageForResponse(usage, helper.ResponseUsageRatio(info))
 	}
 
 	jsonResponse, err := json.Marshal(rerankResp)

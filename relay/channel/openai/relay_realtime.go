@@ -188,7 +188,15 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					localUsage.OutputTokenDetails.AudioTokens += audioToken
 				}
 
-				err = helper.WssString(c, clientConn, string(message))
+				clientMessage := message
+				if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone && helper.ShouldScaleResponseUsage(info) {
+					clientMessage, err = helper.PatchResponseUsageJSON(message, types.RelayFormatOpenAIRealtime, helper.ResponseUsageRatio(info))
+					if err != nil {
+						errChan <- fmt.Errorf("error scaling realtime response usage: %v", err)
+						return
+					}
+				}
+				err = helper.WssString(c, clientConn, string(clientMessage))
 				if err != nil {
 					errChan <- fmt.Errorf("error writing to client: %v", err)
 					return

@@ -4255,5 +4255,8 @@
     "附加费用小计": "Additional charges subtotal",
     "结算前小计": "Subtotal before settlement multipliers",
     "提示词扩展倍率": "Prompt extension multiplier"
-  }
+  },
+  "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Enable request body pass-through. When enabled, final response tokens may differ from billing tokens.",
+  "缩放API响应usage": "Scale API response usage",
+  "开启后，API响应中的token会按系统、用户和渠道全局模型倍率缩放；透传请求体渠道除外": "When enabled, tokens in API responses are scaled by the system, user, and channel global model ratios; request-body pass-through channels are excluded."
 }

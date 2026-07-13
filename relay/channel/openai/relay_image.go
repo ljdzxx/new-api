@@ -59,7 +59,14 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		responseBody = rewrittenBody
 	}
 	service.MarkImageRecordSuccess(c, responseBody)
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	clientBody := responseBody
+	if helper.ShouldScaleResponseUsage(info) {
+		clientBody, err = helper.PatchResponseUsageJSON(clientBody, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
+	service.IOCopyBytesGracefully(c, resp, clientBody)
 
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)

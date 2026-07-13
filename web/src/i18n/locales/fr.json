@@ -4194,5 +4194,8 @@
     "附加费用小计": "Sous-total des frais supplémentaires",
     "结算前小计": "Sous-total avant multiplicateurs de règlement",
     "提示词扩展倍率": "Multiplicateur d’extension du prompt"
-  }
+  },
+  "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Active la transmission directe du corps de requête. Une fois activée, les tokens de la réponse finale peuvent différer des tokens facturés.",
+  "缩放API响应usage": "Mettre à l’échelle l’usage de la réponse API",
+  "开启后，API响应中的token会按系统、用户和渠道全局模型倍率缩放；透传请求体渠道除外": "Une fois activée, les tokens des réponses API sont mis à l’échelle selon les ratios globaux du système, de l’utilisateur et du canal ; les canaux avec transmission directe du corps sont exclus."
 }

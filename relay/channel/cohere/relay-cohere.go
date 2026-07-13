@@ -208,6 +208,12 @@ func cohereHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
+	if helper.ShouldScaleResponseUsage(info) {
+		jsonResponse, err = helper.PatchResponseUsageJSON(jsonResponse, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, _ = c.Writer.Write(jsonResponse)
@@ -239,6 +245,9 @@ func cohereRerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	var rerankResp dto.RerankResponse
 	rerankResp.Results = cohereResp.Results
 	rerankResp.Usage = usage
+	if helper.ShouldScaleResponseUsage(info) {
+		rerankResp.Usage = *helper.ScaleOpenAIUsageForResponse(&usage, helper.ResponseUsageRatio(info))
+	}
 
 	jsonResponse, err := json.Marshal(rerankResp)
 	if err != nil {

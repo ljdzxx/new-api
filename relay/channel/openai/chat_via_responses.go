@@ -86,6 +86,12 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 	}
 
+	if helper.ShouldScaleResponseUsage(info) {
+		responseBody, err = helper.PatchResponseUsageJSON(responseBody, info.RelayFormat, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 	return usage, nil
 }
@@ -528,7 +534,11 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		}
 	}
 	if info.RelayFormat == types.RelayFormatOpenAI && info.ShouldIncludeUsage && usage != nil {
-		if err := helper.ObjectData(c, helper.GenerateFinalUsageResponse(responseId, createAt, model, *usage)); err != nil {
+		clientUsage := usage
+		if helper.ShouldScaleResponseUsage(info) {
+			clientUsage = helper.ScaleOpenAIUsageForResponse(usage, helper.ResponseUsageRatio(info))
+		}
+		if err := helper.ObjectData(c, helper.GenerateFinalUsageResponse(responseId, createAt, model, *clientUsage)); err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 		}
 	}

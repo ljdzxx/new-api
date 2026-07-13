@@ -68,6 +68,7 @@ const chatCompletionsToResponsesPolicyAllChannelsExample = JSON.stringify(
 
 const defaultGlobalSettingInputs = {
   'global.pass_through_request_enabled': false,
+  'global.response_usage_scale_enabled': true,
   'global.thinking_model_blacklist': '[]',
   'global.chat_completions_to_responses_policy': '{}',
   'general_setting.ping_interval_enabled': false,
@@ -201,6 +202,21 @@ export default function SettingGlobalModel(props) {
                   }
                   extraText={t(
                     '开启后，所有请求将直接透传给上游，不会进行任何处理（重定向和渠道适配也将失效）,请谨慎开启',
+                  )}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  label={t('缩放API响应usage')}
+                  field={'global.response_usage_scale_enabled'}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'global.response_usage_scale_enabled': value,
+                    })
+                  }
+                  extraText={t(
+                    '开启后，API响应中的token会按系统、用户和渠道全局模型倍率缩放；透传请求体渠道除外',
                   )}
                 />
               </Col>

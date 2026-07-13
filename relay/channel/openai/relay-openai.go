@@ -23,6 +23,13 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	if data == "" {
 		return nil
 	}
+	if helper.ShouldScaleResponseUsage(info) {
+		patched, err := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return err
+		}
+		data = string(patched)
+	}
 
 	if !forceFormat && !thinkToContent {
 		return helper.StringData(c, data)
@@ -292,6 +299,12 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		responseBody = geminiRespStr
 	}
 
+	if helper.ShouldScaleResponseUsage(info) {
+		responseBody, err = helper.PatchResponseUsageJSON(responseBody, info.RelayFormat, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &simpleResponse.Usage, nil

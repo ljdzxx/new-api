@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel/xinference"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
 
@@ -70,6 +71,10 @@ func RerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	c.Writer.Header().Set("Content-Type", "application/json")
-	c.JSON(http.StatusOK, jinaResp)
+	clientResp := jinaResp
+	if helper.ShouldScaleResponseUsage(info) {
+		clientResp.Usage = *helper.ScaleOpenAIUsageForResponse(&jinaResp.Usage, helper.ResponseUsageRatio(info))
+	}
+	c.JSON(http.StatusOK, clientResp)
 	return &jinaResp.Usage, nil
 }

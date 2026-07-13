@@ -40,6 +40,13 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		c.Set("image_generation_call_size", responsesResponse.GetSize())
 	}
 
+	// Only the client copy is scaled. responsesResponse remains raw for billing.
+	if helper.ShouldScaleResponseUsage(info) {
+		responseBody, err = helper.PatchResponseUsageJSON(responseBody, types.RelayFormatOpenAIResponses, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
@@ -87,7 +94,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
-			sendResponsesStreamData(c, streamResponse, data)
+			clientData := data
+			if helper.ShouldScaleResponseUsage(info) {
+				patched, patchErr := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatOpenAIResponses, helper.ResponseUsageRatio(info))
+				if patchErr != nil {
+					logger.LogError(c, "failed to scale responses stream usage: "+patchErr.Error())
+					return false
+				}
+				clientData = string(patched)
+			}
+			sendResponsesStreamData(c, streamResponse, clientData)
 			switch streamResponse.Type {
 			case "response.completed":
 				completed = true

@@ -66,6 +66,12 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	return nil
 }
 
+func ClaudeDataBytes(c *gin.Context, eventType string, jsonData []byte) error {
+	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", eventType)})
+	c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+	return FlushWriter(c)
+}
+
 func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})

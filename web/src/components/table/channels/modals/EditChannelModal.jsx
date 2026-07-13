@@ -4338,7 +4338,9 @@ const EditChannelModal = (props) => {
                           value,
                         )
                       }
-                      extraText={t('启用请求体透传功能')}
+                      extraText={t(
+                        '启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致',
+                      )}
                     />
 
                     <Form.Input

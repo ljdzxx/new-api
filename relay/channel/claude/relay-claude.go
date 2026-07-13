@@ -923,6 +923,13 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 				data = patchClaudeMessageDeltaUsageData(data, buildMessageDeltaPatchUsage(&claudeResponse, claudeInfo))
 			}
 		}
+		if helper.ShouldScaleResponseUsage(info) {
+			patched, patchErr := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatClaude, helper.ResponseUsageRatio(info))
+			if patchErr != nil {
+				return types.NewError(patchErr, types.ErrorCodeBadResponseBody)
+			}
+			data = string(patched)
+		}
 		helper.ClaudeChunkData(c, claudeResponse, data)
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		response := StreamResponseClaude2OpenAI(&claudeResponse)
@@ -931,6 +938,9 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			return nil
 		}
 
+		if response != nil && response.Usage != nil && helper.ShouldScaleResponseUsage(info) {
+			response.Usage = helper.ScaleOpenAIUsageForResponse(response.Usage, helper.ResponseUsageRatio(info))
+		}
 		err = helper.ObjectData(c, response)
 		if err != nil {
 			logger.LogError(c, "send_stream_response_failed: "+err.Error())
@@ -968,6 +978,9 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
 		if info.ShouldIncludeUsage {
 			openAIUsage := buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
+			if helper.ShouldScaleResponseUsage(info) {
+				openAIUsage = *helper.ScaleOpenAIUsageForResponse(&openAIUsage, helper.ResponseUsageRatio(info))
+			}
 			response := helper.GenerateFinalUsageResponse(claudeInfo.ResponseId, claudeInfo.Created, info.UpstreamModelName, openAIUsage)
 			err := helper.ObjectData(c, response)
 			if err != nil {
@@ -1277,6 +1290,12 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	case types.RelayFormatClaude:
 		responseData = data
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		responseData, err = helper.PatchResponseUsageJSON(responseData, info.RelayFormat, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
 	}
 
 	if claudeResponse.Usage != nil && claudeResponse.Usage.ServerToolUse != nil && claudeResponse.Usage.ServerToolUse.WebSearchRequests > 0 {

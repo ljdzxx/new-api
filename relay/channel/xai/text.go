@@ -61,7 +61,7 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 
 		openaiResponse := streamResponseXAI2OpenAI(xAIResp, usage)
 		_ = openai.ProcessStreamResponse(*openaiResponse, &responseTextBuilder, &toolCount)
-		err = helper.ObjectData(c, openaiResponse)
+		err = helper.ObjectDataWithScaledUsage(c, info, types.RelayFormatOpenAI, openaiResponse)
 		if err != nil {
 			common.SysLog(err.Error())
 		}
@@ -99,6 +99,12 @@ func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response
 	encodeJson, err := common.Marshal(xaiResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		encodeJson, err = helper.PatchResponseUsageJSON(encodeJson, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
 	}
 
 	service.IOCopyBytesGracefully(c, resp, encodeJson)

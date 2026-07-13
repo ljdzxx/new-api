@@ -4713,5 +4713,8 @@
     "附加费用小计": "Tạm tính phí bổ sung",
     "结算前小计": "Tạm tính trước hệ số quyết toán",
     "提示词扩展倍率": "Hệ số mở rộng lời nhắc"
-  }
+  },
+  "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Bật truyền qua nội dung yêu cầu. Khi bật, token trong phản hồi cuối có thể khác với token tính phí.",
+  "缩放API响应usage": "Điều chỉnh usage trong phản hồi API",
+  "开启后，API响应中的token会按系统、用户和渠道全局模型倍率缩放；透传请求体渠道除外": "Khi bật, token trong phản hồi API được điều chỉnh theo hệ số mô hình toàn cục của hệ thống, người dùng và kênh; các kênh truyền qua nội dung yêu cầu sẽ bị loại trừ."
 }

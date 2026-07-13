@@ -62,19 +62,23 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 	info.SetFirstResponseTime()
 	info.ShouldIncludeUsage = true
 	usage := mockTestUsage(c, info, responseText)
+	clientUsage := usage
+	if helper.ShouldScaleResponseUsage(info) {
+		clientUsage = *helper.ScaleOpenAIUsageForResponse(&usage, helper.ResponseUsageRatio(info))
+	}
 
 	var apiErr *types.NewAPIError
 	if info.IsStream {
 		if info.RelayFormat == types.RelayFormatOpenAI && info.RelayMode == relayconstant.RelayModeCompletions {
-			apiErr = mockTestCompletionsStream(c, info, usage, responseText)
+			apiErr = mockTestCompletionsStream(c, info, clientUsage, responseText)
 		} else {
 			switch info.RelayFormat {
 			case types.RelayFormatOpenAIResponses:
-				apiErr = mockTestResponsesStream(c, info, usage, responseText)
+				apiErr = mockTestResponsesStream(c, info, clientUsage, responseText)
 			case types.RelayFormatOpenAIResponsesCompaction:
-				apiErr = mockTestResponsesCompaction(c, info, usage, responseText)
+				apiErr = mockTestResponsesCompaction(c, info, clientUsage, responseText)
 			default:
-				apiErr = mockTestChatStream(c, info, usage, responseText)
+				apiErr = mockTestChatStream(c, info, clientUsage, responseText)
 			}
 		}
 		if apiErr == nil {
@@ -85,18 +89,18 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
-		c.JSON(http.StatusOK, service.ResponseOpenAI2Claude(mockTestOpenAIResponse(c, info, usage, responseText), info))
+		c.JSON(http.StatusOK, service.ResponseOpenAI2Claude(mockTestOpenAIResponse(c, info, clientUsage, responseText), info))
 	case types.RelayFormatGemini:
-		c.JSON(http.StatusOK, service.ResponseOpenAI2Gemini(mockTestOpenAIResponse(c, info, usage, responseText), info))
+		c.JSON(http.StatusOK, service.ResponseOpenAI2Gemini(mockTestOpenAIResponse(c, info, clientUsage, responseText), info))
 	case types.RelayFormatOpenAIResponses:
-		c.JSON(http.StatusOK, mockTestResponsesResponse(c, info, usage, responseText))
+		c.JSON(http.StatusOK, mockTestResponsesResponse(c, info, clientUsage, responseText))
 	case types.RelayFormatOpenAIResponsesCompaction:
-		apiErr = mockTestResponsesCompaction(c, info, usage, responseText)
+		apiErr = mockTestResponsesCompaction(c, info, clientUsage, responseText)
 	default:
 		if info.RelayMode == relayconstant.RelayModeCompletions {
-			c.JSON(http.StatusOK, mockTestCompletionsResponse(c, info, usage, responseText))
+			c.JSON(http.StatusOK, mockTestCompletionsResponse(c, info, clientUsage, responseText))
 		} else {
-			c.JSON(http.StatusOK, mockTestOpenAIResponse(c, info, usage, responseText))
+			c.JSON(http.StatusOK, mockTestOpenAIResponse(c, info, clientUsage, responseText))
 		}
 	}
 	if apiErr == nil {
@@ -227,7 +231,11 @@ func recordMockTestConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, usage
 	}
 
 	adminInfo := map[string]interface{}{
-		"use_channel": c.GetStringSlice("use_channel"),
+		"use_channel":           c.GetStringSlice("use_channel"),
+		"response_usage_scaled": helper.ShouldScaleResponseUsage(info),
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		adminInfo["response_usage_scale_ratio"] = helper.ResponseUsageRatio(info)
 	}
 	if common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
 		adminInfo["is_multi_key"] = true

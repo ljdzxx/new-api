@@ -119,8 +119,15 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError), nil
 	}
-	// 写入新的 response body
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	// 写出缩放后的客户端副本，后续仍从原始 responseBody 提取计费用量。
+	clientBody := responseBody
+	if helper.ShouldScaleResponseUsage(info) {
+		clientBody, err = helper.PatchResponseUsageJSON(clientBody, types.RelayFormatOpenAIAudio, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody), nil
+		}
+	}
+	service.IOCopyBytesGracefully(c, resp, clientBody)
 
 	var responseData struct {
 		Usage *dto.Usage `json:"usage"`

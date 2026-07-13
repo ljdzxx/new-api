@@ -44,7 +44,19 @@ func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 	}
 	claudeResponses := service.StreamResponseOpenAI2Claude(&streamResponse, info)
 	for _, resp := range claudeResponses {
-		helper.ClaudeData(c, *resp)
+		jsonData, err := common.Marshal(resp)
+		if err != nil {
+			return err
+		}
+		if helper.ShouldScaleResponseUsage(info) {
+			jsonData, err = helper.PatchResponseUsageJSON(jsonData, types.RelayFormatClaude, helper.ResponseUsageRatio(info))
+			if err != nil {
+				return err
+			}
+		}
+		if err := helper.ClaudeDataBytes(c, resp.Type, jsonData); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -67,6 +79,12 @@ func handleGeminiFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 	if err != nil {
 		logger.LogError(c, "failed to marshal gemini response: "+err.Error())
 		return err
+	}
+	if helper.ShouldScaleResponseUsage(info) {
+		geminiResponseStr, err = helper.PatchResponseUsageJSON(geminiResponseStr, types.RelayFormatGemini, helper.ResponseUsageRatio(info))
+		if err != nil {
+			return err
+		}
 	}
 
 	// send gemini format response
@@ -225,7 +243,11 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 	switch info.RelayFormat {
 	case types.RelayFormatOpenAI:
 		if info.ShouldIncludeUsage && !containStreamUsage {
-			response := helper.GenerateFinalUsageResponse(responseId, createAt, model, *usage)
+			clientUsage := usage
+			if helper.ShouldScaleResponseUsage(info) {
+				clientUsage = helper.ScaleOpenAIUsageForResponse(usage, helper.ResponseUsageRatio(info))
+			}
+			response := helper.GenerateFinalUsageResponse(responseId, createAt, model, *clientUsage)
 			response.SetSystemFingerprint(systemFingerprint)
 			helper.ObjectData(c, response)
 		}
@@ -242,7 +264,17 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 
 		claudeResponses := service.StreamResponseOpenAI2Claude(&streamResponse, info)
 		for _, resp := range claudeResponses {
-			_ = helper.ClaudeData(c, *resp)
+			jsonData, err := common.Marshal(resp)
+			if err != nil {
+				continue
+			}
+			if helper.ShouldScaleResponseUsage(info) {
+				jsonData, err = helper.PatchResponseUsageJSON(jsonData, types.RelayFormatClaude, helper.ResponseUsageRatio(info))
+				if err != nil {
+					continue
+				}
+			}
+			_ = helper.ClaudeDataBytes(c, resp.Type, jsonData)
 		}
 		info.ClaudeConvertInfo.Done = true
 
@@ -269,6 +301,13 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 		if err != nil {
 			common.SysLog("error marshalling gemini response: " + err.Error())
 			return
+		}
+		if helper.ShouldScaleResponseUsage(info) {
+			geminiResponseStr, err = helper.PatchResponseUsageJSON(geminiResponseStr, types.RelayFormatGemini, helper.ResponseUsageRatio(info))
+			if err != nil {
+				common.SysLog("error scaling gemini response usage: " + err.Error())
+				return
+			}
 		}
 
 		// 发送最终的 Gemini 响应
