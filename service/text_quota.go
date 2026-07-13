@@ -687,7 +687,8 @@ func observeTextQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	}
 	policy, ok := billing_policy.Resolve(relayInfo.OriginModelName)
 	if !ok {
-		billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, -1)
+		billing_policy.ObserveShadowSettlementError(relayInfo.OriginModelName)
+		logger.LogWarn(ctx, "shadow final billing policy missing for model "+relayInfo.OriginModelName)
 		return
 	}
 	inputTotal := int64(relayInfo.GetEstimatePromptTokens())
@@ -701,7 +702,7 @@ func observeTextQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	}
 	values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: inputTotal, OutputTotalTokens: outputTotal})
 	if err != nil {
-		billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, -1)
+		billing_policy.ObserveShadowSettlementError(relayInfo.OriginModelName)
 		logger.LogWarn(ctx, "shadow final billing policy invalid: "+err.Error())
 		return
 	}
@@ -723,7 +724,7 @@ func observeTextQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 	shadowSummary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 	relayInfo.PriceData = originalPriceData
 	relayInfo.QuotaClamp = originalClamp
-	billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, shadowSummary.Quota)
+	billing_policy.ObserveShadowSettlement(relayInfo.OriginModelName, legacyQuota, shadowSummary.Quota)
 	if legacyQuota != shadowSummary.Quota {
 		logger.LogWarn(ctx, fmt.Sprintf("shadow final billing mismatch: model=%s legacy=%d policy=%d", relayInfo.OriginModelName, legacyQuota, shadowSummary.Quota))
 	}

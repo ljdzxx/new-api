@@ -118,6 +118,12 @@ export default function BillingPolicyManager({
 
   const config = state?.config;
   const shadow = state?.shadow;
+  const preConsumeShadow = shadow?.pre_consume;
+  const settlementShadow = shadow?.settlement;
+  const shadowHasBlockingIssues =
+    (shadow?.errors || 0) > 0 || (settlementShadow?.mismatches || 0) > 0;
+  const shadowReady =
+    (settlementShadow?.observations || 0) > 0 && !shadowHasBlockingIssues;
   const openPolicyEditor = (modelName) => {
     if (!config) {
       showWarning(t('计费策略正在加载，请稍后重试'));
@@ -214,11 +220,7 @@ export default function BillingPolicyManager({
             </Button>
             <Button
               loading={loading}
-              disabled={
-                config?.state !== 'shadow' ||
-                !shadow?.observations ||
-                shadow?.mismatches > 0
-              }
+              disabled={config?.state !== 'shadow' || !shadowReady}
               onClick={() => runAction('prepare')}
             >
               {t('冻结并准备切换')}
@@ -245,8 +247,14 @@ export default function BillingPolicyManager({
         {config?.state === 'shadow' && (
           <Banner
             className='mt-4'
-            type={shadow?.mismatches ? 'danger' : 'info'}
-            description={`${t('影子观测')} ${shadow?.observations || 0} · ${t('一致')} ${shadow?.matches || 0} · ${t('差异')} ${shadow?.mismatches || 0}`}
+            type={
+              shadowHasBlockingIssues
+                ? 'danger'
+                : preConsumeShadow?.mismatches
+                  ? 'warning'
+                  : 'info'
+            }
+            description={`${t('结算观测')} ${settlementShadow?.observations || 0} · ${t('一致')} ${settlementShadow?.matches || 0} · ${t('差异')} ${settlementShadow?.mismatches || 0} | ${t('预扣观测')} ${preConsumeShadow?.observations || 0} · ${t('一致')} ${preConsumeShadow?.matches || 0} · ${t('差异')} ${preConsumeShadow?.mismatches || 0} | ${t('计算错误')} ${shadow?.errors || 0}`}
           />
         )}
         {preview && (

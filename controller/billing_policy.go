@@ -118,8 +118,8 @@ func PrepareBillingPolicySwitch(c *gin.Context) {
 		return
 	}
 	stats := billing_policy.GetShadowStats()
-	if stats.Observations == 0 || stats.Mismatches != 0 {
-		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "shadow verification has no observations or still contains mismatches", "data": stats})
+	if !billing_policy.ShadowReadyForSwitch(stats) {
+		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "shadow verification requires settlement observations with no settlement mismatches or calculation errors", "data": stats})
 		return
 	}
 	checksum := billing_policy.SourceChecksum(billing_policy.LegacySourceValues())

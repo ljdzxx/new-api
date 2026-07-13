@@ -483,12 +483,13 @@ func observeAudioQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	}
 	policy, ok := billing_policy.Resolve(relayInfo.OriginModelName)
 	if !ok {
-		billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, -1)
+		billing_policy.ObserveShadowSettlementError(relayInfo.OriginModelName)
+		logger.LogWarn(ctx, "shadow audio billing policy missing for model "+relayInfo.OriginModelName)
 		return
 	}
 	values, _, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{InputTotalTokens: inputTokens, OutputTotalTokens: outputTokens})
 	if err != nil {
-		billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, -1)
+		billing_policy.ObserveShadowSettlementError(relayInfo.OriginModelName)
 		logger.LogWarn(ctx, "shadow audio billing policy invalid: "+err.Error())
 		return
 	}
@@ -500,7 +501,7 @@ func observeAudioQuotaShadow(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	quotaInfo.AudioCompletionRatio = values.AudioCompletionRatio
 	quotaInfo.UseResolvedRatios = true
 	policyQuota, _ := calculateAudioQuota(quotaInfo)
-	billing_policy.ObserveShadow(relayInfo.OriginModelName, legacyQuota, policyQuota)
+	billing_policy.ObserveShadowSettlement(relayInfo.OriginModelName, legacyQuota, policyQuota)
 	if legacyQuota != policyQuota {
 		logger.LogWarn(ctx, fmt.Sprintf("shadow audio billing mismatch: model=%s legacy=%d policy=%d", relayInfo.OriginModelName, legacyQuota, policyQuota))
 	}

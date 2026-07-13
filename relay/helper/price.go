@@ -437,7 +437,7 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 	}
 	policy, ok := billing_policy.Resolve(info.OriginModelName)
 	if !ok {
-		billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
+		billing_policy.ObserveShadowPreConsumeError(info.OriginModelName)
 		logger.LogWarn(c, "shadow billing policy missing for model "+info.OriginModelName)
 		return
 	}
@@ -449,7 +449,7 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 		InputTotalTokens: int64(promptTokens), OutputTotalTokens: int64(estimatedOutputTokens),
 	})
 	if err != nil {
-		billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
+		billing_policy.ObserveShadowPreConsumeError(info.OriginModelName)
 		logger.LogWarn(c, "shadow billing policy invalid for model "+info.OriginModelName+": "+err.Error())
 		return
 	}
@@ -475,13 +475,13 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 			OutputTokens:          int64(ScaleTokensByGlobalModelRatio(estimatedOutputTokens, legacy.GlobalModelRatio)),
 		}, billingPolicyRequestContext(c))
 		if calculationErr != nil {
-			billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
+			billing_policy.ObserveShadowPreConsumeError(info.OriginModelName)
 			logger.LogWarn(c, "shadow billing policy pre-consume calculation failed: "+calculationErr.Error())
 			return
 		}
 		policyCost, parseErr := decimal.NewFromString(calculation.TotalUSD)
 		if parseErr != nil {
-			billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, -1)
+			billing_policy.ObserveShadowPreConsumeError(info.OriginModelName)
 			logger.LogWarn(c, "shadow billing policy pre-consume amount invalid: "+parseErr.Error())
 			return
 		}
@@ -492,7 +492,7 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 	if legacy.FreeModel {
 		quota = 0
 	}
-	billing_policy.ObserveShadow(info.OriginModelName, legacy.QuotaToPreConsume, quota)
+	billing_policy.ObserveShadowPreConsume(info.OriginModelName, legacy.QuotaToPreConsume, quota)
 	if quota != legacy.QuotaToPreConsume {
 		logger.LogWarn(c, fmt.Sprintf("shadow billing pre-consume mismatch: model=%s legacy=%d policy=%d", info.OriginModelName, legacy.QuotaToPreConsume, quota))
 	}
@@ -584,18 +584,22 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		priceData.SetPolicyAdjustmentMultiplier(policyAdjustmentMultiplier)
 	}
 	if billing_policy.IsShadow() {
-		policyQuota := -1
-		if policy, ok := billing_policy.Resolve(info.OriginModelName); ok {
-			if values, err := billing_policy.ToLegacyValues(policy); err == nil && values.UsePrice {
-				policyQuota = common.QuotaFromFloat(values.ModelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
-				if freeModel {
-					policyQuota = 0
-				}
+		policy, ok := billing_policy.Resolve(info.OriginModelName)
+		if !ok {
+			billing_policy.ObserveShadowSettlementError(info.OriginModelName)
+			logger.LogWarn(c, "shadow per-call billing policy missing for model "+info.OriginModelName)
+		} else if values, err := billing_policy.ToLegacyValues(policy); err != nil || !values.UsePrice {
+			billing_policy.ObserveShadowSettlementError(info.OriginModelName)
+			logger.LogWarn(c, "shadow per-call billing policy invalid for model "+info.OriginModelName)
+		} else {
+			policyQuota := common.QuotaFromFloat(values.ModelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+			if freeModel {
+				policyQuota = 0
 			}
-		}
-		billing_policy.ObserveShadow(info.OriginModelName, quota, policyQuota)
-		if quota != policyQuota {
-			logger.LogWarn(c, fmt.Sprintf("shadow per-call billing mismatch: model=%s legacy=%d policy=%d", info.OriginModelName, quota, policyQuota))
+			billing_policy.ObserveShadowSettlement(info.OriginModelName, quota, policyQuota)
+			if quota != policyQuota {
+				logger.LogWarn(c, fmt.Sprintf("shadow per-call billing mismatch: model=%s legacy=%d policy=%d", info.OriginModelName, quota, policyQuota))
+			}
 		}
 	}
 	if billing_policy.IsActive() && common.DebugTraceEnabledForContext(c) {
