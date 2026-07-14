@@ -47,6 +47,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
+const MAX_ANNOUNCEMENT_CONTENT_LENGTH = 20000;
 
 const SettingsAnnouncements = ({ options, refresh }) => {
   const { t } = useTranslation();
@@ -536,7 +537,7 @@ const SettingsAnnouncements = ({ options, refresh }) => {
             field='content'
             label={t('公告内容')}
             placeholder={t('请输入公告内容（支持 Markdown/HTML）')}
-            maxCount={500}
+            maxCount={MAX_ANNOUNCEMENT_CONTENT_LENGTH}
             rows={3}
             rules={[{ required: true, message: t('请输入公告内容') }]}
             onChange={(value) =>
@@ -619,7 +620,7 @@ const SettingsAnnouncements = ({ options, refresh }) => {
         <TextArea
           value={announcementForm.content}
           placeholder={t('请输入公告内容（支持 Markdown/HTML）')}
-          maxCount={500}
+          maxCount={MAX_ANNOUNCEMENT_CONTENT_LENGTH}
           rows={15}
           style={{ width: '100%' }}
           onChange={(value) =>

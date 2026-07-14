@@ -29,29 +29,13 @@ import {
 import { useTranslation } from 'react-i18next';
 import { API } from '../../helpers/api';
 import { showError, getRelativeTime } from '../../helpers/utils';
-import { marked } from 'marked';
+import { renderRichContent } from '../../helpers/richContent';
 import {
   IllustrationNoContent,
   IllustrationNoContentDark,
 } from '@douyinfe/semi-illustrations';
 import { StatusContext } from '../../context/Status';
 import { Bell, Megaphone } from 'lucide-react';
-
-const htmlTagPattern = /^<(?:!DOCTYPE|!--|\/?[a-zA-Z][\w:-]*)(?:\s[^>]*)?>/i;
-
-const renderRichContent = (content) => {
-  if (typeof content !== 'string') return '';
-  const normalized = content.replace(/\r\n?/g, '\n');
-  const trimmed = normalized.trim();
-  if (!trimmed) return '';
-
-  // If it starts like HTML (even if user pasted with indentation), render as raw HTML.
-  // Otherwise, treat it as Markdown.
-  if (htmlTagPattern.test(trimmed)) {
-    return trimmed;
-  }
-  return marked.parse(normalized);
-};
 
 const NoticeModal = ({
   visible,
