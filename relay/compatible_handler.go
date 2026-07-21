@@ -99,12 +99,37 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		if common.DebugEnabled {
-			if debugBytes, bErr := storage.Bytes(); bErr == nil {
-				println("requestBody: ", string(debugBytes))
+		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
+			jsonData, readErr := storage.Bytes()
+			if readErr != nil {
+				return types.NewError(readErr, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 			}
+			jsonData, removed, stripErr := relaycommon.StripImageGenerationTool(jsonData)
+			if stripErr != nil {
+				return types.NewError(stripErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			if common.DebugEnabled {
+				println("requestBody: ", string(jsonData))
+			}
+			if removed > 0 {
+				body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
+				if bodyErr != nil {
+					return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+				}
+				defer closer.Close()
+				info.UpstreamRequestBodySize = size
+				requestBody = body
+			} else {
+				requestBody = common.ReaderOnly(storage)
+			}
+		} else {
+			if common.DebugEnabled {
+				if debugBytes, bErr := storage.Bytes(); bErr == nil {
+					println("requestBody: ", string(debugBytes))
+				}
+			}
+			requestBody = common.ReaderOnly(storage)
 		}
-		requestBody = common.ReaderOnly(storage)
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIRequest(c, info, request)
 		if err != nil {
@@ -170,6 +195,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
+			}
+		}
+		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
+			jsonData, _, err = relaycommon.StripImageGenerationTool(jsonData)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 		}
 

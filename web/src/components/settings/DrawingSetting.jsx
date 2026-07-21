@@ -24,6 +24,7 @@ import { API, showError, toBoolean } from '../../helpers';
 
 const defaultDrawingInputs = {
   DrawingEnabled: false,
+  DisableImageGenerationOnNonImageEndpoints: true,
   MjNotifyEnabled: false,
   MjAccountFilterEnabled: false,
   MjForwardUrlEnabled: false,

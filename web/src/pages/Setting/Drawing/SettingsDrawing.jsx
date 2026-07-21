@@ -30,6 +30,7 @@ import { useTranslation } from 'react-i18next';
 
 const defaultDrawingInputs = {
   DrawingEnabled: false,
+  DisableImageGenerationOnNonImageEndpoints: true,
   MjNotifyEnabled: false,
   MjAccountFilterEnabled: false,
   MjForwardUrlEnabled: false,
@@ -143,6 +144,24 @@ export default function SettingsDrawing(props) {
                     setInputs({
                       ...inputs,
                       DrawingEnabled: value,
+                    });
+                  }}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'DisableImageGenerationOnNonImageEndpoints'}
+                  label={t('禁用非图片端点注入图片生成')}
+                  extraText={t(
+                    '开启后，非图片生成端点的请求不会向上游发送 image_generation 工具。',
+                  )}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={(value) => {
+                    setInputs({
+                      ...inputs,
+                      DisableImageGenerationOnNonImageEndpoints: value,
                     });
                   }}
                 />

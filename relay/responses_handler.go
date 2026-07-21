@@ -104,11 +104,18 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 		}
+		removedImageTools := 0
+		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
+			outboundRequestBody, removedImageTools, err = relaycommon.StripImageGenerationTool(outboundRequestBody)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
 		sanitizedBody, removedIDs, err := relaycommon.SanitizeInvalidResponsesItemIDs(outboundRequestBody)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
-		if removedIDs == 0 {
+		if removedIDs == 0 && removedImageTools == 0 {
 			info.UpstreamRequestBodySize = storage.Size()
 			requestBody = common.ReaderOnly(storage)
 		} else {
@@ -120,17 +127,19 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			defer closer.Close()
 			info.UpstreamRequestBodySize = size
 			requestBody = body
-			logger.LogWarn(c, fmt.Sprintf(
-				"[responses item_id sanitize] removed=%d passthrough=true request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q",
-				removedIDs,
-				c.Request.URL.Path,
-				info.RelayMode,
-				info.ChannelId,
-				info.ChannelType,
-				info.ApiType,
-				info.OriginModelName,
-				info.UpstreamModelName,
-			))
+			if removedIDs > 0 {
+				logger.LogWarn(c, fmt.Sprintf(
+					"[responses item_id sanitize] removed=%d passthrough=true request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q",
+					removedIDs,
+					c.Request.URL.Path,
+					info.RelayMode,
+					info.ChannelId,
+					info.ChannelType,
+					info.ApiType,
+					info.OriginModelName,
+					info.UpstreamModelName,
+				))
+			}
 		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
@@ -154,6 +163,12 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)
 			if err != nil {
 				return newAPIErrorFromParamOverride(err)
+			}
+		}
+		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
+			jsonData, _, err = relaycommon.StripImageGenerationTool(jsonData)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 		}
 
