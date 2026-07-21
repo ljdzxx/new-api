@@ -297,7 +297,7 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse) (*
 			arguments, _ := common.Marshal(toolCall.Function.Arguments)
 			output = append(output, dto.ResponsesOutput{
 				Type:      "function_call",
-				ID:        toolCall.ID,
+				ID:        responsesFunctionCallItemID(toolCall.ID),
 				CallId:    toolCall.ID,
 				Status:    "completed",
 				Name:      toolCall.Function.Name,
@@ -329,6 +329,18 @@ func ChatCompletionsResponseToResponsesResponse(resp *dto.OpenAITextResponse) (*
 		Usage:     &usage,
 	}
 	return out, &usage, nil
+}
+
+func responsesFunctionCallItemID(callID string) string {
+	callID = strings.TrimSpace(callID)
+	if strings.HasPrefix(callID, "fc") {
+		return callID
+	}
+	suffix := strings.TrimPrefix(callID, "call_")
+	if suffix == "" {
+		suffix = common.GetUUID()
+	}
+	return "fc_" + suffix
 }
 
 func normalizeResponseCreatedAt(created any) int {

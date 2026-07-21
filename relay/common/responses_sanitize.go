@@ -8,6 +8,70 @@ import (
 
 const minLikelyEncryptedContentLen = 32
 
+var responsesItemIDPrefixes = map[string]string{
+	"message":          "msg",
+	"reasoning":        "rs",
+	"function_call":    "fc",
+	"custom_tool_call": "ctc",
+	"web_search_call":  "ws",
+}
+
+// SanitizeInvalidResponsesItemIDs removes replayed Responses item IDs whose
+// prefix does not match the item type. Some Responses-compatible providers
+// emit generic item_* IDs; Codex preserves those IDs in its history and strict
+// upstreams reject them on the next request. The call_id field is intentionally
+// preserved because it correlates tool calls with their outputs.
+func SanitizeInvalidResponsesItemIDs(jsonData []byte) ([]byte, int, error) {
+	var data map[string]any
+	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
+		return jsonData, 0, err
+	}
+
+	input, exists := data["input"]
+	if !exists {
+		return jsonData, 0, nil
+	}
+	items, ok := input.([]any)
+	if !ok {
+		return jsonData, 0, nil
+	}
+
+	removed := 0
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		itemType, _ := item["type"].(string)
+		if itemType == "" {
+			if _, hasRole := item["role"]; hasRole {
+				itemType = "message"
+			}
+		}
+		expectedPrefix, knownType := responsesItemIDPrefixes[itemType]
+		if !knownType {
+			continue
+		}
+
+		id, ok := item["id"].(string)
+		if !ok || id == "" || strings.HasPrefix(id, expectedPrefix) {
+			continue
+		}
+		delete(item, "id")
+		removed++
+	}
+
+	if removed == 0 {
+		return jsonData, 0, nil
+	}
+	sanitized, err := basecommon.Marshal(data)
+	if err != nil {
+		return jsonData, removed, err
+	}
+	return sanitized, removed, nil
+}
+
 // SanitizeInvalidResponsesEncryptedContent fixes plainly invalid encrypted_content
 // fields before forwarding Responses requests. Valid encrypted payloads are
 // opaque and should be long ASCII blobs; visible markdown/natural-language text

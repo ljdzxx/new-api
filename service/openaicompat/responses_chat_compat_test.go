@@ -115,3 +115,41 @@ func TestChatCompletionsResponseToResponsesResponse(t *testing.T) {
 		t.Fatalf("expected normalized usage input/output 10/5, got %d/%d", usage.InputTokens, usage.OutputTokens)
 	}
 }
+
+func TestChatCompletionsResponseToResponsesResponseUsesFunctionCallItemID(t *testing.T) {
+	message := dto.Message{Role: "assistant"}
+	message.SetToolCalls([]dto.ToolCallRequest{{
+		ID:   "call_weather",
+		Type: "function",
+		Function: dto.FunctionRequest{
+			Name:      "lookup_weather",
+			Arguments: `{"city":"Shanghai"}`,
+		},
+	}})
+	resp := &dto.OpenAITextResponse{
+		Id:    "chatcmpl-tools",
+		Model: "test-model",
+		Choices: []dto.OpenAITextResponseChoice{{
+			Index:   0,
+			Message: message,
+		}},
+	}
+
+	responsesResp, _, err := ChatCompletionsResponseToResponsesResponse(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(responsesResp.Output) != 2 {
+		t.Fatalf("output length = %d, want 2", len(responsesResp.Output))
+	}
+	call := responsesResp.Output[1]
+	if call.Type != "function_call" {
+		t.Fatalf("output type = %q, want function_call", call.Type)
+	}
+	if call.ID != "fc_weather" {
+		t.Fatalf("function item id = %q, want fc_weather", call.ID)
+	}
+	if call.CallId != "call_weather" {
+		t.Fatalf("function call_id = %q, want call_weather", call.CallId)
+	}
+}

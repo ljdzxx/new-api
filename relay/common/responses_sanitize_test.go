@@ -6,6 +6,72 @@ import (
 	basecommon "github.com/QuantumNous/new-api/common"
 )
 
+func TestSanitizeInvalidResponsesItemIDsRemovesMismatchedPrefixes(t *testing.T) {
+	input := []byte(`{
+		"input":[
+			{"type":"message","id":"item_message","role":"assistant","content":[]},
+			{"type":"custom_tool_call","id":"item_custom","call_id":"call_custom","name":"apply_patch","input":"patch"},
+			{"type":"function_call","id":"call_function","call_id":"call_function","name":"lookup","arguments":"{}"},
+			{"type":"reasoning","id":"item_reasoning","summary":[]},
+			{"type":"web_search_call","id":"item_search","status":"completed"},
+			{"role":"assistant","id":"item_implicit_message","content":[]}
+		]
+	}`)
+
+	out, removed, err := SanitizeInvalidResponsesItemIDs(input)
+	if err != nil {
+		t.Fatalf("SanitizeInvalidResponsesItemIDs returned error: %v", err)
+	}
+	if removed != 6 {
+		t.Fatalf("removed = %d, want 6", removed)
+	}
+
+	var payload map[string]any
+	if err := basecommon.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	items := payload["input"].([]any)
+	for i, rawItem := range items {
+		item := rawItem.(map[string]any)
+		if _, exists := item["id"]; exists {
+			t.Fatalf("input[%d] still has id: %#v", i, item)
+		}
+	}
+	customCall := items[1].(map[string]any)
+	if got := customCall["call_id"]; got != "call_custom" {
+		t.Fatalf("custom call_id = %v, want call_custom", got)
+	}
+	functionCall := items[2].(map[string]any)
+	if got := functionCall["call_id"]; got != "call_function" {
+		t.Fatalf("function call_id = %v, want call_function", got)
+	}
+}
+
+func TestSanitizeInvalidResponsesItemIDsPreservesValidAndUnknownItems(t *testing.T) {
+	input := []byte(`{
+		"input":[
+			{"type":"message","id":"msg_valid","role":"assistant","content":[]},
+			{"type":"custom_tool_call","id":"ctc_valid","call_id":"call_custom","name":"apply_patch","input":"patch"},
+			{"type":"function_call","id":"fc_valid","call_id":"call_function","name":"lookup","arguments":"{}"},
+			{"type":"reasoning","id":"rs_valid","summary":[]},
+			{"type":"web_search_call","id":"ws_valid","status":"completed"},
+			{"type":"future_call","id":"item_unknown"}
+		],
+		"metadata":{"type":"message","id":"item_metadata"}
+	}`)
+
+	out, removed, err := SanitizeInvalidResponsesItemIDs(input)
+	if err != nil {
+		t.Fatalf("SanitizeInvalidResponsesItemIDs returned error: %v", err)
+	}
+	if removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
+	}
+	if string(out) != string(input) {
+		t.Fatalf("unchanged payload was rewritten")
+	}
+}
+
 func TestSanitizeInvalidResponsesEncryptedContentRemovesInvalidReasoningItem(t *testing.T) {
 	input := []byte(`{
 		"model":"gpt-5.5",
