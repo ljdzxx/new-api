@@ -122,6 +122,15 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		if shouldRejectImageGenerationModel(c.Request.URL.Path, modelRequest.Model) {
+			abortWithOpenAiMessage(
+				c,
+				http.StatusBadRequest,
+				i18n.T(c, i18n.MsgDistributorImageModelRequiresImageEndpoint, map[string]any{"Model": modelRequest.Model}),
+				types.ErrorCodeInvalidRequest,
+			)
+			return
+		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -280,6 +289,14 @@ func shouldRecordChannelAffinityAfterRelay(c *gin.Context, channel *model.Channe
 		return false
 	}
 	return !common.GetContextKeyBool(c, constant.ContextKeyChannelForwardedApplied)
+}
+
+func shouldRejectImageGenerationModel(path string, modelName string) bool {
+	if !common.DisableImageGenerationOnNonImageEndpoints || !common.IsImageGenerationModel(modelName) {
+		return false
+	}
+	relayMode := relayconstant.Path2RelayMode(path)
+	return relayMode != relayconstant.RelayModeImagesGenerations && relayMode != relayconstant.RelayModeImagesEdits
 }
 
 // getModelFromRequest 从请求中读取模型信息

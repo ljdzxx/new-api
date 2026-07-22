@@ -10,12 +10,12 @@ var (
 		"o4-mini-deep-research",
 	}
 	ImageGenerationModels = []string{
-		"dall-e-3",
-		"dall-e-2",
-		"gpt-image-1",
+		"dall-e-",
+		"gpt-image-",
 		"prefix:imagen-",
 		"flux-",
 		"flux.1-",
+		"grok-imagine-",
 	}
 	OpenAITextModels = []string{
 		"gpt-",
@@ -37,14 +37,22 @@ func IsOpenAIResponseOnlyModel(modelName string) bool {
 
 func IsImageGenerationModel(modelName string) bool {
 	modelName = strings.ToLower(modelName)
-	for _, m := range ImageGenerationModels {
-		if strings.Contains(modelName, m) {
-			return true
+
+	for _, rule := range ImageGenerationModels {
+		rule = strings.ToLower(rule)
+
+		if prefix, ok := strings.CutPrefix(rule, "prefix:"); ok {
+			if strings.HasPrefix(modelName, prefix) {
+				return true
+			}
+			continue
 		}
-		if strings.HasPrefix(m, "prefix:") && strings.HasPrefix(modelName, strings.TrimPrefix(m, "prefix:")) {
+
+		if strings.Contains(modelName, rule) {
 			return true
 		}
 	}
+
 	return false
 }
 

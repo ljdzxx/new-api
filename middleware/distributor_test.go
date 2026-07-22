@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -77,4 +79,50 @@ func TestSubscriptionUnsupportedGroupAbortUsesBadRequest(t *testing.T) {
 
 	require.Equal(t, "false", w.Header().Get("x-should-retry"))
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDistributeRejectsImageModelOnNonImageEndpoints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	original := common.DisableImageGenerationOnNonImageEndpoints
+	common.DisableImageGenerationOnNonImageEndpoints = true
+	t.Cleanup(func() {
+		common.DisableImageGenerationOnNonImageEndpoints = original
+	})
+
+	for _, path := range []string{"/v1/chat/completions", "/pg/chat/completions", "/v1/responses"} {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			nextCalled := false
+			router := gin.New()
+			router.POST(path, Distribute(), func(c *gin.Context) {
+				nextCalled = true
+			})
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"model":"gpt-image-2"}`))
+			req.Header.Set("Content-Type", "application/json")
+
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Equal(t, "false", w.Header().Get("x-should-retry"))
+			require.Contains(t, w.Body.String(), "gpt-image-2")
+			require.False(t, nextCalled)
+		})
+	}
+}
+
+func TestImageModelEndpointRestriction(t *testing.T) {
+	original := common.DisableImageGenerationOnNonImageEndpoints
+	t.Cleanup(func() {
+		common.DisableImageGenerationOnNonImageEndpoints = original
+	})
+
+	common.DisableImageGenerationOnNonImageEndpoints = true
+	require.True(t, shouldRejectImageGenerationModel("/v1/chat/completions", "gpt-image-2"))
+	require.False(t, shouldRejectImageGenerationModel("/v1/images/generations", "gpt-image-2"))
+	require.False(t, shouldRejectImageGenerationModel("/v1/images/edits", "gpt-image-2"))
+	require.False(t, shouldRejectImageGenerationModel("/v1/chat/completions", "gpt-4.1"))
+
+	common.DisableImageGenerationOnNonImageEndpoints = false
+	require.False(t, shouldRejectImageGenerationModel("/v1/chat/completions", "gpt-image-2"))
 }
