@@ -50,6 +50,7 @@ const ModelPage = lazy(() => import('./pages/Model'));
 const ModelDeploymentPage = lazy(() => import('./pages/ModelDeployment'));
 const Playground = lazy(() => import('./pages/Playground'));
 const ImageGeneration = lazy(() => import('./pages/ImageGeneration'));
+const ImageGenerationV2 = lazy(() => import('./pages/ImageGenerationV2'));
 const Subscription = lazy(() => import('./pages/Subscription'));
 const UserSubscriptions = lazy(() => import('./pages/UserSubscriptions'));
 const Order = lazy(() => import('./pages/Order'));
@@ -146,6 +147,10 @@ function App() {
         <Route
           path='/console/image-generation'
           element={withPrivateRoute(<ImageGeneration />)}
+        />
+        <Route
+          path='/console/image-generation-v2'
+          element={withPrivateRoute(<ImageGenerationV2 />)}
         />
         <Route
           path='/console/redemption'

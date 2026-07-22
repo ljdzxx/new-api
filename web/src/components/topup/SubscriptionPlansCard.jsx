@@ -503,7 +503,7 @@ const SubscriptionPlansCard = ({
             </Card>
           )}
           {/* Subscription plans skeleton */}
-          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full px-1'>
+          <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full px-1 content-start'>
             {[1, 2, 3].map((i) => (
               <Card
                 key={i}
@@ -695,7 +695,7 @@ const SubscriptionPlansCard = ({
 
           {/* Subscription plans */}
           {plans.length > 0 ? (
-            <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full px-1'>
+            <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full px-1 content-start'>
               {plans.map((p) => {
                 const plan = p?.plan;
                 const totalAmount = Number(plan?.total_amount || 0);
@@ -782,15 +782,15 @@ const SubscriptionPlansCard = ({
                 return (
                   <Card
                     key={plan?.id}
-                    className='!rounded-xl transition-all hover:shadow-lg w-full h-full'
+                    className='subscription-plan-card !rounded-xl transition-all hover:shadow-lg w-full h-full'
                     style={planVariantStyle}
                     bodyStyle={{ padding: 0 }}
                   >
                     <div
-                      className='h-1.5 w-full rounded-t-xl'
+                      className='h-1.5 w-full rounded-t-xl flex-shrink-0'
                       style={planAccentStyle}
                     />
-                    <div className='p-4 h-full flex flex-col'>
+                    <div className='p-4 flex flex-col flex-1 min-h-0'>
                       {/* Plan title */}
                       <div className='mb-3'>
                         <Typography.Title

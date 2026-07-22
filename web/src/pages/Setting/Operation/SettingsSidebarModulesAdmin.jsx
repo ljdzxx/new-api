@@ -44,6 +44,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       enabled: true,
       playground: true,
       image_generation: true,
+      image_generation_v2: true,
       chat: true,
     },
     console: {
@@ -112,6 +113,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         enabled: true,
         playground: true,
         image_generation: true,
+        image_generation_v2: true,
         chat: true,
       },
       console: {
@@ -203,6 +205,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             enabled: true,
             playground: true,
             image_generation: true,
+            image_generation_v2: true,
             chat: true,
           },
           console: {
@@ -256,6 +259,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'image_generation',
           title: t('图像生成'),
           description: t('调用图片生成接口'),
+        },
+        {
+          key: 'image_generation_v2',
+          title: t('图像生成-V2'),
+          description: t('跳转外部生图站点'),
         },
         { key: 'chat', title: t('聊天'), description: t('聊天会话管理') },
       ],

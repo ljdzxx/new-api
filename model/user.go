@@ -134,10 +134,11 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 
 	// 聊天区域 - 所有用户都可以访问
 	defaultConfig["chat"] = map[string]interface{}{
-		"enabled":          true,
-		"playground":       true,
-		"image_generation": true,
-		"chat":             true,
+		"enabled":             true,
+		"playground":          true,
+		"image_generation":    true,
+		"image_generation_v2": true,
+		"chat":                true,
 	}
 
 	// 控制台区域 - 所有用户都可以访问

@@ -30,6 +30,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     enabled: true,
     playground: true,
     image_generation: true,
+    image_generation_v2: true,
     chat: true,
   },
   console: {

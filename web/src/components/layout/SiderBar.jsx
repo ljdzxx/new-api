@@ -52,6 +52,7 @@ const routerMap = {
   deployment: '/console/deployment',
   playground: '/console/playground',
   image_generation: '/console/image-generation',
+  image_generation_v2: '/console/image-generation-v2',
   personal: '/console/personal',
   level: '/console/level',
   lottery_admin: '/console/lottery-admin',
@@ -246,6 +247,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('图像生成'),
         itemKey: 'image_generation',
         to: '/console/image-generation',
+      },
+      {
+        text: t('图像生成-V2'),
+        itemKey: 'image_generation_v2',
+        to: '/console/image-generation-v2',
       },
       {
         text: t('聊天'),

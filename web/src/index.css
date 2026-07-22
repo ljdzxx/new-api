@@ -472,6 +472,20 @@ html.dark .sbg-variant-green {
   font-size: 1.1em;
 }
 
+/* 订阅套餐卡片：卡片撑满网格行高时，主体同步拉伸，按钮固定底部 */
+.subscription-plan-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.subscription-plan-card > .semi-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+}
+
 /* 卡片内容容器通用样式 */
 .card-content-container {
   position: relative;
