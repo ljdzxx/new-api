@@ -443,7 +443,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
-		retryParam.MarkChannelFailed(channel.Id)
+		retryParam.MarkChannelFailed(channel.Id, channel.GetPriority())
 
 		if forceRetry, finalErr := shouldForceRetryForGlobalQuotaInsufficient(c, channel.Id, newAPIError); finalErr != nil {
 			newAPIError = finalErr
@@ -1336,7 +1336,7 @@ func RelayTask(c *gin.Context) {
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
-		retryParam.MarkChannelFailed(channel.Id)
+		retryParam.MarkChannelFailed(channel.Id, channel.GetPriority())
 
 		if forceRetry, finalErr := shouldForceRetryTaskForGlobalQuotaInsufficient(c, channel.Id, taskErr); finalErr != nil {
 			taskErr = finalErr

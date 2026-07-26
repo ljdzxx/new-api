@@ -24,6 +24,7 @@ type RetryParam struct {
 	retryCandidatesBuilt bool
 	retryCursor          int
 	failedChannels       map[int]struct{}
+	failedPriorities     map[int64]struct{}
 }
 
 type retryChannelCandidate struct {
@@ -60,7 +61,7 @@ func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
 }
 
-func (p *RetryParam) MarkChannelFailed(channelID int) {
+func (p *RetryParam) MarkChannelFailed(channelID int, priority int64) {
 	if channelID <= 0 {
 		return
 	}
@@ -68,6 +69,10 @@ func (p *RetryParam) MarkChannelFailed(channelID int) {
 		p.failedChannels = make(map[int]struct{})
 	}
 	p.failedChannels[channelID] = struct{}{}
+	if p.failedPriorities == nil {
+		p.failedPriorities = make(map[int64]struct{})
+	}
+	p.failedPriorities[priority] = struct{}{}
 }
 
 func (p *RetryParam) isFailedChannel(channelID int) bool {
@@ -76,6 +81,26 @@ func (p *RetryParam) isFailedChannel(channelID int) bool {
 	}
 	_, failed := p.failedChannels[channelID]
 	return failed
+}
+
+func (p *RetryParam) isFailedPriority(priority int64) bool {
+	if len(p.failedPriorities) == 0 {
+		return false
+	}
+	_, failed := p.failedPriorities[priority]
+	return failed
+}
+
+func (p *RetryParam) nextRetryCandidate() (retryChannelCandidate, bool) {
+	for p.retryCursor < len(p.retryCandidates) {
+		candidate := p.retryCandidates[p.retryCursor]
+		p.retryCursor++
+		if p.isFailedChannel(candidate.ChannelID) || p.isFailedPriority(candidate.Priority) {
+			continue
+		}
+		return candidate, true
+	}
+	return retryChannelCandidate{}, false
 }
 
 func getUserLevelAllowedChannelSet(ctx *gin.Context) map[string]struct{} {
@@ -164,17 +189,16 @@ func (p *RetryParam) buildRetryCandidates() error {
 
 // GetNextRetryChannel selects the next retry channel from a pre-built candidate list.
 // Candidate list is built once per request and sorted by priority (high -> low),
-// then retries walk the list in order while skipping channels already marked as failed.
+// then retries walk the list in order while skipping every priority level that
+// has already produced a failure.
 func GetNextRetryChannel(param *RetryParam) (*model.Channel, string, error) {
 	if err := param.buildRetryCandidates(); err != nil {
 		return nil, param.TokenGroup, err
 	}
-	for param.retryCursor < len(param.retryCandidates) {
-		candidate := param.retryCandidates[param.retryCursor]
-		param.retryCursor++
-
-		if param.isFailedChannel(candidate.ChannelID) {
-			continue
+	for {
+		candidate, ok := param.nextRetryCandidate()
+		if !ok {
+			break
 		}
 		channel, err := model.CacheGetChannel(candidate.ChannelID)
 		if err != nil || channel == nil {
