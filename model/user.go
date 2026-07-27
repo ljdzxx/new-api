@@ -818,6 +818,7 @@ func (user *User) Edit(updatePassword bool, updateQuota bool) error {
 		"username":                    newUser.Username,
 		"display_name":                newUser.DisplayName,
 		"group":                       newUser.Group,
+		"user_level_id":               newUser.UserLevelId,
 		"remark":                      newUser.Remark,
 		"global_model_ratio":          newUser.GlobalModelRatio,
 		"rate_limit_enabled":          newUser.RateLimitEnabled,

@@ -68,6 +68,7 @@ const EditUserModal = (props) => {
   const [addAmountLocal, setAddAmountLocal] = useState('');
   const isMobile = useIsMobile();
   const [groupOptions, setGroupOptions] = useState([]);
+  const [userLevelOptions, setUserLevelOptions] = useState([]);
   const [bindingModalVisible, setBindingModalVisible] = useState(false);
   const [updateQuota, setUpdateQuota] = useState(false);
   const formApiRef = useRef(null);
@@ -88,6 +89,7 @@ const EditUserModal = (props) => {
     quota: 0,
     global_model_ratio: 1,
     group: 'default',
+    user_level_id: 1,
     remark: '',
     rate_limit_enabled: false,
     rate_limit_duration_minutes: 1,
@@ -104,6 +106,28 @@ const EditUserModal = (props) => {
     }
   };
 
+  const fetchUserLevels = async () => {
+    try {
+      const res = await API.get('/api/user/self/user-level');
+      const levels = res.data?.data?.levels || [];
+      const configuredOptions = levels.map((level) => ({
+        label: `${level.level} (#${level.id})`,
+        value: level.id,
+      }));
+      setUserLevelOptions((options) => [
+        ...configuredOptions,
+        ...options.filter(
+          (option) =>
+            !configuredOptions.some(
+              (configured) => configured.value === option.value,
+            ),
+        ),
+      ]);
+    } catch (e) {
+      showError(e.message);
+    }
+  };
+
   const handleCancel = () => props.handleClose();
 
   const loadUser = async () => {
@@ -114,6 +138,21 @@ const EditUserModal = (props) => {
     if (success) {
       data.password = '';
       setUpdateQuota(false);
+      setUserLevelOptions((options) => {
+        if (
+          !data.user_level_id ||
+          options.some((option) => option.value === data.user_level_id)
+        ) {
+          return options;
+        }
+        return [
+          ...options,
+          {
+            label: `${t('当前等级')} (#${data.user_level_id})`,
+            value: data.user_level_id,
+          },
+        ];
+      });
       formApiRef.current?.setValues({ ...getInitValues(), ...data });
     } else {
       showError(message);
@@ -123,7 +162,10 @@ const EditUserModal = (props) => {
 
   useEffect(() => {
     loadUser();
-    if (userId) fetchGroups();
+    if (userId) {
+      fetchGroups();
+      fetchUserLevels();
+    }
     setBindingModalVisible(false);
   }, [props.editingUser.id]);
 
@@ -147,6 +189,9 @@ const EditUserModal = (props) => {
       payload.quota = parseInt(payload.quota) || 0;
     if (typeof payload.global_model_ratio === 'string') {
       payload.global_model_ratio = parseFloat(payload.global_model_ratio) || 0;
+    }
+    if (typeof payload.user_level_id === 'string') {
+      payload.user_level_id = parseInt(payload.user_level_id) || 0;
     }
     if (typeof payload.rate_limit_duration_minutes === 'string') {
       payload.rate_limit_duration_minutes =
@@ -330,15 +375,38 @@ const EditUserModal = (props) => {
                       </Col>
 
                       <Col span={24}>
+                        <Form.Select
+                          field='user_level_id'
+                          label={t('用户等级')}
+                          placeholder={t('请选择用户等级')}
+                          optionList={userLevelOptions}
+                          search
+                          rules={[
+                            { required: true, message: t('请选择用户等级') },
+                          ]}
+                          extraText={t(
+                            '管理员可手动调整；后续余额充值达到更高门槛时仍会自动升级',
+                          )}
+                        />
+                      </Col>
+
+                      <Col span={24}>
                         <Form.Slot label={t('编辑剩余额度')}>
-                          <Form.Switch
-                            noLabel
-                            field='update_quota_switch'
-                            checked={updateQuota}
-                            onChange={setUpdateQuota}
-                            checkedText='｜'
-                            uncheckedText='〇'
-                          />
+                          <div>
+                            <Form.Switch
+                              noLabel
+                              field='update_quota_switch'
+                              checked={updateQuota}
+                              onChange={setUpdateQuota}
+                              checkedText='｜'
+                              uncheckedText='〇'
+                            />
+                            <div className='mt-1 text-xs text-gray-500'>
+                              {t(
+                                '管理员直接加减用户余额只修改可用额度，不计入等级累计充值，也不会改变用户等级',
+                              )}
+                            </div>
+                          </div>
                         </Form.Slot>
                       </Col>
 

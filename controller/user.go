@@ -630,6 +630,7 @@ func UpdateUser(c *gin.Context) {
 		Password                 string   `json:"password" validate:"omitempty,min=8,max=20"`
 		DisplayName              string   `json:"display_name" validate:"max=20"`
 		Group                    string   `json:"group"`
+		UserLevelId              *int     `json:"user_level_id"`
 		Quota                    int      `json:"quota"`
 		UpdateQuota              bool     `json:"update_quota"`
 		Remark                   string   `json:"remark" validate:"max=255"`
@@ -649,6 +650,12 @@ func UpdateUser(c *gin.Context) {
 	if req.GlobalModelRatio != nil && *req.GlobalModelRatio < 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
+	}
+	if req.UserLevelId != nil {
+		if *req.UserLevelId <= 0 {
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			return
+		}
 	}
 	if req.RateLimitDurationMinutes != nil && *req.RateLimitDurationMinutes < 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
@@ -671,6 +678,12 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if req.UserLevelId != nil && *req.UserLevelId != originUser.UserLevelId {
+		if _, found := setting.GetUserLevelPolicyByID(*req.UserLevelId); !found {
+			common.ApiErrorMsg(c, "用户等级不存在")
+			return
+		}
+	}
 	myRole := c.GetInt("role")
 	if myRole <= originUser.Role && myRole != common.RoleRootUser {
 		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionHigherLevel)
@@ -684,6 +697,10 @@ func UpdateUser(c *gin.Context) {
 	rateLimitDurationMinutes := originUser.RateLimitDurationMinutes
 	rateLimitCount := originUser.RateLimitCount
 	rateLimitSuccessCount := originUser.RateLimitSuccessCount
+	userLevelId := originUser.UserLevelId
+	if req.UserLevelId != nil {
+		userLevelId = *req.UserLevelId
+	}
 	if req.RateLimitEnabled != nil {
 		rateLimitEnabled = *req.RateLimitEnabled
 	}
@@ -703,6 +720,7 @@ func UpdateUser(c *gin.Context) {
 		Password:                 req.Password,
 		DisplayName:              req.DisplayName,
 		Group:                    req.Group,
+		UserLevelId:              userLevelId,
 		Quota:                    req.Quota,
 		Remark:                   req.Remark,
 		GlobalModelRatio:         globalModelRatio,
@@ -729,6 +747,9 @@ func UpdateUser(c *gin.Context) {
 	}
 	if req.UpdateQuota && originUser.Quota != updatedUser.Quota {
 		model.RecordLog(originUser.Id, model.LogTypeManage, fmt.Sprintf("管理员将用户额度从 %s修改为 %s", logger.LogQuota(originUser.Quota), logger.LogQuota(updatedUser.Quota)))
+	}
+	if originUser.UserLevelId != updatedUser.UserLevelId {
+		model.RecordLog(originUser.Id, model.LogTypeManage, fmt.Sprintf("管理员将用户等级从 #%d 修改为 #%d", originUser.UserLevelId, updatedUser.UserLevelId))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

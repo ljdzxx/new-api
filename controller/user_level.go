@@ -30,11 +30,6 @@ func GetSelfUserLevel(c *gin.Context) {
 		return
 	}
 
-	// Ensure top-up based level upgrade takes effect before building the view.
-	if err := model.TryAutoUpgradeUserLevelByRecharge(userId); err != nil {
-		common.SysLog(fmt.Sprintf("auto upgrade user level failed: user=%d err=%v", userId, err))
-	}
-
 	user, err := model.GetUserById(userId, true)
 	if err != nil {
 		common.ApiError(c, err)

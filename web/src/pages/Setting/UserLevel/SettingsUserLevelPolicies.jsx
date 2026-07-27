@@ -136,7 +136,9 @@ export default function SettingsUserLevelPolicies(props) {
       >
         <Form.Section
           text={t('等级/限制')}
-          extraText={t('说明：level 对应用户分组（user.group）')}
+          extraText={t(
+            '说明：等级 ID 保存于 users.user_level_id，与用户分组 user.group 相互独立',
+          )}
         >
           <Row>
             <Col xs={24} sm={24} md={18} lg={16}>
@@ -160,9 +162,13 @@ export default function SettingsUserLevelPolicies(props) {
                   <div>
                     <p>{t('字段说明：')}</p>
                     <ul>
-                      <li>{t('level：用户等级（匹配用户分组）')}</li>
+                      <li>{t('level：用户等级显示名称')}</li>
                       <li>{t('id：等级主键ID（用户关联该ID）')}</li>
-                      <li>{t('recharge：升至该等级所需累计充值金额')}</li>
+                      <li>
+                        {t(
+                          'recharge：升至该等级所需累计余额充值金额，订阅套餐不计入',
+                        )}
+                      </li>
                       <li>{t('discount：折扣，0.1 表示 10% 折扣')}</li>
                       <li>{t('icon：等级图标路径，如 /t1.png')}</li>
                       <li>{t('channel：可用渠道数组，[] 表示不限渠道')}</li>

@@ -199,9 +199,15 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, us
 		}
 		result.Quota = redemption.Quota
 
+		topUpAmount := quotaToTopUpAmount(redemption.Quota)
+		if topUpAmount <= 0 {
+			// A quota redemption is an eligible wallet recharge even when the
+			// display-unit conversion truncates a very small quota to zero.
+			topUpAmount = 1
+		}
 		topup := TopUp{
 			UserId:          userId,
-			Amount:          quotaToTopUpAmount(redemption.Quota),
+			Amount:          topUpAmount,
 			Money:           redemption.PayMoney,
 			TradeNo:         tradeNo,
 			PaymentMethod:   "redemption",
@@ -279,15 +285,11 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, us
 		return nil, errors.New("不支持的兑换码奖励类型")
 	}
 
-	var totalRecharge float64
-	if err := tx.Model(&TopUp{}).
-		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
-		Select("COALESCE(SUM(money), 0)").
-		Scan(&totalRecharge).Error; err != nil {
+	totalRecharge, err := getUserTotalRechargeAmountTx(tx, userId)
+	if err != nil {
 		return nil, err
 	}
 
-	var err error
 	applyResult.levelChanged, applyResult.upgradedGroup, applyResult.upgradedLevelID, err = applyUserLevelByRechargeTx(tx, userId, totalRecharge)
 	if err != nil {
 		return nil, err

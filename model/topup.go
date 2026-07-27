@@ -142,8 +142,10 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 
 func GetUserTotalRechargeAmount(userId int) (float64, error) {
 	var total float64
+	// Subscription audit records use amount=0. Wallet top-ups, including
+	// quota redemptions, keep a positive amount and contribute their paid money.
 	err := DB.Model(&TopUp{}).
-		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Where("user_id = ? AND status = ? AND amount > ?", userId, common.TopUpStatusSuccess, 0).
 		Select("COALESCE(SUM(money), 0)").
 		Scan(&total).Error
 	return total, err
@@ -152,7 +154,7 @@ func GetUserTotalRechargeAmount(userId int) (float64, error) {
 func getUserTotalRechargeAmountTx(tx *gorm.DB, userId int) (float64, error) {
 	var total float64
 	err := tx.Model(&TopUp{}).
-		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
+		Where("user_id = ? AND status = ? AND amount > ?", userId, common.TopUpStatusSuccess, 0).
 		Select("COALESCE(SUM(money), 0)").
 		Scan(&total).Error
 	return total, err
@@ -171,6 +173,9 @@ func applyUserLevelByRechargeTx(tx *gorm.DB, userId int, totalRecharge float64) 
 
 	if user.UserLevelId == target.ID {
 		return false, target.Level, target.ID, nil
+	}
+	if current, found := setting.GetUserLevelPolicyByID(user.UserLevelId); found && current.Recharge >= target.Recharge {
+		return false, current.Level, current.ID, nil
 	}
 
 	err := tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{

@@ -18,7 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Spin, Tag, Typography } from '@douyinfe/semi-ui';
+import {
+  Banner,
+  Button,
+  Card,
+  Empty,
+  Spin,
+  Tag,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useActualTheme } from '../../context/Theme';
@@ -50,7 +58,8 @@ function formatMoney(value) {
 
 function getChannelText(level) {
   if (level?.channel_text) return level.channel_text;
-  if (!Array.isArray(level?.channel) || level.channel.length === 0) return '所有渠道';
+  if (!Array.isArray(level?.channel) || level.channel.length === 0)
+    return '所有渠道';
   return `${level.channel.length}个渠道`;
 }
 
@@ -72,7 +81,12 @@ function LevelIcon({ level, size = 22 }) {
       <img
         src={level.icon}
         alt={level.level || 'level-icon'}
-        style={{ width: size, height: size, objectFit: 'cover', borderRadius: 8 }}
+        style={{
+          width: size,
+          height: size,
+          objectFit: 'cover',
+          borderRadius: 8,
+        }}
       />
     );
   }
@@ -123,6 +137,12 @@ const UserLevelPage = () => {
   return (
     <div className='mt-[60px] px-3 py-4'>
       <div className='mx-auto max-w-7xl space-y-5'>
+        <Banner
+          type='info'
+          description={t(
+            '仅钱包余额充值计入等级累计充值；购买、兑换或绑定订阅套餐均不会提升用户等级',
+          )}
+        />
         <Card
           bodyStyle={{ padding: 0 }}
           style={{
@@ -156,25 +176,48 @@ const UserLevelPage = () => {
                       {current?.level || data?.user_group || '-'}
                     </div>
                     <Text style={{ color: 'rgba(255,255,255,0.82)' }}>
-                      {t('累计充值')}: {formatMoney(data?.total_recharge)}
+                      {t('累计余额充值')}: {formatMoney(data?.total_recharge)}
                     </Text>
                   </div>
                 </div>
                 <div className='flex flex-wrap gap-2'>
-                  <Tag color='white' style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }} prefixIcon={<Sparkles size={12} />}>
+                  <Tag
+                    color='white'
+                    style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      color: '#fff',
+                    }}
+                    prefixIcon={<Sparkles size={12} />}
+                  >
                     {getDiscountText(current)}
                   </Tag>
-                  <Tag color='white' style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }} prefixIcon={<Layers size={12} />}>
+                  <Tag
+                    color='white'
+                    style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      color: '#fff',
+                    }}
+                    prefixIcon={<Layers size={12} />}
+                  >
                     {getChannelText(current)}
                   </Tag>
-                  <Tag color='white' style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }} prefixIcon={<Clock size={12} />}>
+                  <Tag
+                    color='white'
+                    style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      color: '#fff',
+                    }}
+                    prefixIcon={<Clock size={12} />}
+                  >
                     {getRateText(current?.rate)}
                   </Tag>
                 </div>
               </div>
 
               <div className='w-full rounded-2xl bg-white/90 p-4 md:w-[290px] dark:bg-slate-900/80 dark:ring-1 dark:ring-slate-700/70'>
-                <div className={`mb-2 flex items-center justify-between ${textToneTokens.primary}`}>
+                <div
+                  className={`mb-2 flex items-center justify-between ${textToneTokens.primary}`}
+                >
                   <span className='text-sm'>{t('升级到')}</span>
                   <span className='flex items-center gap-1 font-semibold'>
                     {next?.level || t('最高等级')}
@@ -190,13 +233,23 @@ const UserLevelPage = () => {
                     }}
                   />
                 </div>
-                <div className={`mt-2 flex items-center justify-between text-xs ${textToneTokens.tertiary}`}>
+                <div
+                  className={`mt-2 flex items-center justify-between text-xs ${textToneTokens.tertiary}`}
+                >
                   <span>{formatMoney(data?.current_recharge || 0)}</span>
-                  <span>{formatMoney(data?.next_recharge || data?.current_recharge || 0)}</span>
+                  <span>
+                    {formatMoney(
+                      data?.next_recharge || data?.current_recharge || 0,
+                    )}
+                  </span>
                 </div>
-                <div className={`mt-3 flex items-center gap-2 text-xs ${textToneTokens.secondary}`}>
+                <div
+                  className={`mt-3 flex items-center gap-2 text-xs ${textToneTokens.secondary}`}
+                >
                   <TrendingUp size={13} />
-                  {next ? `${t('还需')}: ${formatMoney(data?.remaining_recharge || 0)}` : t('已达最高等级')}
+                  {next
+                    ? `${t('还需')}: ${formatMoney(data?.remaining_recharge || 0)}`
+                    : t('已达最高等级')}
                 </div>
               </div>
             </div>
@@ -248,13 +301,21 @@ const UserLevelPage = () => {
                             <LevelIcon level={level} size={20} />
                           </div>
                           <div>
-                            <div className={`font-semibold ${textToneTokens.heading}`}>{level.level}</div>
+                            <div
+                              className={`font-semibold ${textToneTokens.heading}`}
+                            >
+                              {level.level}
+                            </div>
                             <Text
                               type='tertiary'
                               size='small'
-                              style={isDark ? { color: 'rgba(203, 213, 225, 0.88)' } : undefined}
+                              style={
+                                isDark
+                                  ? { color: 'rgba(203, 213, 225, 0.88)' }
+                                  : undefined
+                              }
                             >
-                              {t('累计充值')}: {formatMoney(level.recharge)}
+                              {t('累计余额充值')}: {formatMoney(level.recharge)}
                             </Text>
                           </div>
                         </div>
@@ -262,26 +323,38 @@ const UserLevelPage = () => {
                       </div>
 
                       <div className='space-y-2 text-sm'>
-                        <div className={`flex items-center justify-between ${textToneTokens.secondary}`}>
+                        <div
+                          className={`flex items-center justify-between ${textToneTokens.secondary}`}
+                        >
                           <span className='flex items-center gap-1'>
                             <Zap size={14} />
                             {t('折扣')}
                           </span>
-                          <span className='font-medium'>{getDiscountText(level)}</span>
+                          <span className='font-medium'>
+                            {getDiscountText(level)}
+                          </span>
                         </div>
-                        <div className={`flex items-center justify-between ${textToneTokens.secondary}`}>
+                        <div
+                          className={`flex items-center justify-between ${textToneTokens.secondary}`}
+                        >
                           <span className='flex items-center gap-1'>
                             <Layers size={14} />
                             {t('可用渠道')}
                           </span>
-                          <span className='font-medium'>{getChannelText(level)}</span>
+                          <span className='font-medium'>
+                            {getChannelText(level)}
+                          </span>
                         </div>
-                        <div className={`flex items-center justify-between ${textToneTokens.secondary}`}>
+                        <div
+                          className={`flex items-center justify-between ${textToneTokens.secondary}`}
+                        >
                           <span className='flex items-center gap-1'>
                             <Clock size={14} />
                             {t('速率限制')}
                           </span>
-                          <span className='font-medium'>{getRateText(level.rate)}</span>
+                          <span className='font-medium'>
+                            {getRateText(level.rate)}
+                          </span>
                         </div>
                       </div>
 

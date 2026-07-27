@@ -241,6 +241,42 @@ func TestAutoUpgradeByRecharge_RedemptionAlsoEffective(t *testing.T) {
 	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
 }
 
+func TestAutoUpgradeByRecharge_SmallQuotaRedemptionUsesPaidMoney(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":200,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
+]`)
+	common.QuotaPerUnit = 100
+
+	user := createRegisteredUser(t, "small_quota_redeem_paid_money")
+	now := common.GetTimestamp()
+	redeemKey := fmt.Sprintf("Q%031d", time.Now().UnixNano()%1_000_000_000_000_000_000)
+	redemption := &Redemption{
+		Key:         redeemKey,
+		Status:      common.RedemptionCodeStatusEnabled,
+		Name:        "small quota paid redemption",
+		Quota:       1,
+		PayMoney:    240,
+		CreatedTime: now,
+	}
+	require.NoError(t, redemption.Insert())
+
+	_, err := Redeem(redeemKey, user.Id, 0)
+	require.NoError(t, err)
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2, reloaded.UserLevelId)
+
+	totalRecharge, err := GetUserTotalRechargeAmount(user.Id)
+	require.NoError(t, err)
+	assert.InDelta(t, 240.0, totalRecharge, 0.0001)
+
+	var topup TopUp
+	require.NoError(t, DB.Where("user_id = ? AND payment_method = ?", user.Id, "redemption").First(&topup).Error)
+	assert.Equal(t, int64(1), topup.Amount)
+	assert.InDelta(t, 240.0, topup.Money, 0.0001)
+}
+
 func TestInviteRewardsWritePromotionTopUpsForBothUsersWithScaledAmount(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[]`)
 
@@ -570,7 +606,7 @@ func TestInviteeSubscriptionRewardWritesPromotionTopUp(t *testing.T) {
 	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
 }
 
-func TestAutoUpgradeByRecharge_SubscriptionRedemptionAlsoEffective(t *testing.T) {
+func TestAutoUpgradeByRecharge_SubscriptionRedemptionDoesNotCount(t *testing.T) {
 	setupUserLevelUpgradeE2E(t, `[
 {"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
 {"id":2,"level":"Tier 2","recharge":200,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
@@ -611,13 +647,103 @@ func TestAutoUpgradeByRecharge_SubscriptionRedemptionAlsoEffective(t *testing.T)
 	reloaded, err := GetUserById(user.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, "default", reloaded.Group)
-	assert.Equal(t, 2, reloaded.UserLevelId)
+	assert.Equal(t, 1, reloaded.UserLevelId)
+	totalRecharge, err := GetUserTotalRechargeAmount(user.Id)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.0, totalRecharge, 0.0001)
 
 	var topup TopUp
 	require.NoError(t, DB.Where("user_id = ? AND payment_method = ?", user.Id, "redemption").First(&topup).Error)
 	assert.Equal(t, int64(0), topup.Amount)
 	assert.InDelta(t, 240.0, topup.Money, 0.0001)
 	assert.Equal(t, common.TopUpStatusSuccess, topup.Status)
+}
+
+func TestAutoUpgradeByRecharge_SubscriptionTopUpDoesNotCount(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
+]`)
+
+	user := createRegisteredUser(t, "subscription_topup_excluded")
+	now := common.GetTimestamp()
+	require.NoError(t, DB.Create(&TopUp{
+		UserId:          user.Id,
+		Amount:          0,
+		Money:           500,
+		TradeNo:         fmt.Sprintf("subscription-topup-%d", time.Now().UnixNano()),
+		PaymentMethod:   PaymentMethodBalance,
+		PaymentProvider: PaymentProviderBalance,
+		CreateTime:      now,
+		CompleteTime:    now,
+		Status:          common.TopUpStatusSuccess,
+	}).Error)
+
+	require.NoError(t, TryAutoUpgradeUserLevelByRecharge(user.Id))
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, reloaded.UserLevelId)
+}
+
+func TestAutoUpgradeByRecharge_DoesNotDowngradeManualLevel(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100},
+{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/t3.png","channel":[],"rate":300}
+]`)
+
+	user := createRegisteredUser(t, "manual_level_preserved")
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("user_level_id", 3).Error)
+	createTopUp(t, user.Id, 100)
+
+	require.NoError(t, TryAutoUpgradeUserLevelByRecharge(user.Id))
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3, reloaded.UserLevelId)
+}
+
+func TestUserEdit_UpdatesUserLevelID(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
+]`)
+
+	user := createRegisteredUser(t, "admin_edit_level")
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	reloaded.UserLevelId = 2
+	require.NoError(t, reloaded.Edit(false, false))
+
+	updated, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2, updated.UserLevelId)
+}
+
+func TestUserEdit_QuotaChangesDoNotAffectUserLevel(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100}
+]`)
+
+	user := createRegisteredUser(t, "admin_edit_quota_no_level")
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+
+	reloaded.Quota += 1_000_000
+	require.NoError(t, reloaded.Edit(false, true))
+	afterIncrease, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, afterIncrease.UserLevelId)
+
+	afterIncrease.Quota = 0
+	require.NoError(t, afterIncrease.Edit(false, true))
+	afterDecrease, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 1, afterDecrease.UserLevelId)
+
+	totalRecharge, err := GetUserTotalRechargeAmount(user.Id)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.0, totalRecharge, 0.0001)
 }
 
 func TestRedeem_WelfareCodeCanBeUsedOncePerUser(t *testing.T) {
