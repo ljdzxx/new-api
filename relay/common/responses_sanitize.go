@@ -2,11 +2,15 @@ package common
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	basecommon "github.com/QuantumNous/new-api/common"
 )
 
-const minLikelyEncryptedContentLen = 32
+const (
+	minLikelyEncryptedContentLen = 32
+	maxResponsesItemIDLen        = 64
+)
 
 var responsesItemIDPrefixes = map[string]string{
 	"message":          "msg",
@@ -16,11 +20,11 @@ var responsesItemIDPrefixes = map[string]string{
 	"web_search_call":  "ws",
 }
 
-// SanitizeInvalidResponsesItemIDs removes replayed Responses item IDs whose
-// prefix does not match the item type. Some Responses-compatible providers
-// emit generic item_* IDs; Codex preserves those IDs in its history and strict
-// upstreams reject them on the next request. The call_id field is intentionally
-// preserved because it correlates tool calls with their outputs.
+// SanitizeInvalidResponsesItemIDs removes replayed Responses item IDs that are
+// too long or whose prefix does not match the item type. Some Responses-compatible
+// providers emit non-standard IDs; Codex preserves those IDs in its history and
+// strict upstreams reject them on the next request. The call_id field is
+// intentionally preserved because it correlates tool calls with their outputs.
 func SanitizeInvalidResponsesItemIDs(jsonData []byte) ([]byte, int, error) {
 	var data map[string]any
 	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
@@ -49,13 +53,18 @@ func SanitizeInvalidResponsesItemIDs(jsonData []byte) ([]byte, int, error) {
 				itemType = "message"
 			}
 		}
-		expectedPrefix, knownType := responsesItemIDPrefixes[itemType]
-		if !knownType {
+		id, ok := item["id"].(string)
+		if !ok || id == "" {
+			continue
+		}
+		if utf8.RuneCountInString(id) > maxResponsesItemIDLen {
+			delete(item, "id")
+			removed++
 			continue
 		}
 
-		id, ok := item["id"].(string)
-		if !ok || id == "" || strings.HasPrefix(id, expectedPrefix) {
+		expectedPrefix, knownType := responsesItemIDPrefixes[itemType]
+		if !knownType || strings.HasPrefix(id, expectedPrefix) {
 			continue
 		}
 		delete(item, "id")
