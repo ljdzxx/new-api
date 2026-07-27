@@ -792,11 +792,17 @@ func (user *User) Update(updatePassword bool) error {
 		}
 	}
 	newUser := *user
-	DB.First(&user, user.Id)
-	if err = DB.Model(user).Updates(newUser).Error; err != nil {
+	var currentUser User
+	if err = DB.First(&currentUser, user.Id).Error; err != nil {
 		return err
 	}
-	if err = DB.First(&user, user.Id).Error; err != nil {
+	if currentUser.Group != newUser.Group {
+		applyGroupRateLimitToUser(&newUser)
+	}
+	if err = DB.Model(&currentUser).Updates(newUser).Error; err != nil {
+		return err
+	}
+	if err = DB.First(user, user.Id).Error; err != nil {
 		return err
 	}
 
@@ -814,6 +820,13 @@ func (user *User) Edit(updatePassword bool, updateQuota bool) error {
 	}
 
 	newUser := *user
+	var currentUser User
+	if err = DB.First(&currentUser, user.Id).Error; err != nil {
+		return err
+	}
+	if currentUser.Group != newUser.Group {
+		applyGroupRateLimitToUser(&newUser)
+	}
 	updates := map[string]interface{}{
 		"username":                    newUser.Username,
 		"display_name":                newUser.DisplayName,
@@ -833,11 +846,10 @@ func (user *User) Edit(updatePassword bool, updateQuota bool) error {
 		updates["quota"] = newUser.Quota
 	}
 
-	DB.First(&user, user.Id)
-	if err = DB.Model(user).Updates(updates).Error; err != nil {
+	if err = DB.Model(&currentUser).Updates(updates).Error; err != nil {
 		return err
 	}
-	if err = DB.First(&user, user.Id).Error; err != nil {
+	if err = DB.First(user, user.Id).Error; err != nil {
 		return err
 	}
 

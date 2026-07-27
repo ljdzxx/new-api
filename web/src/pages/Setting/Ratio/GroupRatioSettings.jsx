@@ -29,34 +29,41 @@ import {
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 
+const defaultInputs = {
+  GroupRatio: '',
+  UserUsableGroups: '',
+  GroupGroupRatio: '',
+  GroupRateLimit: '{}',
+  'group_ratio_setting.group_special_usable_group': '',
+  AutoGroups: '',
+  DefaultUseAutoGroup: false,
+};
+
 export default function GroupRatioSettings(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const [inputs, setInputs] = useState({
-    GroupRatio: '',
-    UserUsableGroups: '',
-    GroupGroupRatio: '',
-    'group_ratio_setting.group_special_usable_group': '',
-    AutoGroups: '',
-    DefaultUseAutoGroup: false,
-  });
+  const [inputs, setInputs] = useState({ ...defaultInputs });
   const refForm = useRef();
-  const [inputsRow, setInputsRow] = useState(inputs);
+  const [inputsRow, setInputsRow] = useState({ ...defaultInputs });
 
   async function onSubmit() {
     try {
       await refForm.current
         .validate()
         .then(() => {
-          const updateArray = compareObjects(inputs, inputsRow);
+          const submittedInputs = {
+            ...inputs,
+            ...refForm.current.getValues(),
+          };
+          const updateArray = compareObjects(submittedInputs, inputsRow);
           if (!updateArray.length)
             return showWarning(t('你似乎并没有修改什么'));
 
           const requestQueue = updateArray.map((item) => {
             const value =
-              typeof inputs[item.key] === 'boolean'
-                ? String(inputs[item.key])
-                : inputs[item.key];
+              typeof submittedInputs[item.key] === 'boolean'
+                ? String(submittedInputs[item.key])
+                : submittedInputs[item.key];
             return API.put('/api/option/', { key: item.key, value });
           });
 
@@ -98,9 +105,9 @@ export default function GroupRatioSettings(props) {
   }
 
   useEffect(() => {
-    const currentInputs = {};
+    const currentInputs = { ...defaultInputs };
     for (let key in props.options) {
-      if (Object.keys(inputs).includes(key)) {
+      if (Object.prototype.hasOwnProperty.call(defaultInputs, key)) {
         currentInputs[key] = props.options[key];
       }
     }
@@ -135,6 +142,73 @@ export default function GroupRatioSettings(props) {
                 },
               ]}
               onChange={(value) => setInputs({ ...inputs, GroupRatio: value })}
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('分组速率')}
+              placeholder={'{\n  "default": {"max": 1000, "success": 100}\n}'}
+              extraText={t(
+                '按用户分组设置每分钟请求次数。max 为包含失败请求的最多请求次数，0 表示不限；success 为最多成功请求次数，必须大于等于 1。max 和 success 可单独定义，命中时只修改已定义的次数。例如：{"default": {"success": 100}}',
+              )}
+              field={'GroupRateLimit'}
+              autosize={{ minRows: 6, maxRows: 12 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (rule, value) => {
+                    try {
+                      const parsed = JSON.parse(value);
+                      return (
+                        parsed !== null &&
+                        typeof parsed === 'object' &&
+                        !Array.isArray(parsed) &&
+                        Object.entries(parsed).every(([group, rate]) => {
+                          if (
+                            group.trim() === '' ||
+                            rate === null ||
+                            typeof rate !== 'object' ||
+                            Array.isArray(rate)
+                          ) {
+                            return false;
+                          }
+                          const hasMax = Object.prototype.hasOwnProperty.call(
+                            rate,
+                            'max',
+                          );
+                          const hasSuccess =
+                            Object.prototype.hasOwnProperty.call(
+                              rate,
+                              'success',
+                            );
+                          return (
+                            (hasMax || hasSuccess) &&
+                            (!hasMax ||
+                              (Number.isInteger(rate.max) &&
+                                rate.max >= 0 &&
+                                rate.max <= 2147483647)) &&
+                            (!hasSuccess ||
+                              (Number.isInteger(rate.success) &&
+                                rate.success >= 1 &&
+                                rate.success <= 2147483647))
+                          );
+                        })
+                      );
+                    } catch (error) {
+                      return false;
+                    }
+                  },
+                  message: t(
+                    '分组速率必须是 JSON 对象；每个分组至少定义 max 或 success，max 为 0 到 2147483647 的整数，success 为 1 到 2147483647 的整数',
+                  ),
+                },
+              ]}
+              onChange={(value) =>
+                setInputs({ ...inputs, GroupRateLimit: value })
+              }
             />
           </Col>
         </Row>

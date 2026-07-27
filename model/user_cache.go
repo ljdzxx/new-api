@@ -234,8 +234,10 @@ func updateUserGroupCache(userId int, group string) error {
 	return common.RedisHSetField(getUserCacheKey(userId), "Group", group)
 }
 
-func UpdateUserGroupCache(userId int, group string) error {
-	return updateUserGroupCache(userId, group)
+func UpdateUserGroupCache(userId int, _ string) error {
+	// Group changes may also update the user's rate-limit fields. Clearing the
+	// complete cache prevents the group and its derived rate from getting out of sync.
+	return invalidateUserCache(userId)
 }
 
 func updateUserNameCache(userId int, username string) error {

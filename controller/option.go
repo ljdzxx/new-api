@@ -291,6 +291,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "GroupRateLimit":
+		err = setting.CheckGroupRateLimit(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	case "UserLevelPolicies":
 		err = setting.CheckUserLevelPolicies(option.Value.(string))
 		if err != nil {
