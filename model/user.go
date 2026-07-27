@@ -175,6 +175,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 			"lottery_admin":      true,
 			"user":               true,
 			"user_subscriptions": true,
+			"consumption_rank":   true,
 			"subscription_rank":  true,
 			"subscription":       true,
 			"setting":            false, // 管理员不能访问系统设置
@@ -191,6 +192,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 			"lottery_admin":      true,
 			"user":               true,
 			"user_subscriptions": true,
+			"consumption_rank":   true,
 			"subscription_rank":  true,
 			"subscription":       true,
 			"setting":            true,

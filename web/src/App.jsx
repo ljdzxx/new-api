@@ -56,6 +56,7 @@ const UserSubscriptions = lazy(() => import('./pages/UserSubscriptions'));
 const Order = lazy(() => import('./pages/Order'));
 const UserLevelPage = lazy(() => import('./pages/UserLevel'));
 const SubscriptionUsageRank = lazy(() => import('./pages/SubscriptionUsageRank'));
+const ConsumptionRank = lazy(() => import('./pages/ConsumptionRank'));
 const Lottery = lazy(() => import('./pages/Lottery'));
 const LotteryAdmin = lazy(() => import('./pages/LotteryAdmin'));
 const RegisterForm = lazy(() => import('./components/auth/RegisterForm'));
@@ -171,6 +172,10 @@ function App() {
         <Route
           path='/console/subscription-rank'
           element={withAdminRoute(<SubscriptionUsageRank />)}
+        />
+        <Route
+          path='/console/consumption-rank'
+          element={withAdminRoute(<ConsumptionRank />)}
         />
         <Route
           path='/user/reset'

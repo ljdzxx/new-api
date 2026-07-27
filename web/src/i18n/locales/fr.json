@@ -4219,5 +4219,20 @@
   "全局模型倍率生效的总输入 Tokens 阈值": "Seuil de tokens d’entrée totaux du ratio global du modèle",
   "渠道模型倍率生效的总输入 Tokens 阈值": "Seuil de tokens d’entrée totaux du ratio de modèle du canal",
   "总输入 Tokens 大于等于该值后此倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "Ce ratio s’applique lorsque le total des tokens d’entrée est supérieur ou égal à cette valeur ; 0 signifie aucune limite. Les tokens bruts sont comptés avant toute mise à l’échelle.",
-  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "Le seuil de tokens d’entrée du ratio de modèle du canal doit être un entier supérieur ou égal à 0"
+  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "Le seuil de tokens d’entrée du ratio de modèle du canal doit être un entier supérieur ou égal à 0",
+  "消耗排行榜": "Classement de consommation",
+  "按时间范围查看用户 Token 消耗前 100 名": "Afficher les 100 utilisateurs consommant le plus de tokens sur une période",
+  "窗口消耗金额": "Montant consommé",
+  "结束时间必须晚于开始时间": "L’heure de fin doit être postérieure à l’heure de début",
+  "平均 Token/请求": "Tokens moyens/requête",
+  "请选择完整的日期时间范围": "Sélectionnez une période complète",
+  "上榜用户": "Utilisateurs classés",
+  "输出 Token": "Tokens de sortie",
+  "输入 Token": "Tokens d’entrée",
+  "自定义查询范围不能超过 30 天": "La période personnalisée ne peut pas dépasser 30 jours",
+  "总 Token": "Total des tokens",
+  "最近消费时间": "Dernière consommation",
+  "Token 请求数": "Requêtes avec tokens",
+  "Top 100 总 Token": "Total des tokens du Top 100",
+  "Top 100 消耗金额": "Montant consommé par le Top 100"
 }

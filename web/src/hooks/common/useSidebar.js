@@ -58,6 +58,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     lottery_admin: true,
     user: true,
     user_subscriptions: true,
+    consumption_rank: true,
     subscription_rank: true,
     subscription: true,
     setting: true,

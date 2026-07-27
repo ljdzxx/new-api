@@ -4738,5 +4738,20 @@
   "全局模型倍率生效的总输入 Tokens 阈值": "Ngưỡng tổng token đầu vào cho hệ số mô hình toàn cục",
   "渠道模型倍率生效的总输入 Tokens 阈值": "Ngưỡng tổng token đầu vào cho hệ số mô hình của kênh",
   "总输入 Tokens 大于等于该值后此倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "Hệ số này có hiệu lực khi tổng token đầu vào lớn hơn hoặc bằng giá trị đã đặt; 0 nghĩa là không giới hạn. Token gốc được tính trước khi áp dụng hệ số.",
-  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "Ngưỡng token đầu vào của hệ số mô hình kênh phải là số nguyên lớn hơn hoặc bằng 0"
+  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "Ngưỡng token đầu vào của hệ số mô hình kênh phải là số nguyên lớn hơn hoặc bằng 0",
+  "消耗排行榜": "Bảng xếp hạng tiêu thụ",
+  "按时间范围查看用户 Token 消耗前 100 名": "Xem 100 người dùng tiêu thụ token nhiều nhất theo khoảng thời gian",
+  "窗口消耗金额": "Số tiền tiêu thụ",
+  "结束时间必须晚于开始时间": "Thời gian kết thúc phải sau thời gian bắt đầu",
+  "平均 Token/请求": "Token trung bình/yêu cầu",
+  "请选择完整的日期时间范围": "Vui lòng chọn đầy đủ khoảng ngày giờ",
+  "上榜用户": "Người dùng được xếp hạng",
+  "输出 Token": "Token đầu ra",
+  "输入 Token": "Token đầu vào",
+  "自定义查询范围不能超过 30 天": "Khoảng truy vấn tùy chỉnh không được vượt quá 30 ngày",
+  "总 Token": "Tổng token",
+  "最近消费时间": "Thời gian tiêu thụ gần nhất",
+  "Token 请求数": "Số yêu cầu token",
+  "Top 100 总 Token": "Tổng token của Top 100",
+  "Top 100 消耗金额": "Số tiền tiêu thụ của Top 100"
 }

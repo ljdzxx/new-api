@@ -91,6 +91,7 @@ const NotificationSettings = ({
       channel: true,
       models: true,
       deployment: true,
+      consumption_rank: true,
       subscription_rank: true,
       subscription: true,
       redemption: true,
@@ -190,6 +191,7 @@ const NotificationSettings = ({
         channel: true,
         models: true,
         deployment: true,
+        consumption_rank: true,
         subscription_rank: true,
         subscription: true,
         redemption: true,
@@ -345,6 +347,11 @@ const NotificationSettings = ({
           key: 'subscription',
           title: t('订阅管理'),
           description: t('订阅套餐管理'),
+        },
+        {
+          key: 'consumption_rank',
+          title: t('消耗排行榜'),
+          description: t('按时间范围查看用户 Token 消耗前 100 名'),
         },
         {
           key: 'subscription_rank',

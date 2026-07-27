@@ -4280,5 +4280,20 @@
   "全局模型倍率生效的总输入 Tokens 阈值": "Total input token threshold for the global model ratio",
   "渠道模型倍率生效的总输入 Tokens 阈值": "Total input token threshold for the channel model ratio",
   "总输入 Tokens 大于等于该值后此倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "This ratio takes effect when total input tokens are greater than or equal to this value; 0 means no limit. Raw tokens are counted before ratio scaling.",
-  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "The channel model ratio input-token threshold must be an integer greater than or equal to 0"
+  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "The channel model ratio input-token threshold must be an integer greater than or equal to 0",
+  "消耗排行榜": "Consumption leaderboard",
+  "按时间范围查看用户 Token 消耗前 100 名": "View the top 100 users by token consumption for a time range",
+  "窗口消耗金额": "Consumption amount",
+  "结束时间必须晚于开始时间": "The end time must be later than the start time",
+  "平均 Token/请求": "Average tokens/request",
+  "请选择完整的日期时间范围": "Select a complete date and time range",
+  "上榜用户": "Ranked users",
+  "输出 Token": "Output tokens",
+  "输入 Token": "Input tokens",
+  "自定义查询范围不能超过 30 天": "A custom query range cannot exceed 30 days",
+  "总 Token": "Total tokens",
+  "最近消费时间": "Latest consumption time",
+  "Token 请求数": "Token requests",
+  "Top 100 总 Token": "Top 100 total tokens",
+  "Top 100 消耗金额": "Top 100 consumption amount"
 }
