@@ -458,25 +458,27 @@ const RechargeCard = ({
                       }}
                     />
                   </Tooltip> */}
-                  <Tooltip content={t('使用重置兑换码')}>
-                    <Button
-                      size='small'
-                      theme='light'
-                      type='primary'
-                      onClick={() => openResetRedeem(subscription)}
-                      style={{
-                        height: 24,
-                        minWidth: 42,
-                        padding: '0 8px',
-                        flexShrink: 0,
-                        fontSize: 12,
-                        background: 'var(--semi-color-primary-light-default)',
-                        border: '1px solid var(--semi-color-primary)',
-                      }}
-                    >
-                      {t('重置')}
-                    </Button>
-                  </Tooltip>
+                  {item?.reset_redemption_enabled && (
+                    <Tooltip content={t('使用重置兑换码')}>
+                      <Button
+                        size='small'
+                        theme='light'
+                        type='primary'
+                        onClick={() => openResetRedeem(subscription)}
+                        style={{
+                          height: 24,
+                          minWidth: 42,
+                          padding: '0 8px',
+                          flexShrink: 0,
+                          fontSize: 12,
+                          background: 'var(--semi-color-primary-light-default)',
+                          border: '1px solid var(--semi-color-primary)',
+                        }}
+                      >
+                        {t('重置')}
+                      </Button>
+                    </Tooltip>
+                  )}
                 </div>
                 <span
                   className='text-[11px]'

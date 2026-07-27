@@ -285,7 +285,8 @@ func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 }
 
 type SubscriptionSummary struct {
-	Subscription *UserSubscription `json:"subscription"`
+	Subscription           *UserSubscription `json:"subscription"`
+	ResetRedemptionEnabled bool              `json:"reset_redemption_enabled"`
 }
 
 type ActiveUserSubscriptionUser struct {
@@ -995,7 +996,7 @@ func GetAllActiveUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildSubscriptionSummaries(subs), nil
+	return buildSubscriptionSummaries(subs)
 }
 
 // HasActiveUserSubscription returns whether the user has any active subscription.
@@ -1026,7 +1027,7 @@ func GetAllUserSubscriptions(userId int) ([]SubscriptionSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildSubscriptionSummaries(subs), nil
+	return buildSubscriptionSummaries(subs)
 }
 
 func applyActiveUserSubscriptionFilter(query *gorm.DB, filter ActiveUserSubscriptionFilter) *gorm.DB {
@@ -1197,18 +1198,36 @@ func GetActiveUserSubscriptionIds(filter ActiveUserSubscriptionFilter) ([]int, e
 	return ids, nil
 }
 
-func buildSubscriptionSummaries(subs []UserSubscription) []SubscriptionSummary {
+func buildSubscriptionSummaries(subs []UserSubscription) ([]SubscriptionSummary, error) {
 	if len(subs) == 0 {
-		return []SubscriptionSummary{}
+		return []SubscriptionSummary{}, nil
+	}
+	planIds := make([]int, 0, len(subs))
+	seenPlanIds := make(map[int]struct{}, len(subs))
+	for _, sub := range subs {
+		if _, ok := seenPlanIds[sub.PlanId]; ok {
+			continue
+		}
+		seenPlanIds[sub.PlanId] = struct{}{}
+		planIds = append(planIds, sub.PlanId)
+	}
+	var plans []SubscriptionPlan
+	if err := DB.Select("id", "quota_reset_period").Where("id IN ?", planIds).Find(&plans).Error; err != nil {
+		return nil, err
+	}
+	dailyResetPlans := make(map[int]bool, len(plans))
+	for _, plan := range plans {
+		dailyResetPlans[plan.Id] = NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetDaily
 	}
 	result := make([]SubscriptionSummary, 0, len(subs))
 	for _, sub := range subs {
 		subCopy := sub
 		result = append(result, SubscriptionSummary{
-			Subscription: &subCopy,
+			Subscription:           &subCopy,
+			ResetRedemptionEnabled: dailyResetPlans[sub.PlanId],
 		})
 	}
-	return result
+	return result, nil
 }
 
 // AdminInvalidateUserSubscription marks a user subscription as cancelled and ends it immediately.
@@ -1273,8 +1292,6 @@ func resetUserSubscriptionUsedTx(tx *gorm.DB, userSubscriptionId int) (*UserSubs
 	if userSubscriptionId <= 0 {
 		return nil, nil, errors.New("invalid userSubscriptionId")
 	}
-	now := getDBTimestampTx(tx)
-	var updatedSub UserSubscription
 	var sub UserSubscription
 	if err := lockForUpdate(tx).
 		Where("id = ?", userSubscriptionId).First(&sub).Error; err != nil {
@@ -1284,21 +1301,56 @@ func resetUserSubscriptionUsedTx(tx *gorm.DB, userSubscriptionId int) (*UserSubs
 	if err != nil {
 		return nil, nil, err
 	}
+	return resetLockedUserSubscriptionUsedTx(tx, &sub, plan)
+}
+
+func resetUserSubscriptionUsedByRedemptionTx(tx *gorm.DB, userSubscriptionId int, userId int) (*UserSubscription, *SubscriptionPlan, error) {
+	if tx == nil {
+		return nil, nil, errors.New("tx is nil")
+	}
+	if userSubscriptionId <= 0 || userId <= 0 {
+		return nil, nil, ErrRedemptionSubscriptionUnavailable
+	}
+	now := getDBTimestampTx(tx)
+	var sub UserSubscription
+	if err := lockForUpdate(tx).
+		Where("id = ? AND user_id = ? AND status = ? AND end_time > ?", userSubscriptionId, userId, "active", now).
+		First(&sub).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, ErrRedemptionSubscriptionUnavailable
+		}
+		return nil, nil, err
+	}
+	var plan SubscriptionPlan
+	if err := tx.Where("id = ?", sub.PlanId).First(&plan).Error; err != nil {
+		return nil, nil, err
+	}
+	plan.NormalizeDefaults()
+	if NormalizeResetPeriod(plan.QuotaResetPeriod) != SubscriptionResetDaily {
+		return nil, nil, ErrRedemptionResetUnsupported
+	}
+	return resetLockedUserSubscriptionUsedTx(tx, &sub, &plan)
+}
+
+func resetLockedUserSubscriptionUsedTx(tx *gorm.DB, sub *UserSubscription, plan *SubscriptionPlan) (*UserSubscription, *SubscriptionPlan, error) {
+	if tx == nil || sub == nil || plan == nil {
+		return nil, nil, errors.New("invalid reset args")
+	}
+	now := getDBTimestampTx(tx)
 	sub.AmountUsed = 0
 	sub.ResetCount++
 	sub.UpdatedAt = common.GetTimestamp()
-	if err := tx.Model(&sub).Updates(map[string]interface{}{
+	if err := tx.Model(sub).Updates(map[string]interface{}{
 		"amount_used": sub.AmountUsed,
 		"reset_count": sub.ResetCount,
 		"updated_at":  sub.UpdatedAt,
 	}).Error; err != nil {
 		return nil, nil, err
 	}
-	if err := SyncUserSubscriptionDailyStatTx(tx, &sub, plan, now); err != nil {
+	if err := SyncUserSubscriptionDailyStatTx(tx, sub, plan, now); err != nil {
 		return nil, nil, err
 	}
-	updatedSub = sub
-	return &updatedSub, plan, nil
+	return sub, plan, nil
 }
 
 // ResetUserSubscriptionUsed actively clears the used amount while preserving the purchased total amount snapshot.

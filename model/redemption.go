@@ -19,6 +19,7 @@ var (
 	ErrRedemptionAlreadyRedeemed         = errors.New("已兑换")
 	ErrRedemptionExpired                 = errors.New("兑换码已过期")
 	ErrRedemptionSubscriptionUnavailable = errors.New("订阅不存在或不可用")
+	ErrRedemptionResetUnsupported        = errors.New("该订阅套餐不支持使用重置兑换码")
 	ErrRedemptionBoundToExclusiveUser    = errors.New("该兑换码已绑定了专属用户。")
 )
 
@@ -26,6 +27,7 @@ func isRedemptionBusinessError(err error) bool {
 	return errors.Is(err, ErrRedemptionAlreadyRedeemed) ||
 		errors.Is(err, ErrRedemptionExpired) ||
 		errors.Is(err, ErrRedemptionSubscriptionUnavailable) ||
+		errors.Is(err, ErrRedemptionResetUnsupported) ||
 		errors.Is(err, ErrRedemptionBoundToExclusiveUser)
 }
 
@@ -262,17 +264,7 @@ func applyRedemptionRewardTx(tx *gorm.DB, redemption *Redemption, userId int, us
 		if userSubscriptionId <= 0 {
 			return nil, ErrRedemptionSubscriptionUnavailable
 		}
-		now := getDBTimestampTx(tx)
-		var activeCount int64
-		if err := tx.Model(&UserSubscription{}).
-			Where("id = ? AND user_id = ? AND status = ? AND end_time > ?", userSubscriptionId, userId, "active", now).
-			Count(&activeCount).Error; err != nil {
-			return nil, err
-		}
-		if activeCount == 0 {
-			return nil, ErrRedemptionSubscriptionUnavailable
-		}
-		sub, _, err := resetUserSubscriptionUsedTx(tx, userSubscriptionId)
+		sub, _, err := resetUserSubscriptionUsedByRedemptionTx(tx, userSubscriptionId, userId)
 		if err != nil {
 			return nil, err
 		}

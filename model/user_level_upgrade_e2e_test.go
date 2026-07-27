@@ -941,13 +941,14 @@ func TestRedeem_ResetCodeClearsUsedAmountOnly(t *testing.T) {
 
 	user := createRegisteredUser(t, "reset_redeem")
 	plan := &SubscriptionPlan{
-		Title:         "reset plan",
-		PriceAmount:   0,
-		Currency:      "USD",
-		DurationUnit:  "month",
-		DurationValue: 1,
-		Enabled:       true,
-		TotalAmount:   10000,
+		Title:            "reset plan",
+		PriceAmount:      0,
+		Currency:         "USD",
+		DurationUnit:     "month",
+		DurationValue:    1,
+		Enabled:          true,
+		TotalAmount:      10000,
+		QuotaResetPeriod: SubscriptionResetDaily,
 	}
 	require.NoError(t, DB.Create(plan).Error)
 
@@ -994,6 +995,85 @@ func TestRedeem_ResetCodeClearsUsedAmountOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, common.RedemptionCodeStatusUsed, reloadedCode.Status)
 	assert.Equal(t, user.Id, reloadedCode.UsedUserId)
+
+	summaries, err := GetAllActiveUserSubscriptions(user.Id)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.True(t, summaries[0].ResetRedemptionEnabled)
+}
+
+func TestRedeem_ResetCodeRejectsNonDailyPlans(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[]`)
+
+	periods := []string{
+		SubscriptionResetNever,
+		SubscriptionResetWeekly,
+		SubscriptionResetMonthly,
+		SubscriptionResetCustom,
+	}
+	for index, period := range periods {
+		user := createRegisteredUser(t, fmt.Sprintf("reset_reject_%d", index))
+		plan := &SubscriptionPlan{
+			Title:                   "unsupported reset plan",
+			PriceAmount:             0,
+			Currency:                "USD",
+			DurationUnit:            "month",
+			DurationValue:           1,
+			Enabled:                 true,
+			TotalAmount:             10000,
+			QuotaResetPeriod:        period,
+			QuotaResetCustomSeconds: 3600,
+		}
+		require.NoError(t, DB.Create(plan).Error)
+
+		now := common.GetTimestamp()
+		subscription := &UserSubscription{
+			UserId:      user.Id,
+			PlanId:      plan.Id,
+			AmountTotal: 10000,
+			AmountUsed:  4321,
+			StartTime:   now - 60,
+			EndTime:     now + 3600,
+			Status:      "active",
+			Source:      "order",
+			ResetCount:  2,
+		}
+		require.NoError(t, DB.Create(subscription).Error)
+
+		redemption := &Redemption{
+			Key:         fmt.Sprintf("N%030d%d", time.Now().UnixNano()%1_000_000_000_000_000, index),
+			Status:      common.RedemptionCodeStatusEnabled,
+			CodeType:    common.RedemptionCodeTypeReset,
+			RewardType:  common.RedemptionRewardTypeReset,
+			Name:        "reset_reject",
+			CreatedTime: now,
+		}
+		require.NoError(t, redemption.Insert())
+
+		result, err := Redeem(redemption.Key, user.Id, subscription.Id)
+		require.Error(t, err)
+		assert.Nil(t, result)
+		assert.ErrorIs(t, err, ErrRedemptionResetUnsupported)
+
+		var reloadedSub UserSubscription
+		require.NoError(t, DB.First(&reloadedSub, subscription.Id).Error)
+		assert.Equal(t, int64(4321), reloadedSub.AmountUsed)
+		assert.Equal(t, 2, reloadedSub.ResetCount)
+
+		reloadedCode, err := GetRedemptionById(redemption.Id)
+		require.NoError(t, err)
+		assert.Equal(t, common.RedemptionCodeStatusEnabled, reloadedCode.Status)
+
+		summaries, err := GetAllActiveUserSubscriptions(user.Id)
+		require.NoError(t, err)
+		require.Len(t, summaries, 1)
+		assert.False(t, summaries[0].ResetRedemptionEnabled)
+
+		adminResetSub, _, err := AdminResetUserSubscriptionUsed(subscription.Id)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), adminResetSub.AmountUsed)
+		assert.Equal(t, 3, adminResetSub.ResetCount)
+	}
 }
 
 func TestRedeem_ExpiredCodeReturnsSpecificError(t *testing.T) {

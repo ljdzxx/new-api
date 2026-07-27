@@ -659,7 +659,7 @@ const SubscriptionPlansCard = ({
                                 {t('已过期')}
                               </Tag>
                             )}
-                            {isActive && (
+                            {isActive && sub?.reset_redemption_enabled && (
                               <Tooltip content={t('使用重置兑换码')}>
                                 <Button
                                   size='small'
