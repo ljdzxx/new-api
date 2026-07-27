@@ -28,7 +28,7 @@ const statusColor = {
   denied_policy: 'amber',
 };
 
-const InviteRewardAuditsModal = ({ visible, handleClose, t }) => {
+const InviteRewardAuditsModal = ({ visible, handleClose, t, inviterId }) => {
   const formApiRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [audits, setAudits] = useState([]);
@@ -36,7 +36,11 @@ const InviteRewardAuditsModal = ({ visible, handleClose, t }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const buildParams = (targetPage = page, targetPageSize = pageSize) => {
+  const buildParams = (
+    targetPage = page,
+    targetPageSize = pageSize,
+    targetInviterId = inviterId,
+  ) => {
     const values = formApiRef.current?.getValues?.() || {};
     const params = new URLSearchParams({
       p: String(targetPage),
@@ -49,7 +53,8 @@ const InviteRewardAuditsModal = ({ visible, handleClose, t }) => {
       'min_risk_score',
       'max_risk_score',
     ].forEach((key) => {
-      const value = values[key];
+      const value =
+        key === 'inviter_id' && targetInviterId ? targetInviterId : values[key];
       if (value !== undefined && value !== null && value !== '') {
         params.set(key, String(value));
       }
@@ -57,13 +62,18 @@ const InviteRewardAuditsModal = ({ visible, handleClose, t }) => {
     return params;
   };
 
-  const loadAudits = async (targetPage = page, targetPageSize = pageSize) => {
+  const loadAudits = async (
+    targetPage = page,
+    targetPageSize = pageSize,
+    targetInviterId = inviterId,
+  ) => {
     setLoading(true);
     try {
       const res = await API.get(
         `/api/user/invite_reward_audits?${buildParams(
           targetPage,
           targetPageSize,
+          targetInviterId,
         ).toString()}`,
       );
       if (res.data?.success) {
@@ -83,9 +93,10 @@ const InviteRewardAuditsModal = ({ visible, handleClose, t }) => {
 
   useEffect(() => {
     if (visible) {
-      loadAudits(1, pageSize);
+      formApiRef.current?.setValue?.('inviter_id', inviterId || undefined);
+      loadAudits(1, pageSize, inviterId);
     }
-  }, [visible]);
+  }, [visible, inviterId]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 80 },

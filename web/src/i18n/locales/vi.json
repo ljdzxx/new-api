@@ -4753,5 +4753,17 @@
   "最近消费时间": "Thời gian tiêu thụ gần nhất",
   "Token 请求数": "Số yêu cầu token",
   "Top 100 总 Token": "Tổng token của Top 100",
-  "Top 100 消耗金额": "Số tiền tiêu thụ của Top 100"
+  "Top 100 消耗金额": "Số tiền tiêu thụ của Top 100",
+  "拉新排行榜": "Bảng xếp hạng giới thiệu",
+  "按时间范围查看有效邀请用户前 100 名": "Xem 100 người dùng có nhiều lời mời hợp lệ nhất theo khoảng thời gian",
+  "区间有效邀请人数": "Lời mời hợp lệ trong khoảng",
+  "累计邀请人数": "Tổng số lời mời",
+  "区间占比": "Tỷ lệ trong khoảng",
+  "最近邀请时间": "Thời gian mời gần nhất",
+  "审计": "Kiểm tra",
+  "区间有效邀请总数": "Tổng lời mời hợp lệ trong khoảng",
+  "产生有效邀请的用户": "Người dùng có lời mời hợp lệ",
+  "Top 100 有效邀请数": "Lời mời hợp lệ của Top 100",
+  "第一名有效邀请数": "Lời mời hợp lệ của người đứng đầu",
+  "自定义查询范围不能超过 366 天": "Khoảng truy vấn tùy chỉnh không được vượt quá 366 ngày"
 }

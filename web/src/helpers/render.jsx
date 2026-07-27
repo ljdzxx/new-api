@@ -140,6 +140,7 @@ export function getLucideIcon(key, selected = false) {
       return <User {...commonProps} color={iconColor} />;
     case 'consumption_rank':
     case 'subscription_rank':
+    case 'invite_rank':
       return <BarChart3 {...commonProps} color={iconColor} />;
     case 'user_subscriptions':
       return <CalendarClock {...commonProps} color={iconColor} />;

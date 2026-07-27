@@ -149,6 +149,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/search", controller.SearchUsers)
 				adminRoute.GET("/consumption_rank", controller.AdminGetConsumptionRank)
 				adminRoute.GET("/subscription_usage_rank", controller.AdminGetSubscriptionUsageRank)
+				adminRoute.GET("/invite_rank", controller.AdminGetInviteRank)
 				adminRoute.GET("/invite_reward_audits", controller.AdminGetInviteRewardAudits)
 				adminRoute.GET("/:id/redemptions", controller.AdminGetUserRedemptionRecords)
 				adminRoute.GET("/:id/subscription_sources", controller.AdminGetUserSubscriptionSourceRecords)

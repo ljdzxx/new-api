@@ -60,6 +60,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     user_subscriptions: true,
     consumption_rank: true,
     subscription_rank: true,
+    invite_rank: true,
     subscription: true,
     setting: true,
   },

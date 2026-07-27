@@ -184,6 +184,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 			"user_subscriptions": true,
 			"consumption_rank":   true,
 			"subscription_rank":  true,
+			"invite_rank":        true,
 			"subscription":       true,
 			"setting":            false, // 管理员不能访问系统设置
 		}
@@ -201,6 +202,7 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 			"user_subscriptions": true,
 			"consumption_rank":   true,
 			"subscription_rank":  true,
+			"invite_rank":        true,
 			"subscription":       true,
 			"setting":            true,
 		}

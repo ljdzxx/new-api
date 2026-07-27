@@ -41,6 +41,7 @@ const routerMap = {
   user_subscriptions: '/console/user-subscriptions',
   consumption_rank: '/console/consumption-rank',
   subscription_rank: '/console/subscription-rank',
+  invite_rank: '/console/invite-rank',
   subscription: '/console/subscription',
   log: '/console/log',
   midjourney: '/console/midjourney',
@@ -224,6 +225,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('订阅使用榜'),
         itemKey: 'subscription_rank',
         to: '/console/subscription-rank',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('拉新排行榜'),
+        itemKey: 'invite_rank',
+        to: '/console/invite-rank',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

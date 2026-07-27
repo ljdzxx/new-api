@@ -50,6 +50,7 @@ import ResetPasskeyModal from '../users/modals/ResetPasskeyModal';
 import ResetTwoFAModal from '../users/modals/ResetTwoFAModal';
 import UserSubscriptionsModal from '../users/modals/UserSubscriptionsModal';
 import UserSubscriptionStatsModal from '../users/modals/UserSubscriptionStatsModal';
+import TopupHistoryModal from '../../topup/modals/TopupHistoryModal';
 
 const { Text } = Typography;
 
@@ -193,6 +194,7 @@ const SubscriptionUsageRankPage = () => {
     useState(false);
   const [showUserSubscriptionStatsModal, setShowUserSubscriptionStatsModal] =
     useState(false);
+  const [showUserOrdersModal, setShowUserOrdersModal] = useState(false);
 
   const closeEditUser = () => {
     setShowEditUser(false);
@@ -240,6 +242,11 @@ const SubscriptionUsageRankPage = () => {
   const showUserSubscriptionStatsUserModal = (user) => {
     setModalUser(user);
     setShowUserSubscriptionStatsModal(true);
+  };
+
+  const showUserOrdersUserModal = (user) => {
+    setModalUser(user);
+    setShowUserOrdersModal(true);
   };
 
   const handlePromoteConfirm = () => {
@@ -376,6 +383,7 @@ const SubscriptionUsageRankPage = () => {
             showResetPasskeyModal: showResetPasskeyUserModal,
             showResetTwoFAModal: showResetTwoFAUserModal,
             showUserSubscriptionsModal: showUserSubscriptionsUserModal,
+            showUserOrdersModal: showUserOrdersUserModal,
             t,
           }),
       },
@@ -391,6 +399,7 @@ const SubscriptionUsageRankPage = () => {
       showResetPasskeyUserModal,
       showResetTwoFAUserModal,
       showUserSubscriptionsUserModal,
+      showUserOrdersUserModal,
       showUserSubscriptionStatsUserModal,
     ],
   );
@@ -604,6 +613,13 @@ const SubscriptionUsageRankPage = () => {
         onCancel={() => setShowUserSubscriptionStatsModal(false)}
         user={modalUser}
         t={t}
+      />
+
+      <TopupHistoryModal
+        visible={showUserOrdersModal}
+        onCancel={() => setShowUserOrdersModal(false)}
+        t={t}
+        userId={modalUser?.id || 0}
       />
     </>
   );

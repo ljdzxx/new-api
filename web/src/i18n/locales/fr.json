@@ -4234,5 +4234,17 @@
   "最近消费时间": "Dernière consommation",
   "Token 请求数": "Requêtes avec tokens",
   "Top 100 总 Token": "Total des tokens du Top 100",
-  "Top 100 消耗金额": "Montant consommé par le Top 100"
+  "Top 100 消耗金额": "Montant consommé par le Top 100",
+  "拉新排行榜": "Classement des parrainages",
+  "按时间范围查看有效邀请用户前 100 名": "Afficher les 100 premiers utilisateurs par invitations valides sur une période",
+  "区间有效邀请人数": "Invitations valides sur la période",
+  "累计邀请人数": "Total des invitations",
+  "区间占比": "Part de la période",
+  "最近邀请时间": "Dernière invitation",
+  "审计": "Audit",
+  "区间有效邀请总数": "Total des invitations valides sur la période",
+  "产生有效邀请的用户": "Utilisateurs avec des invitations valides",
+  "Top 100 有效邀请数": "Invitations valides du Top 100",
+  "第一名有效邀请数": "Invitations valides du premier",
+  "自定义查询范围不能超过 366 天": "La période personnalisée ne peut pas dépasser 366 jours"
 }

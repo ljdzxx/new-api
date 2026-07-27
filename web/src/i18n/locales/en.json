@@ -4295,5 +4295,17 @@
   "最近消费时间": "Latest consumption time",
   "Token 请求数": "Token requests",
   "Top 100 总 Token": "Top 100 total tokens",
-  "Top 100 消耗金额": "Top 100 consumption amount"
+  "Top 100 消耗金额": "Top 100 consumption amount",
+  "拉新排行榜": "Referral leaderboard",
+  "按时间范围查看有效邀请用户前 100 名": "View the top 100 users by valid invitations in a time range",
+  "区间有效邀请人数": "Valid invites in range",
+  "累计邀请人数": "Total invitations",
+  "区间占比": "Share of range",
+  "最近邀请时间": "Latest invitation",
+  "审计": "Audit",
+  "区间有效邀请总数": "Total valid invites in range",
+  "产生有效邀请的用户": "Users with valid invites",
+  "Top 100 有效邀请数": "Top 100 valid invites",
+  "第一名有效邀请数": "Top user's valid invites",
+  "自定义查询范围不能超过 366 天": "A custom query range cannot exceed 366 days"
 }

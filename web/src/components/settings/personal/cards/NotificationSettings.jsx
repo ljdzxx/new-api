@@ -93,6 +93,7 @@ const NotificationSettings = ({
       deployment: true,
       consumption_rank: true,
       subscription_rank: true,
+      invite_rank: true,
       subscription: true,
       redemption: true,
       lottery_admin: true,
@@ -193,6 +194,7 @@ const NotificationSettings = ({
         deployment: true,
         consumption_rank: true,
         subscription_rank: true,
+        invite_rank: true,
         subscription: true,
         redemption: true,
         lottery_admin: true,
@@ -357,6 +359,11 @@ const NotificationSettings = ({
           key: 'subscription_rank',
           title: t('订阅使用榜'),
           description: t('查看订阅用户近 1/3/7 日使用量排行榜'),
+        },
+        {
+          key: 'invite_rank',
+          title: t('拉新排行榜'),
+          description: t('按时间范围查看有效邀请用户前 100 名'),
         },
         {
           key: 'user_subscriptions',
