@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -416,6 +417,11 @@ type AdminCompleteTopupRequest struct {
 	TradeNo string `json:"trade_no"`
 }
 
+type adminRefundTopUpRequest struct {
+	TradeNo string `json:"trade_no"`
+	Reason  string `json:"reason"`
+}
+
 // AdminCompleteTopUp 管理员补单接口
 func AdminCompleteTopUp(c *gin.Context) {
 	var req AdminCompleteTopupRequest
@@ -433,4 +439,39 @@ func AdminCompleteTopUp(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+// AdminRefundTopUp marks an externally refunded wallet order and recalculates the user's level.
+func AdminRefundTopUp(c *gin.Context) {
+	var req adminRefundTopUpRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	req.TradeNo = strings.TrimSpace(req.TradeNo)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.TradeNo == "" || req.Reason == "" {
+		common.ApiErrorMsg(c, "订单号和退款原因不能为空")
+		return
+	}
+
+	LockOrder(req.TradeNo)
+	defer UnlockOrder(req.TradeNo)
+
+	result, err := model.MarkTopUpRefunded(req.TradeNo, c.GetInt("id"), req.Reason)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !result.AlreadyRefunded {
+		model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("管理员将充值订单 %s 标记为退款，退款后累计充值 %.2f", req.TradeNo, result.TotalRecharge))
+		if result.LevelChanged {
+			model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("退款后重新计算等级：#%d -> %s (#%d)", result.PreviousLevelId, result.LevelName, result.UserLevelId))
+		}
+	}
+	common.ApiSuccess(c, gin.H{
+		"already_refunded": result.AlreadyRefunded,
+		"total_recharge":   result.TotalRecharge,
+		"user_level_id":    result.UserLevelId,
+	})
 }

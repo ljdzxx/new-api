@@ -594,6 +594,8 @@ func ensureUsersTableSQLite() error {
 		{Name: "remark", DDL: "`remark` varchar(255)"},
 		{Name: "stripe_customer", DDL: "`stripe_customer` varchar(64)"},
 		{Name: "user_level_id", DDL: "`user_level_id` integer DEFAULT 1"},
+		{Name: "user_level_source", DDL: "`user_level_source` varchar(16) DEFAULT 'auto'"},
+		{Name: "user_level_manual_id", DDL: "`user_level_manual_id` integer DEFAULT 0"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "global_model_ratio", DDL: "`global_model_ratio` decimal(12,6) DEFAULT 1.000000"},
 		{Name: "global_model_ratio_input_token_threshold", DDL: "`global_model_ratio_input_token_threshold` bigint DEFAULT 0"},

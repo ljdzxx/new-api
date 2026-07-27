@@ -28,6 +28,9 @@ type TopUp struct {
 	CreateTime       int64   `json:"create_time"`
 	CompleteTime     int64   `json:"complete_time"`
 	Status           string  `json:"status"`
+	RefundTime       int64   `json:"refund_time" gorm:"column:refund_time"`
+	RefundOperatorId int     `json:"refund_operator_id" gorm:"column:refund_operator_id;index"`
+	RefundReason     string  `json:"refund_reason" gorm:"type:text;column:refund_reason"`
 }
 
 const (
@@ -161,6 +164,10 @@ func getUserTotalRechargeAmountTx(tx *gorm.DB, userId int) (float64, error) {
 }
 
 func applyUserLevelByRechargeTx(tx *gorm.DB, userId int, totalRecharge float64) (bool, string, int, error) {
+	return recalculateUserLevelByRechargeTx(tx, userId, totalRecharge, false)
+}
+
+func recalculateUserLevelByRechargeTx(tx *gorm.DB, userId int, totalRecharge float64, allowAutoDowngrade bool) (bool, string, int, error) {
 	target, found := setting.GetHighestUserLevelByRecharge(totalRecharge)
 	if !found {
 		return false, "", 0, nil
@@ -171,21 +178,130 @@ func applyUserLevelByRechargeTx(tx *gorm.DB, userId int, totalRecharge float64) 
 		return false, "", 0, err
 	}
 
+	targetSource := UserLevelSourceAuto
+	if manualLevel, hasManualLevel := setting.GetUserLevelPolicyByID(user.UserLevelManualId); hasManualLevel &&
+		(manualLevel.Recharge > target.Recharge || (manualLevel.Recharge == target.Recharge && manualLevel.ID >= target.ID)) {
+		target = manualLevel
+		targetSource = UserLevelSourceManual
+	}
+
 	if user.UserLevelId == target.ID {
+		if user.UserLevelSource != targetSource {
+			if err := tx.Model(&User{}).Where("id = ?", userId).Update("user_level_source", targetSource).Error; err != nil {
+				return false, "", 0, err
+			}
+		}
 		return false, target.Level, target.ID, nil
 	}
-	if current, found := setting.GetUserLevelPolicyByID(user.UserLevelId); found && current.Recharge >= target.Recharge {
+	current, hasCurrent := setting.GetUserLevelPolicyByID(user.UserLevelId)
+	if !allowAutoDowngrade && (!hasCurrent || current.Recharge >= target.Recharge) {
 		return false, current.Level, current.ID, nil
 	}
 
 	err := tx.Model(&User{}).Where("id = ?", userId).Updates(map[string]interface{}{
-		"user_level_id": target.ID,
+		"user_level_id":     target.ID,
+		"user_level_source": targetSource,
 	}).Error
 	if err != nil {
 		return false, "", 0, err
 	}
 
 	return true, target.Level, target.ID, nil
+}
+
+type TopUpRefundResult struct {
+	UserId          int
+	PreviousLevelId int
+	LevelChanged    bool
+	LevelName       string
+	UserLevelId     int
+	TotalRecharge   float64
+	AlreadyRefunded bool
+}
+
+func MarkTopUpRefunded(tradeNo string, operatorId int, reason string) (*TopUpRefundResult, error) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	reason = strings.TrimSpace(reason)
+	if tradeNo == "" {
+		return nil, errors.New("未提供订单号")
+	}
+	if operatorId <= 0 {
+		return nil, errors.New("无效的操作人")
+	}
+	if reason == "" {
+		return nil, errors.New("请填写退款原因")
+	}
+	if len([]rune(reason)) > 500 {
+		return nil, errors.New("退款原因不能超过500个字符")
+	}
+
+	result := &TopUpRefundResult{}
+	refCol := "`trade_no`"
+	if common.UsingPostgreSQL {
+		refCol = `"trade_no"`
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
+		}
+		result.UserId = topUp.UserId
+		if topUp.Status == common.TopUpStatusRefunded {
+			result.AlreadyRefunded = true
+			totalRecharge, totalErr := getUserTotalRechargeAmountTx(tx, topUp.UserId)
+			if totalErr != nil {
+				return totalErr
+			}
+			result.TotalRecharge = totalRecharge
+			var user User
+			if userErr := tx.Select("user_level_id").Where("id = ?", topUp.UserId).First(&user).Error; userErr != nil {
+				return userErr
+			}
+			result.PreviousLevelId = user.UserLevelId
+			result.UserLevelId = user.UserLevelId
+			return nil
+		}
+		if topUp.Status != common.TopUpStatusSuccess {
+			return errors.New("仅支付成功的订单可以标记退款")
+		}
+		if topUp.Amount <= 0 || topUp.Money <= 0 {
+			return errors.New("仅计入等级累计充值的余额订单可以标记退款")
+		}
+
+		topUp.Status = common.TopUpStatusRefunded
+		topUp.RefundTime = common.GetTimestamp()
+		topUp.RefundOperatorId = operatorId
+		topUp.RefundReason = reason
+		if err := tx.Save(topUp).Error; err != nil {
+			return err
+		}
+
+		totalRecharge, err := getUserTotalRechargeAmountTx(tx, topUp.UserId)
+		if err != nil {
+			return err
+		}
+		result.TotalRecharge = totalRecharge
+		var user User
+		if err = tx.Select("user_level_id").Where("id = ?", topUp.UserId).First(&user).Error; err != nil {
+			return err
+		}
+		result.PreviousLevelId = user.UserLevelId
+		result.LevelChanged, result.LevelName, result.UserLevelId, err = recalculateUserLevelByRechargeTx(tx, topUp.UserId, totalRecharge, true)
+		if !result.LevelChanged {
+			result.UserLevelId = result.PreviousLevelId
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !result.AlreadyRefunded {
+		_ = invalidateUserCache(result.UserId)
+	}
+	return result, nil
 }
 
 func TryAutoUpgradeUserLevelByRecharge(userId int) error {

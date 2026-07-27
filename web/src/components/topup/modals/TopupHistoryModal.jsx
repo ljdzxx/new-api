@@ -28,12 +28,13 @@ import {
   Button,
   Input,
   Tag,
+  TextArea,
 } from '@douyinfe/semi-ui';
 import {
   IllustrationNoResult,
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
-import { Coins } from 'lucide-react';
+import { Coins, Undo2 } from 'lucide-react';
 import { IconSearch } from '@douyinfe/semi-icons';
 import { API, timestamp2string } from '../../../helpers';
 import { isAdmin } from '../../../helpers/utils';
@@ -45,6 +46,7 @@ const STATUS_CONFIG = {
   success: { type: 'success', key: '成功' },
   pending: { type: 'warning', key: '待支付' },
   expired: { type: 'danger', key: '已过期' },
+  refunded: { type: 'danger', key: '已退款' },
 };
 
 const PAYMENT_METHOD_MAP = {
@@ -76,6 +78,9 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
+  const [refundOrder, setRefundOrder] = useState(null);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundLoading, setRefundLoading] = useState(false);
   const currentUserIdRef = useRef(userId);
 
   const isMobile = useIsMobile();
@@ -150,6 +155,34 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
       content: t('是否将该订单标记为成功并为用户入账？'),
       onOk: () => handleAdminComplete(tradeNo),
     });
+  };
+
+  const handleAdminRefund = async () => {
+    const reason = refundReason.trim();
+    if (!reason) {
+      Toast.warning({ content: t('请填写退款原因') });
+      return;
+    }
+    setRefundLoading(true);
+    try {
+      const res = await API.post('/api/user/topup/refund', {
+        trade_no: refundOrder?.trade_no,
+        reason,
+      });
+      const { success, message } = res.data;
+      if (success) {
+        Toast.success({ content: t('订单已标记为退款，用户等级已重新计算') });
+        setRefundOrder(null);
+        setRefundReason('');
+        await loadTopups(page, pageSize);
+      } else {
+        Toast.error({ content: message || t('标记退款失败') });
+      }
+    } catch (e) {
+      Toast.error({ content: t('标记退款失败') });
+    } finally {
+      setRefundLoading(false);
+    }
   };
 
   const renderStatusBadge = (status) => {
@@ -251,19 +284,41 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
       baseColumns.push({
         title: t('操作'),
         key: 'action',
-        width: 90,
+        width: 110,
         render: (_, record) => {
-          if (record.status !== 'pending') return null;
-          return (
-            <Button
-              size='small'
-              type='primary'
-              theme='outline'
-              onClick={() => confirmAdminComplete(record.trade_no)}
-            >
-              {t('补单')}
-            </Button>
-          );
+          if (record.status === 'pending') {
+            return (
+              <Button
+                size='small'
+                type='primary'
+                theme='outline'
+                onClick={() => confirmAdminComplete(record.trade_no)}
+              >
+                {t('补单')}
+              </Button>
+            );
+          }
+          if (
+            record.status === 'success' &&
+            Number(record.amount) > 0 &&
+            Number(record.money) > 0
+          ) {
+            return (
+              <Button
+                size='small'
+                type='danger'
+                theme='outline'
+                icon={<Undo2 size={14} />}
+                onClick={() => {
+                  setRefundOrder(record);
+                  setRefundReason('');
+                }}
+              >
+                {t('退款')}
+              </Button>
+            );
+          }
+          return null;
         },
       });
     }
@@ -331,6 +386,37 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
           />
         }
       />
+      <Modal
+        title={t('标记充值订单退款')}
+        visible={Boolean(refundOrder)}
+        onCancel={() => {
+          if (!refundLoading) setRefundOrder(null);
+        }}
+        onOk={handleAdminRefund}
+        confirmLoading={refundLoading}
+        okButtonProps={{ type: 'danger' }}
+        okText={t('确认标记退款')}
+        cancelText={t('取消')}
+        width={520}
+      >
+        <div className='space-y-3'>
+          <Text>
+            {t('订单号')}：{refundOrder?.trade_no || '-'}
+          </Text>
+          <Text type='warning' className='block'>
+            {t(
+              '请确认支付平台退款已完成。此操作只登记退款、排除等级累计充值并立即重算等级，不会调用支付平台退款，也不会扣减用户余额。',
+            )}
+          </Text>
+          <TextArea
+            value={refundReason}
+            onChange={setRefundReason}
+            maxCount={500}
+            autosize={{ minRows: 3, maxRows: 6 }}
+            placeholder={t('请填写退款原因')}
+          />
+        </div>
+      </Modal>
     </Modal>
   );
 };

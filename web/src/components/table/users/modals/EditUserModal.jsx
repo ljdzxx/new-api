@@ -91,6 +91,8 @@ const EditUserModal = (props) => {
     global_model_ratio_input_token_threshold: 0,
     group: 'default',
     user_level_id: 1,
+    user_level_source: 'auto',
+    user_level_manual_id: 0,
     remark: '',
     rate_limit_enabled: false,
     rate_limit_duration_minutes: 1,
@@ -389,9 +391,24 @@ const EditUserModal = (props) => {
                           rules={[
                             { required: true, message: t('请选择用户等级') },
                           ]}
-                          extraText={t(
-                            '管理员可手动调整；后续余额充值达到更高门槛时仍会自动升级',
-                          )}
+                          extraText={
+                            <div>
+                              <div>
+                                {t(
+                                  '管理员调整后会记录为等级下限；后续充值可继续升级，退款重算不会低于该等级',
+                                )}
+                              </div>
+                              <div>
+                                {t('当前等级来源')}：
+                                {values.user_level_source === 'manual'
+                                  ? t('管理员设置')
+                                  : t('累计充值自动计算')}
+                                {values.user_level_manual_id > 0
+                                  ? ` (#${values.user_level_manual_id})`
+                                  : ''}
+                              </div>
+                            </div>
+                          }
                         />
                       </Col>
 

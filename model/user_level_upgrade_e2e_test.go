@@ -19,6 +19,11 @@ var e2eTopUpSeq int64
 
 func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	t.Helper()
+	if common.UsingSQLite {
+		require.NoError(t, ensureUsersTableSQLite())
+	} else {
+		require.NoError(t, DB.AutoMigrate(&User{}))
+	}
 	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Redemption{}, &RedemptionUsage{}, &UserSubscription{}, &UserSubscriptionDailyStat{}, &UserRegistrationProfile{}, &InviteRewardAudit{}))
 	if common.UsingSQLite {
 		require.NoError(t, ensureRedemptionsTableSQLite())
@@ -63,7 +68,7 @@ func createRegisteredUser(t *testing.T, name string) *User {
 	return user
 }
 
-func createTopUp(t *testing.T, userId int, money float64) {
+func createTopUp(t *testing.T, userId int, money float64) *TopUp {
 	t.Helper()
 	now := common.GetTimestamp()
 	seq := atomic.AddInt64(&e2eTopUpSeq, 1)
@@ -78,6 +83,7 @@ func createTopUp(t *testing.T, userId int, money float64) {
 		Status:        common.TopUpStatusSuccess,
 	}
 	require.NoError(t, topup.Insert())
+	return topup
 }
 
 func setInviteRewardConfig(t *testing.T, quotaForNewUser, quotaForInvitee, quotaForInviter int, emailOnly bool, emailRegex string) {
@@ -149,6 +155,8 @@ func TestUserRegister_DefaultUserLevelIDIsOne(t *testing.T) {
 	reloaded, err := GetUserById(user.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, 1, reloaded.UserLevelId)
+	assert.Equal(t, UserLevelSourceAuto, reloaded.UserLevelSource)
+	assert.Equal(t, 0, reloaded.UserLevelManualId)
 }
 
 func TestAutoUpgradeByRecharge_ExactlyThreshold(t *testing.T) {
@@ -712,11 +720,99 @@ func TestUserEdit_UpdatesUserLevelID(t *testing.T) {
 	reloaded, err := GetUserById(user.Id, true)
 	require.NoError(t, err)
 	reloaded.UserLevelId = 2
+	reloaded.UserLevelSource = UserLevelSourceManual
+	reloaded.UserLevelManualId = 2
 	require.NoError(t, reloaded.Edit(false, false))
 
 	updated, err := GetUserById(user.Id, true)
 	require.NoError(t, err)
 	assert.Equal(t, 2, updated.UserLevelId)
+	assert.Equal(t, UserLevelSourceManual, updated.UserLevelSource)
+	assert.Equal(t, 2, updated.UserLevelManualId)
+}
+
+func TestMarkTopUpRefunded_RecalculatesAutoLevelAndKeepsQuota(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100},
+{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/t3.png","channel":[],"rate":300}
+]`)
+
+	user := createRegisteredUser(t, "refund_auto_recalculate")
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Update("quota", 123456).Error)
+	createTopUp(t, user.Id, 100)
+	refundedTopUp := createTopUp(t, user.Id, 500)
+	require.NoError(t, TryAutoUpgradeUserLevelByRecharge(user.Id))
+
+	result, err := MarkTopUpRefunded(refundedTopUp.TradeNo, 99, "customer refund")
+	require.NoError(t, err)
+	assert.False(t, result.AlreadyRefunded)
+	assert.True(t, result.LevelChanged)
+	assert.Equal(t, 3, result.PreviousLevelId)
+	assert.Equal(t, 2, result.UserLevelId)
+	assert.InDelta(t, 100.0, result.TotalRecharge, 0.0001)
+
+	updated, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2, updated.UserLevelId)
+	assert.Equal(t, UserLevelSourceAuto, updated.UserLevelSource)
+	assert.Equal(t, 123456, updated.Quota)
+
+	var topUp TopUp
+	require.NoError(t, DB.Where("id = ?", refundedTopUp.Id).First(&topUp).Error)
+	assert.Equal(t, common.TopUpStatusRefunded, topUp.Status)
+	assert.NotZero(t, topUp.RefundTime)
+	assert.Equal(t, 99, topUp.RefundOperatorId)
+	assert.Equal(t, "customer refund", topUp.RefundReason)
+
+	again, err := MarkTopUpRefunded(refundedTopUp.TradeNo, 99, "duplicate request")
+	require.NoError(t, err)
+	assert.True(t, again.AlreadyRefunded)
+	assert.Equal(t, 2, again.UserLevelId)
+	assert.InDelta(t, 100.0, again.TotalRecharge, 0.0001)
+}
+
+func TestMarkTopUpRefunded_DowngradesOnlyToAdminLevelFloor(t *testing.T) {
+	setupUserLevelUpgradeE2E(t, `[
+{"id":1,"level":"Tier 1","recharge":0,"discount":"0","icon":"/t1.png","channel":[],"rate":50},
+{"id":2,"level":"Tier 2","recharge":100,"discount":"0.1","icon":"/t2.png","channel":[],"rate":100},
+{"id":3,"level":"Tier 3","recharge":500,"discount":"0.2","icon":"/t3.png","channel":[],"rate":300}
+]`)
+
+	user := createRegisteredUser(t, "refund_manual_floor")
+	baseTopUp := createTopUp(t, user.Id, 100)
+	highTopUp := createTopUp(t, user.Id, 500)
+
+	adminUser, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	adminUser.UserLevelId = 2
+	adminUser.UserLevelSource = UserLevelSourceManual
+	adminUser.UserLevelManualId = 2
+	require.NoError(t, adminUser.Edit(false, false))
+
+	require.NoError(t, TryAutoUpgradeUserLevelByRecharge(user.Id))
+	afterRecharge, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3, afterRecharge.UserLevelId)
+	assert.Equal(t, UserLevelSourceAuto, afterRecharge.UserLevelSource)
+	assert.Equal(t, 2, afterRecharge.UserLevelManualId)
+
+	_, err = MarkTopUpRefunded(highTopUp.TradeNo, 99, "partial refund")
+	require.NoError(t, err)
+	afterPartialRefund, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2, afterPartialRefund.UserLevelId)
+	assert.Equal(t, UserLevelSourceManual, afterPartialRefund.UserLevelSource)
+
+	_, err = MarkTopUpRefunded(baseTopUp.TradeNo, 99, "full refund")
+	require.NoError(t, err)
+	afterFullRefund, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2, afterFullRefund.UserLevelId)
+	assert.Equal(t, UserLevelSourceManual, afterFullRefund.UserLevelSource)
+	totalRecharge, err := GetUserTotalRechargeAmount(user.Id)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.0, totalRecharge, 0.0001)
 }
 
 func TestUserEdit_QuotaChangesDoNotAffectUserLevel(t *testing.T) {

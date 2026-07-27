@@ -140,7 +140,7 @@ const UserLevelPage = () => {
         <Banner
           type='info'
           description={t(
-            '仅钱包余额充值计入等级累计充值；购买、兑换或绑定订阅套餐均不会提升用户等级',
+            '钱包余额充值和有实付金额的余额兑换码计入累计充值；订阅套餐不计入，已退款订单会立即排除并重新计算等级',
           )}
         />
         <Card
@@ -210,6 +210,18 @@ const UserLevelPage = () => {
                     prefixIcon={<Clock size={12} />}
                   >
                     {getRateText(current?.rate)}
+                  </Tag>
+                  <Tag
+                    color='white'
+                    style={{
+                      background: 'rgba(255,255,255,0.15)',
+                      color: '#fff',
+                    }}
+                  >
+                    {t('等级来源')}：
+                    {data?.user_level_source === 'manual'
+                      ? t('管理员设置')
+                      : t('累计充值自动计算')}
                   </Tag>
                 </div>
               </div>

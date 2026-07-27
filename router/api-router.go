@@ -142,6 +142,7 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/", controller.GetAllUsers)
 				adminRoute.GET("/topup", controller.GetAllTopUps)
 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
+				adminRoute.POST("/topup/refund", controller.AdminRefundTopUp)
 				adminRoute.POST("/topup/epay/reconcile", controller.StartEpayTopUpReconcile)
 				adminRoute.GET("/topup/reconcile/jobs", controller.GetPaymentReconcileJobs)
 				adminRoute.GET("/topup/reconcile/jobs/:job_id/items", controller.GetPaymentReconcileItems)

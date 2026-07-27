@@ -68,17 +68,19 @@ func GetSelfUserLevel(c *gin.Context) {
 	}
 
 	data := gin.H{
-		"user_id":            user.Id,
-		"user_group":         user.Group,
-		"user_level_id":      user.UserLevelId,
-		"total_recharge":     round2(totalRecharge),
-		"current":            nil,
-		"next":               nil,
-		"progress_percent":   progressPercent,
-		"remaining_recharge": remainingRecharge,
-		"current_recharge":   round2(currentRecharge),
-		"next_recharge":      round2(nextRecharge),
-		"levels":             views,
+		"user_id":              user.Id,
+		"user_group":           user.Group,
+		"user_level_id":        user.UserLevelId,
+		"user_level_source":    user.UserLevelSource,
+		"user_level_manual_id": user.UserLevelManualId,
+		"total_recharge":       round2(totalRecharge),
+		"current":              nil,
+		"next":                 nil,
+		"progress_percent":     progressPercent,
+		"remaining_recharge":   remainingRecharge,
+		"current_recharge":     round2(currentRecharge),
+		"next_recharge":        round2(nextRecharge),
+		"levels":               views,
 	}
 	if hasCurrent {
 		data["current"] = toUserLevelPolicyView(current)

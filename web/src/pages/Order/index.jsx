@@ -26,6 +26,7 @@ import {
   Modal,
   Table,
   Tag,
+  TextArea,
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -34,7 +35,7 @@ import {
   IllustrationNoResult,
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
-import { Coins, History, ListChecks, RefreshCw } from 'lucide-react';
+import { Coins, History, ListChecks, RefreshCw, Undo2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import CardTable from '../../components/common/ui/CardTable';
 import { API, timestamp2string } from '../../helpers';
@@ -46,6 +47,7 @@ const STATUS_CONFIG = {
   success: { type: 'success', key: '成功' },
   pending: { type: 'warning', key: '待支付' },
   expired: { type: 'danger', key: '已过期' },
+  refunded: { type: 'danger', key: '已退款' },
 };
 
 const PAYMENT_METHOD_MAP = {
@@ -110,6 +112,9 @@ const Order = () => {
   const [reconcileItemsLoading, setReconcileItemsLoading] = useState(false);
   const [reconcileItems, setReconcileItems] = useState([]);
   const [currentReconcileJob, setCurrentReconcileJob] = useState(null);
+  const [refundOrder, setRefundOrder] = useState(null);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundLoading, setRefundLoading] = useState(false);
 
   const buildQuery = (currentPage, currentPageSize) => {
     const values = formApi?.getValues?.() || {};
@@ -291,6 +296,39 @@ const Order = () => {
     });
   };
 
+  const openRefundModal = (record) => {
+    setRefundOrder(record);
+    setRefundReason('');
+  };
+
+  const handleAdminRefund = async () => {
+    const reason = refundReason.trim();
+    if (!reason) {
+      Toast.warning({ content: t('请填写退款原因') });
+      return;
+    }
+    setRefundLoading(true);
+    try {
+      const res = await API.post('/api/user/topup/refund', {
+        trade_no: refundOrder?.trade_no,
+        reason,
+      });
+      const { success, message } = res.data;
+      if (success) {
+        Toast.success({ content: t('订单已标记为退款，用户等级已重新计算') });
+        setRefundOrder(null);
+        setRefundReason('');
+        await loadOrders(page, pageSize);
+      } else {
+        Toast.error({ content: message || t('标记退款失败') });
+      }
+    } catch (error) {
+      Toast.error({ content: t('标记退款失败') });
+    } finally {
+      setRefundLoading(false);
+    }
+  };
+
   const handleStartEpayReconcile = async () => {
     try {
       const res = await API.post(
@@ -413,6 +451,28 @@ const Order = () => {
         dataIndex: 'finished_at',
         key: 'finished_at',
         render: (time) => (time ? timestamp2string(time) : '-'),
+      },
+      {
+        title: t('退款时间'),
+        dataIndex: 'refund_time',
+        key: 'refund_time',
+        render: (time) => (time ? timestamp2string(time) : '-'),
+      },
+      {
+        title: t('退款原因'),
+        dataIndex: 'refund_reason',
+        key: 'refund_reason',
+        render: (text) => (
+          <Text ellipsis={{ showTooltip: true }} style={{ maxWidth: 180 }}>
+            {text || '-'}
+          </Text>
+        ),
+      },
+      {
+        title: t('退款操作人'),
+        dataIndex: 'refund_operator_id',
+        key: 'refund_operator_id',
+        render: (id) => (id ? `#${id}` : '-'),
       },
       {
         title: t('结果'),
@@ -582,19 +642,38 @@ const Order = () => {
         title: t('操作'),
         key: 'action',
         fixed: 'right',
-        width: 90,
+        width: 110,
         render: (_, record) => {
-          if (record.status !== 'pending') return null;
-          return (
-            <Button
-              size='small'
-              type='primary'
-              theme='outline'
-              onClick={() => confirmAdminComplete(record.trade_no)}
-            >
-              {t('补单')}
-            </Button>
-          );
+          if (record.status === 'pending') {
+            return (
+              <Button
+                size='small'
+                type='primary'
+                theme='outline'
+                onClick={() => confirmAdminComplete(record.trade_no)}
+              >
+                {t('补单')}
+              </Button>
+            );
+          }
+          if (
+            record.status === 'success' &&
+            Number(record.amount) > 0 &&
+            Number(record.money) > 0
+          ) {
+            return (
+              <Button
+                size='small'
+                type='danger'
+                theme='outline'
+                icon={<Undo2 size={14} />}
+                onClick={() => openRefundModal(record)}
+              >
+                {t('退款')}
+              </Button>
+            );
+          }
+          return null;
         },
       },
     ],
@@ -647,6 +726,7 @@ const Order = () => {
                 { label: t('成功'), value: 'success' },
                 { label: t('待支付'), value: 'pending' },
                 { label: t('已过期'), value: 'expired' },
+                { label: t('已退款'), value: 'refunded' },
               ]}
             />
             <Form.Select
@@ -779,6 +859,38 @@ const Order = () => {
           />
         }
       />
+
+      <Modal
+        title={t('标记充值订单退款')}
+        visible={Boolean(refundOrder)}
+        onCancel={() => {
+          if (!refundLoading) setRefundOrder(null);
+        }}
+        onOk={handleAdminRefund}
+        confirmLoading={refundLoading}
+        okButtonProps={{ type: 'danger' }}
+        okText={t('确认标记退款')}
+        cancelText={t('取消')}
+        width={520}
+      >
+        <div className='space-y-3'>
+          <Text>
+            {t('订单号')}：{refundOrder?.trade_no || '-'}
+          </Text>
+          <Text type='warning' className='block'>
+            {t(
+              '请确认支付平台退款已完成。此操作只登记退款、排除等级累计充值并立即重算等级，不会调用支付平台退款，也不会扣减用户余额。',
+            )}
+          </Text>
+          <TextArea
+            value={refundReason}
+            onChange={setRefundReason}
+            maxCount={500}
+            autosize={{ minRows: 3, maxRows: 6 }}
+            placeholder={t('请填写退款原因')}
+          />
+        </div>
+      </Modal>
 
       <Modal
         title={t('对账记录')}

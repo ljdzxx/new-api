@@ -17,6 +17,11 @@ import (
 
 const UserNameMaxLength = 20
 
+const (
+	UserLevelSourceAuto   = "auto"
+	UserLevelSourceManual = "manual"
+)
+
 // User if you add sensitive fields, don't forget to clean them in setupLogin function.
 // Otherwise, the sensitive information will be saved on local storage in plain text!
 type User struct {
@@ -48,6 +53,8 @@ type User struct {
 	GlobalRatioThreshold     int64                   `json:"-" gorm:"type:bigint;default:0;column:global_model_ratio_input_token_threshold"`
 	Group                    string                  `json:"group" gorm:"type:varchar(64);default:'default'"`
 	UserLevelId              int                     `json:"user_level_id" gorm:"type:int;default:1;column:user_level_id;index"`
+	UserLevelSource          string                  `json:"user_level_source" gorm:"type:varchar(16);default:'auto';column:user_level_source;index"`
+	UserLevelManualId        int                     `json:"user_level_manual_id" gorm:"type:int;default:0;column:user_level_manual_id;index"`
 	RateLimitEnabled         bool                    `json:"rate_limit_enabled" gorm:"default:false;column:rate_limit_enabled"`
 	RateLimitDurationMinutes int                     `json:"rate_limit_duration_minutes" gorm:"type:int;default:1;column:rate_limit_duration_minutes"`
 	RateLimitCount           int                     `json:"rate_limit_count" gorm:"type:int;default:0;column:rate_limit_count"`
@@ -688,6 +695,9 @@ func (user *User) Insert(inviterId int) error {
 	if user.UserLevelId <= 0 {
 		user.UserLevelId = 1
 	}
+	if user.UserLevelSource == "" {
+		user.UserLevelSource = UserLevelSourceAuto
+	}
 	//user.SetAccessToken(common.GetUUID())
 	user.AffCode = common.GetRandomString(4)
 
@@ -745,6 +755,9 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 	user.Quota = common.QuotaForNewUser
 	if user.UserLevelId <= 0 {
 		user.UserLevelId = 1
+	}
+	if user.UserLevelSource == "" {
+		user.UserLevelSource = UserLevelSourceAuto
 	}
 	user.AffCode = common.GetRandomString(4)
 
@@ -842,6 +855,10 @@ func (user *User) Edit(updatePassword bool, updateQuota bool) error {
 		"rate_limit_duration_minutes": newUser.RateLimitDurationMinutes,
 		"rate_limit_count":            newUser.RateLimitCount,
 		"rate_limit_success_count":    newUser.RateLimitSuccessCount,
+	}
+	if newUser.UserLevelSource != "" {
+		updates["user_level_source"] = newUser.UserLevelSource
+		updates["user_level_manual_id"] = newUser.UserLevelManualId
 	}
 	updates["global_model_ratio_input_token_threshold"] = newUser.GlobalRatioThreshold
 	if updatePassword {
