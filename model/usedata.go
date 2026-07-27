@@ -21,6 +21,15 @@ type QuotaData struct {
 	Quota     int    `json:"quota" gorm:"default:0"`
 }
 
+type ChannelConsumptionData struct {
+	ChannelID    int    `json:"channel_id" gorm:"column:channel_id"`
+	ChannelName  string `json:"channel_name" gorm:"-"`
+	Deleted      bool   `json:"deleted" gorm:"-"`
+	RequestCount int64  `json:"request_count" gorm:"column:request_count"`
+	TokenUsed    int64  `json:"token_used" gorm:"column:token_used"`
+	Quota        int64  `json:"quota" gorm:"column:quota"`
+}
+
 func UpdateQuotaData() {
 	for {
 		if common.DataExportEnabled {
@@ -125,4 +134,46 @@ func GetAllQuotaDates(startTime int64, endTime int64, username string) (quotaDat
 	//err = DB.Table("quota_data").Where("created_at >= ? and created_at <= ?", startTime, endTime).Find(&quotaDatas).Error
 	err = DB.Table("quota_data").Select("model_name, sum(count) as count, sum(quota) as quota, sum(token_used) as token_used, created_at").Where("created_at >= ? and created_at <= ?", startTime, endTime).Group("model_name, created_at").Find(&quotaDatas).Error
 	return quotaDatas, err
+}
+
+func GetChannelConsumptionData(startTime int64, endTime int64, username string) ([]*ChannelConsumptionData, error) {
+	positivePromptTokens := "CASE WHEN prompt_tokens > 0 THEN prompt_tokens ELSE 0 END"
+	positiveCompletionTokens := "CASE WHEN completion_tokens > 0 THEN completion_tokens ELSE 0 END"
+	positiveQuota := "CASE WHEN quota > 0 THEN quota ELSE 0 END"
+	totalTokens := "COALESCE(SUM(" + positivePromptTokens + "), 0) + COALESCE(SUM(" + positiveCompletionTokens + "), 0)"
+
+	rows := make([]*ChannelConsumptionData, 0)
+	tx := excludeChannelForwardPrecheckLogs(LOG_DB.Table("logs")).
+		Select("channel_id AS channel_id, COUNT(*) AS request_count, "+totalTokens+" AS token_used, COALESCE(SUM("+positiveQuota+"), 0) AS quota").
+		Where("type = ? AND created_at >= ? AND created_at <= ?", LogTypeConsume, startTime, endTime)
+	if username != "" {
+		tx = tx.Where("username = ?", username)
+	}
+	if err := tx.Group("channel_id").Order(totalTokens + " DESC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	channelIDs := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.ChannelID > 0 {
+			channelIDs = append(channelIDs, row.ChannelID)
+		}
+	}
+	channels := make([]*Channel, 0, len(channelIDs))
+	if len(channelIDs) > 0 {
+		var err error
+		channels, err = GetChannelsByIds(channelIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	channelNames := make(map[int]string, len(channels))
+	for _, channel := range channels {
+		channelNames[channel.Id] = channel.Name
+	}
+	for _, row := range rows {
+		row.ChannelName = channelNames[row.ChannelID]
+		row.Deleted = row.ChannelID > 0 && row.ChannelName == ""
+	}
+	return rows, nil
 }

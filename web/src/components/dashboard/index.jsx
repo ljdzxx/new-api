@@ -25,6 +25,7 @@ import { StatusContext } from '../../context/Status';
 import DashboardHeader from './DashboardHeader';
 import StatsCards from './StatsCards';
 import ChartsPanel from './ChartsPanel';
+import ChannelConsumptionPanel from './ChannelConsumptionPanel';
 import ApiInfoPanel from './ApiInfoPanel';
 import AnnouncementsPanel from './AnnouncementsPanel';
 import FaqPanel from './FaqPanel';
@@ -87,12 +88,14 @@ const Dashboard = () => {
 
   // ========== 数据处理 ==========
   const initChart = async () => {
-    await dashboardData.loadQuotaData().then((data) => {
-      if (data && data.length > 0) {
-        dashboardCharts.updateChartData(data);
-      }
-    });
-    await dashboardData.loadUptimeData();
+    const [data] = await Promise.all([
+      dashboardData.loadQuotaData(),
+      dashboardData.loadChannelConsumptionData(),
+      dashboardData.loadUptimeData(),
+    ]);
+    if (data && data.length > 0) {
+      dashboardCharts.updateChartData(data);
+    }
   };
 
   const handleRefresh = async () => {
@@ -172,35 +175,79 @@ const Dashboard = () => {
 
       {/* API信息和图表面板 */}
       <div className='mb-4'>
-        <div
-          className={`grid grid-cols-1 gap-4 ${dashboardData.hasApiInfoPanel ? 'lg:grid-cols-4' : ''}`}
-        >
-          <ChartsPanel
-            activeChartTab={dashboardData.activeChartTab}
-            setActiveChartTab={dashboardData.setActiveChartTab}
-            spec_line={dashboardCharts.spec_line}
-            spec_model_line={dashboardCharts.spec_model_line}
-            spec_pie={dashboardCharts.spec_pie}
-            spec_rank_bar={dashboardCharts.spec_rank_bar}
-            CARD_PROPS={CARD_PROPS}
-            CHART_CONFIG={CHART_CONFIG}
-            FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-            hasApiInfoPanel={dashboardData.hasApiInfoPanel}
-            t={dashboardData.t}
-          />
+        {dashboardData.isAdminUser ? (
+          <div
+            className={`grid grid-cols-1 gap-4 ${dashboardData.hasApiInfoPanel ? 'lg:grid-cols-4' : ''}`}
+          >
+            <div
+              className={`flex min-w-0 flex-col gap-4 ${dashboardData.hasApiInfoPanel ? 'lg:col-span-3' : ''}`}
+            >
+              <ChartsPanel
+                activeChartTab={dashboardData.activeChartTab}
+                setActiveChartTab={dashboardData.setActiveChartTab}
+                spec_line={dashboardCharts.spec_line}
+                spec_model_line={dashboardCharts.spec_model_line}
+                spec_pie={dashboardCharts.spec_pie}
+                spec_rank_bar={dashboardCharts.spec_rank_bar}
+                CARD_PROPS={CARD_PROPS}
+                CHART_CONFIG={CHART_CONFIG}
+                FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+                hasApiInfoPanel={false}
+                t={dashboardData.t}
+              />
+              <ChannelConsumptionPanel
+                data={dashboardData.channelConsumptionData}
+                CARD_PROPS={CARD_PROPS}
+                CHART_CONFIG={CHART_CONFIG}
+                FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+                t={dashboardData.t}
+              />
+            </div>
 
-          {dashboardData.hasApiInfoPanel && (
-            <ApiInfoPanel
-              apiInfoData={apiInfoData}
-              handleCopyUrl={(url) => handleCopyUrl(url, dashboardData.t)}
-              handleSpeedTest={handleSpeedTest}
+            {dashboardData.hasApiInfoPanel && (
+              <ApiInfoPanel
+                apiInfoData={apiInfoData}
+                handleCopyUrl={(url) => handleCopyUrl(url, dashboardData.t)}
+                handleSpeedTest={handleSpeedTest}
+                CARD_PROPS={CARD_PROPS}
+                FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+                ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+                fillHeight
+                t={dashboardData.t}
+              />
+            )}
+          </div>
+        ) : (
+          <div
+            className={`grid grid-cols-1 gap-4 ${dashboardData.hasApiInfoPanel ? 'lg:grid-cols-4' : ''}`}
+          >
+            <ChartsPanel
+              activeChartTab={dashboardData.activeChartTab}
+              setActiveChartTab={dashboardData.setActiveChartTab}
+              spec_line={dashboardCharts.spec_line}
+              spec_model_line={dashboardCharts.spec_model_line}
+              spec_pie={dashboardCharts.spec_pie}
+              spec_rank_bar={dashboardCharts.spec_rank_bar}
               CARD_PROPS={CARD_PROPS}
+              CHART_CONFIG={CHART_CONFIG}
               FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-              ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+              hasApiInfoPanel={dashboardData.hasApiInfoPanel}
               t={dashboardData.t}
             />
-          )}
-        </div>
+
+            {dashboardData.hasApiInfoPanel && (
+              <ApiInfoPanel
+                apiInfoData={apiInfoData}
+                handleCopyUrl={(url) => handleCopyUrl(url, dashboardData.t)}
+                handleSpeedTest={handleSpeedTest}
+                CARD_PROPS={CARD_PROPS}
+                FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+                ILLUSTRATION_SIZE={ILLUSTRATION_SIZE}
+                t={dashboardData.t}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* 系统公告和常见问答卡片 */}

@@ -33,12 +33,13 @@ const ApiInfoPanel = ({
   CARD_PROPS,
   FLEX_CENTER_GAP2,
   ILLUSTRATION_SIZE,
+  fillHeight = false,
   t,
 }) => {
   return (
     <Card
       {...CARD_PROPS}
-      className='bg-gray-50 border-0 !rounded-2xl'
+      className={`bg-gray-50 border-0 !rounded-2xl ${fillHeight ? 'h-full' : ''}`}
       title={
         <div className={FLEX_CENTER_GAP2}>
           <Server size={16} />
@@ -47,7 +48,7 @@ const ApiInfoPanel = ({
       }
       bodyStyle={{ padding: 0 }}
     >
-      <ScrollableContainer maxHeight='24rem'>
+      <ScrollableContainer maxHeight={fillHeight ? '52rem' : '24rem'}>
         {apiInfoData.length > 0 ? (
           apiInfoData.map((api) => (
             <React.Fragment key={api.id}>

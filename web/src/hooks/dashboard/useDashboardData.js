@@ -54,6 +54,7 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
 
   // ========== 数据状态 ==========
   const [quotaData, setQuotaData] = useState([]);
+  const [channelConsumptionData, setChannelConsumptionData] = useState([]);
   const [consumeQuota, setConsumeQuota] = useState(0);
   const [consumeTokens, setConsumeTokens] = useState(0);
   const [times, setTimes] = useState(0);
@@ -213,6 +214,27 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     }
   }, [activeUptimeTab]);
 
+  const loadChannelConsumptionData = useCallback(async () => {
+    if (!isAdminUser) return [];
+
+    const { start_timestamp, end_timestamp, username } = inputs;
+    const params = new URLSearchParams({
+      start_timestamp: String(Date.parse(start_timestamp) / 1000),
+      end_timestamp: String(Date.parse(end_timestamp) / 1000),
+    });
+    if (username) params.set('username', username);
+
+    const res = await API.get(`/api/data/channel?${params.toString()}`);
+    const { success, message, data } = res.data;
+    if (!success) {
+      showError(message);
+      return [];
+    }
+    const rows = Array.isArray(data) ? data : [];
+    setChannelConsumptionData(rows);
+    return rows;
+  }, [inputs, isAdminUser]);
+
   const getUserData = useCallback(async () => {
     let res = await API.get(`/api/user/self`);
     const { success, message, data } = res.data;
@@ -224,10 +246,13 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   }, [userDispatch]);
 
   const refresh = useCallback(async () => {
-    const data = await loadQuotaData();
-    await loadUptimeData();
+    const [data] = await Promise.all([
+      loadQuotaData(),
+      loadChannelConsumptionData(),
+      loadUptimeData(),
+    ]);
     return data;
-  }, [loadQuotaData, loadUptimeData]);
+  }, [loadQuotaData, loadChannelConsumptionData, loadUptimeData]);
 
   const handleSearchConfirm = useCallback(
     async (updateChartDataCallback) => {
@@ -267,6 +292,7 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
 
     // 数据状态
     quotaData,
+    channelConsumptionData,
     consumeQuota,
     setConsumeQuota,
     consumeTokens,
@@ -311,6 +337,7 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     showSearchModal,
     handleCloseModal,
     loadQuotaData,
+    loadChannelConsumptionData,
     loadUptimeData,
     getUserData,
     refresh,
