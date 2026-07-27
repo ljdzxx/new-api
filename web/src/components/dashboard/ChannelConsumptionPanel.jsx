@@ -144,7 +144,7 @@ const ChannelConsumptionPanel = ({
 
         <div className='h-96 overflow-auto px-3 pb-3 lg:h-full lg:pt-3'>
           <div className='min-w-[36rem]'>
-            <div className='sticky top-0 z-10 grid grid-cols-[minmax(10rem,1.4fr)_minmax(6rem,0.7fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)] border-b border-semi-color-border bg-semi-color-bg-2 px-2 py-2 text-xs font-medium text-semi-color-text-2'>
+            <div className='sticky top-0 z-10 grid grid-cols-[minmax(10rem,1.4fr)_minmax(6rem,0.7fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)] select-none border-b border-semi-color-border bg-semi-color-bg-0 px-2 py-2 text-xs font-medium tracking-wide text-semi-color-text-2'>
               <span>{t('渠道')}</span>
               <span className='text-right'>{t('请求')}</span>
               <span className='text-right'>{t('Token')}</span>
@@ -153,24 +153,24 @@ const ChannelConsumptionPanel = ({
             {rows.map((row) => (
               <div
                 key={row.channel_id}
-                className='grid min-h-10 grid-cols-[minmax(10rem,1.4fr)_minmax(6rem,0.7fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)] items-center border-b border-semi-color-border px-2 py-2 text-sm last:border-b-0'
+                className='grid min-h-10 grid-cols-[minmax(10rem,1.4fr)_minmax(6rem,0.7fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)] items-center border-b border-semi-color-border px-2 py-2 text-sm transition-colors last:border-b-0 hover:bg-semi-color-fill-0'
               >
                 <span className='flex min-w-0 items-center gap-2 font-medium text-semi-color-text-0'>
                   <span
-                    className='h-2.5 w-2.5 flex-none rounded-sm'
+                    className='h-2.5 w-2.5 flex-none rounded-full'
                     style={{ backgroundColor: row.color }}
                   />
                   <span className='truncate' title={row.channel_name}>
                     {row.channel_name}
                   </span>
                 </span>
-                <span className='text-right text-semi-color-text-1'>
+                <span className='text-right tabular-nums text-semi-color-text-1'>
                   {renderNumber(row.request_count)}
                 </span>
-                <span className='text-right text-semi-color-text-1'>
+                <span className='text-right tabular-nums text-semi-color-text-1'>
                   {renderNumber(row.token_used)}
                 </span>
-                <span className='text-right font-medium text-emerald-500'>
+                <span className='text-right font-medium tabular-nums text-emerald-500'>
                   {renderQuota(row.quota, 4)}
                 </span>
               </div>
