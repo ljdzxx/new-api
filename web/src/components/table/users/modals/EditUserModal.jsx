@@ -88,6 +88,7 @@ const EditUserModal = (props) => {
     email: '',
     quota: 0,
     global_model_ratio: 1,
+    global_model_ratio_input_token_threshold: 0,
     group: 'default',
     user_level_id: 1,
     remark: '',
@@ -189,6 +190,10 @@ const EditUserModal = (props) => {
       payload.quota = parseInt(payload.quota) || 0;
     if (typeof payload.global_model_ratio === 'string') {
       payload.global_model_ratio = parseFloat(payload.global_model_ratio) || 0;
+    }
+    if (typeof payload.global_model_ratio_input_token_threshold === 'string') {
+      payload.global_model_ratio_input_token_threshold =
+        parseInt(payload.global_model_ratio_input_token_threshold) || 0;
     }
     if (typeof payload.user_level_id === 'string') {
       payload.user_level_id = parseInt(payload.user_level_id) || 0;
@@ -447,6 +452,21 @@ const EditUserModal = (props) => {
                           precision={6}
                           extraText={t(
                             '默认 1，仅对该用户生效，会与系统全局模型倍率叠乘参与所有计费场景，不显示在使用日志中',
+                          )}
+                          style={{ width: '100%' }}
+                        />
+                      </Col>
+
+                      <Col span={24}>
+                        <Form.InputNumber
+                          field='global_model_ratio_input_token_threshold'
+                          label={t('倍率生效的总输入 Tokens 阈值')}
+                          placeholder='0'
+                          min={0}
+                          step={1000}
+                          precision={0}
+                          extraText={t(
+                            '总输入 Tokens 大于等于该值后用户全局模型倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响',
                           )}
                           style={{ width: '100%' }}
                         />

@@ -191,6 +191,67 @@ type billingPolicyAdditionalCharge struct {
 	CostUSD   string `json:"cost_usd"`
 }
 
+type billingPolicyTokenScaling struct {
+	SystemGlobalModelRatio float64          `json:"system_global_model_ratio"`
+	ChannelModelRatio      float64          `json:"channel_model_ratio"`
+	UserGlobalModelRatio   float64          `json:"user_global_model_ratio"`
+	EffectiveGlobalRatio   float64          `json:"effective_global_model_ratio"`
+	RawLineItemTokens      map[string]int64 `json:"raw_line_item_tokens"`
+}
+
+func attachBillingPolicyTokenScalingAdminInfo(relayInfo *relaycommon.RelayInfo, summary textQuotaSummary,
+	effectivePrices billing_policy.Prices, other map[string]interface{}) {
+	if relayInfo == nil || other == nil {
+		return
+	}
+
+	rawInputTokens := summary.RawPromptTokens
+	rawCacheWriteRemaining := summary.RawCacheCreationTokens - summary.RawCacheCreationTokens5m - summary.RawCacheCreationTokens1h
+	if rawCacheWriteRemaining < 0 {
+		rawCacheWriteRemaining = 0
+	}
+	if !summary.IsClaudeUsageSemantic {
+		rawInputTokens -= summary.RawCacheTokens + summary.RawCacheCreationTokens + summary.RawImageTokens
+		if summary.AudioInputPrice > 0 || strings.TrimSpace(effectivePrices.AudioInput) != "" {
+			rawInputTokens -= summary.RawAudioTokens
+		}
+		if rawInputTokens < 0 {
+			rawInputTokens = 0
+		}
+		rawCacheWriteRemaining = summary.RawCacheCreationTokens
+	}
+	rawOutputTokens := summary.RawCompletionTokens
+	if strings.TrimSpace(effectivePrices.AudioOutput) != "" {
+		rawOutputTokens -= summary.RawAudioOutputTokens
+		if rawOutputTokens < 0 {
+			rawOutputTokens = 0
+		}
+	}
+
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	if !ok || adminInfo == nil {
+		adminInfo = map[string]interface{}{}
+		other["admin_info"] = adminInfo
+	}
+	adminInfo["billing_policy_token_scaling"] = billingPolicyTokenScaling{
+		SystemGlobalModelRatio: relayInfo.PriceData.SystemGlobalModelRatio,
+		ChannelModelRatio:      relayInfo.PriceData.ChannelModelRatio,
+		UserGlobalModelRatio:   relayInfo.PriceData.UserGlobalModelRatio,
+		EffectiveGlobalRatio:   relayInfo.PriceData.GlobalModelRatio,
+		RawLineItemTokens: map[string]int64{
+			"input":          int64(rawInputTokens),
+			"output":         int64(rawOutputTokens),
+			"cache_read":     int64(summary.RawCacheTokens),
+			"cache_write":    int64(rawCacheWriteRemaining),
+			"cache_write_5m": int64(summary.RawCacheCreationTokens5m),
+			"cache_write_1h": int64(summary.RawCacheCreationTokens1h),
+			"image_input":    int64(summary.RawImageTokens),
+			"audio_input":    int64(summary.RawAudioTokens),
+			"audio_output":   int64(summary.RawAudioOutputTokens),
+		},
+	}
+}
+
 func buildBillingPolicyAdditionalCharges(summary textQuotaSummary) ([]billingPolicyAdditionalCharge, decimal.Decimal) {
 	charges := make([]billingPolicyAdditionalCharge, 0, 5)
 	total := decimal.Zero
@@ -342,6 +403,7 @@ func attachBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 		snapshot.Policy = &policy
 	}
 	other["billing_policy"] = snapshot
+	attachBillingPolicyTokenScalingAdminInfo(relayInfo, summary, effectivePrices, other)
 	other["billing_mode"] = policy.Mode
 	if calculation.TierID != "" {
 		other["billing_tier"] = calculation.TierID

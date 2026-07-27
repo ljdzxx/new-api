@@ -38,6 +38,7 @@ const (
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
 	ContextKeyChannelModelRatio        ContextKey = "channel_model_ratio"
+	ContextKeyChannelRatioThreshold    ContextKey = "channel_model_ratio_input_token_threshold"
 	ContextKeyChannelAllowSubscription ContextKey = "channel_allow_subscription"
 	ContextKeyChannelAllowWallet       ContextKey = "channel_allow_wallet"
 	ContextKeyChannelForwardedApplied  ContextKey = "forwarded_channel_applied"

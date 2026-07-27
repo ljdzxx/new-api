@@ -44,6 +44,7 @@ type Channel struct {
 	Priority          *int64   `json:"priority" gorm:"bigint;default:0"`
 	AutoBan           *int     `json:"auto_ban" gorm:"default:1"`
 	ModelRatio        *float64 `json:"model_ratio" gorm:"type:decimal(12,6);default:1;column:model_ratio"`
+	RatioThreshold    *int64   `json:"model_ratio_input_token_threshold" gorm:"type:bigint;default:0;column:model_ratio_input_token_threshold"`
 	AllowSubscription *bool    `json:"allow_subscription" gorm:"default:true;column:allow_subscription"`
 	AllowWallet       *bool    `json:"allow_wallet" gorm:"default:true;column:allow_wallet"`
 	OtherInfo         string   `json:"other_info"`
@@ -205,6 +206,10 @@ func (channel *Channel) NormalizeBillingSettings() {
 		modelRatio := 1.0
 		channel.ModelRatio = &modelRatio
 	}
+	if channel.RatioThreshold == nil {
+		threshold := int64(0)
+		channel.RatioThreshold = &threshold
+	}
 	if channel.AllowSubscription == nil {
 		allow := true
 		channel.AllowSubscription = &allow
@@ -213,6 +218,13 @@ func (channel *Channel) NormalizeBillingSettings() {
 		allow := true
 		channel.AllowWallet = &allow
 	}
+}
+
+func (channel *Channel) GetModelRatioInputTokenThreshold() int64 {
+	if channel == nil || channel.RatioThreshold == nil {
+		return 0
+	}
+	return *channel.RatioThreshold
 }
 
 func (channel *Channel) GetModelRatio() float64 {

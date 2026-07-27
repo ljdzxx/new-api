@@ -517,7 +517,11 @@ export const useLogsData = () => {
 
         let content = '';
         if (!isViolationFeeLog && !isMockTestLog) {
-          const billingPolicyDetail = renderBillingPolicyLogDetail(other, t);
+          const billingPolicyDetail = renderBillingPolicyLogDetail(
+            other,
+            t,
+            isAdminUser,
+          );
           if (billingPolicyDetail) {
             content = billingPolicyDetail;
           } else if (other?.ws || other?.audio) {

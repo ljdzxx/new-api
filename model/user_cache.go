@@ -29,6 +29,7 @@ type UserBase struct {
 	Username                 string  `json:"username"`
 	Setting                  string  `json:"setting"`
 	GlobalModelRatio         float64 `json:"-"`
+	GlobalRatioThreshold     int64   `json:"-"`
 }
 
 func (user *UserBase) WriteContext(c *gin.Context) {
@@ -126,6 +127,7 @@ func GetUserCache(userId int) (userCache *UserBase, err error) {
 		Setting:                  user.Setting,
 		Email:                    user.Email,
 		GlobalModelRatio:         user.GlobalModelRatio,
+		GlobalRatioThreshold:     user.GlobalRatioThreshold,
 	}
 
 	return userCache, nil
@@ -135,7 +137,7 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 	if !common.RedisEnabled {
 		return nil, fmt.Errorf("redis is not enabled")
 	}
-	userCache := UserBase{GlobalModelRatio: 1}
+	userCache := UserBase{GlobalModelRatio: 1, GlobalRatioThreshold: 0}
 	// Try getting from Redis first
 	err := common.RedisHGetObj(getUserCacheKey(userId), &userCache)
 	if err != nil {

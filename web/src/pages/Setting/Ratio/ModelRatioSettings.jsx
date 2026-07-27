@@ -42,6 +42,7 @@ export default function ModelRatioSettings(props) {
     'ModelPrice',
     'ModelRatio',
     'GlobalModelRatio',
+    'GlobalModelRatioInputTokenThreshold',
     'CacheRatio',
     'CreateCacheRatio',
     'CompletionRatio',
@@ -55,11 +56,17 @@ export default function ModelRatioSettings(props) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
   };
+  const normalizeInputTokenThreshold = (value) => {
+    if (value === undefined || value === null || value === '') return 0;
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+  };
   const [loading, setLoading] = useState(false);
   const [inputs, setInputs] = useState({
     ModelPrice: '',
     ModelRatio: '',
     GlobalModelRatio: 1,
+    GlobalModelRatioInputTokenThreshold: 0,
     CacheRatio: '',
     CreateCacheRatio: '',
     CompletionRatio: '',
@@ -151,6 +158,10 @@ export default function ModelRatioSettings(props) {
     currentInputs.GlobalModelRatio = normalizeGlobalModelRatio(
       currentInputs.GlobalModelRatio,
     );
+    currentInputs.GlobalModelRatioInputTokenThreshold =
+      normalizeInputTokenThreshold(
+        currentInputs.GlobalModelRatioInputTokenThreshold,
+      );
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
     refForm.current?.setValues(currentInputs);
@@ -220,6 +231,28 @@ export default function ModelRatioSettings(props) {
                 setInputs({
                   ...inputs,
                   GlobalModelRatio: normalizeGlobalModelRatio(value),
+                })
+              }
+            />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.InputNumber
+              label={t('全局模型倍率生效的总输入 Tokens 阈值')}
+              extraText={t(
+                '总输入 Tokens 大于等于该值后此倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响',
+              )}
+              field={'GlobalModelRatioInputTokenThreshold'}
+              min={0}
+              step={1000}
+              precision={0}
+              placeholder={'0'}
+              onChange={(value) =>
+                setInputs({
+                  ...inputs,
+                  GlobalModelRatioInputTokenThreshold:
+                    normalizeInputTokenThreshold(value),
                 })
               }
             />

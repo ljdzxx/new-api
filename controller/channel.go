@@ -446,6 +446,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel.ModelRatio != nil && *channel.ModelRatio < 0 {
 		return fmt.Errorf("渠道模型倍率不能小于 0")
 	}
+	if channel.RatioThreshold != nil && *channel.RatioThreshold < 0 {
+		return fmt.Errorf("渠道模型倍率总输入 Tokens 阈值不能小于 0")
+	}
 	if !channel.IsSubscriptionAllowed() && !channel.IsWalletAllowed() {
 		return fmt.Errorf("订阅支付和余额支付不能同时关闭")
 	}
@@ -877,6 +880,9 @@ func UpdateChannel(c *gin.Context) {
 	}
 	if channel.ModelRatio == nil {
 		channel.ModelRatio = originChannel.ModelRatio
+	}
+	if channel.RatioThreshold == nil {
+		channel.RatioThreshold = originChannel.RatioThreshold
 	}
 	if channel.AllowSubscription == nil {
 		channel.AllowSubscription = originChannel.AllowSubscription

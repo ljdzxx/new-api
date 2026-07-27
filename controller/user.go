@@ -313,6 +313,7 @@ func buildAdminUserListResponseItems(users []*model.User) ([]map[string]interfac
 			continue
 		}
 		responseItems[i]["global_model_ratio"] = user.GlobalModelRatio
+		responseItems[i]["global_model_ratio_input_token_threshold"] = user.GlobalRatioThreshold
 	}
 	return responseItems, nil
 }
@@ -344,6 +345,7 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	responseData["global_model_ratio"] = user.GlobalModelRatio
+	responseData["global_model_ratio_input_token_threshold"] = user.GlobalRatioThreshold
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -635,6 +637,7 @@ func UpdateUser(c *gin.Context) {
 		UpdateQuota              bool     `json:"update_quota"`
 		Remark                   string   `json:"remark" validate:"max=255"`
 		GlobalModelRatio         *float64 `json:"global_model_ratio"`
+		GlobalRatioThreshold     *int64   `json:"global_model_ratio_input_token_threshold"`
 		RateLimitEnabled         *bool    `json:"rate_limit_enabled"`
 		RateLimitDurationMinutes *int     `json:"rate_limit_duration_minutes"`
 		RateLimitCount           *int     `json:"rate_limit_count"`
@@ -648,6 +651,10 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 	if req.GlobalModelRatio != nil && *req.GlobalModelRatio < 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if req.GlobalRatioThreshold != nil && *req.GlobalRatioThreshold < 0 {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
@@ -693,6 +700,10 @@ func UpdateUser(c *gin.Context) {
 	if req.GlobalModelRatio != nil {
 		globalModelRatio = *req.GlobalModelRatio
 	}
+	globalRatioThreshold := originUser.GlobalRatioThreshold
+	if req.GlobalRatioThreshold != nil {
+		globalRatioThreshold = *req.GlobalRatioThreshold
+	}
 	rateLimitEnabled := originUser.RateLimitEnabled
 	rateLimitDurationMinutes := originUser.RateLimitDurationMinutes
 	rateLimitCount := originUser.RateLimitCount
@@ -724,6 +735,7 @@ func UpdateUser(c *gin.Context) {
 		Quota:                    req.Quota,
 		Remark:                   req.Remark,
 		GlobalModelRatio:         globalModelRatio,
+		GlobalRatioThreshold:     globalRatioThreshold,
 		RateLimitEnabled:         rateLimitEnabled,
 		RateLimitDurationMinutes: rateLimitDurationMinutes,
 		RateLimitCount:           rateLimitCount,

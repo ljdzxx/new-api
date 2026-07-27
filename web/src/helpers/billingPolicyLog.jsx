@@ -63,12 +63,17 @@ function displayUSD(value, digits = 6) {
   return `${symbol}${(number(value) * number(rate, 1)).toFixed(digits)}`;
 }
 
+function displayRatio(value) {
+  const ratio = number(value, 1);
+  return Number.isInteger(ratio) ? ratio.toFixed(1) : String(ratio);
+}
+
 export function getBillingPolicyModeLabel(other, t) {
   const mode = other?.billing_policy?.calculation?.mode;
   return mode ? t(modeLabels[mode] || mode) : '';
 }
 
-export function getBillingPolicyLogLines(other, t) {
+export function getBillingPolicyLogLines(other, t, showTokenScaling = false) {
   const snapshot = other?.billing_policy;
   const calculation = snapshot?.calculation;
   if (!calculation || !Array.isArray(calculation.line_items)) {
@@ -80,6 +85,19 @@ export function getBillingPolicyLogLines(other, t) {
     ? ` · ${t('阶梯')} ${calculation.tier_id}`
     : '';
   const lines = [`${t('计费模式')}：${mode} · v${snapshot.revision}${tier}`];
+  const tokenScaling = showTokenScaling
+    ? other?.admin_info?.billing_policy_token_scaling
+    : null;
+  const rawLineItemTokens = tokenScaling?.raw_line_item_tokens;
+  const ratioFormula = tokenScaling
+    ? [
+        tokenScaling.system_global_model_ratio,
+        tokenScaling.channel_model_ratio,
+        tokenScaling.user_global_model_ratio,
+      ]
+        .map(displayRatio)
+        .join('×')
+    : '';
 
   for (const item of calculation.line_items) {
     if (item.field === 'request') {
@@ -89,8 +107,14 @@ export function getBillingPolicyLogLines(other, t) {
       continue;
     }
     const label = t(fieldLabels[item.field] || item.field);
+    const scaledTokens = number(item.tokens);
+    const rawTokens = number(rawLineItemTokens?.[item.field], NaN);
+    const tokenDisplay =
+      ratioFormula && Number.isFinite(rawTokens)
+        ? `(${scaledTokens.toLocaleString()}=${rawTokens.toLocaleString()}×${ratioFormula})`
+        : scaledTokens.toLocaleString();
     lines.push(
-      `${label}：${number(item.tokens).toLocaleString()} × ${displayUSD(item.price_per_million)} / 1M = ${displayUSD(item.cost_usd)}`,
+      `${label}：${tokenDisplay} × ${displayUSD(item.price_per_million)} / 1M = ${displayUSD(item.cost_usd)}`,
     );
   }
 
@@ -183,8 +207,12 @@ export function getBillingPolicyLogLines(other, t) {
   return lines;
 }
 
-export function renderBillingPolicyLogDetail(other, t) {
-  const lines = getBillingPolicyLogLines(other, t);
+export function renderBillingPolicyLogDetail(
+  other,
+  t,
+  showTokenScaling = false,
+) {
+  const lines = getBillingPolicyLogLines(other, t, showTokenScaling);
   if (!lines.length) {
     return null;
   }

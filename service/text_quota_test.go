@@ -193,6 +193,43 @@ func TestBuildBillingPolicyAdditionalCharges(t *testing.T) {
 	require.Equal(t, "0.041", total.String())
 }
 
+func TestAttachBillingPolicyTokenScalingAdminInfo(t *testing.T) {
+	relayInfo := &relaycommon.RelayInfo{PriceData: types.PriceData{
+		SystemGlobalModelRatio: 1.25,
+		ChannelModelRatio:      1.6,
+		UserGlobalModelRatio:   1,
+		GlobalModelRatio:       2,
+	}}
+	summary := textQuotaSummary{
+		RawPromptTokens:        112573,
+		RawCompletionTokens:    287,
+		RawCacheTokens:         111141,
+		RawCacheCreationTokens: 10,
+		RawImageTokens:         5,
+		RawAudioTokens:         2,
+		RawAudioOutputTokens:   3,
+		AudioInputPrice:        9,
+		IsClaudeUsageSemantic:  false,
+	}
+	other := map[string]interface{}{}
+
+	attachBillingPolicyTokenScalingAdminInfo(relayInfo, summary, billing_policy.Prices{
+		AudioInput: "9", AudioOutput: "10",
+	}, other)
+
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	require.True(t, ok)
+	tokenScaling, ok := adminInfo["billing_policy_token_scaling"].(billingPolicyTokenScaling)
+	require.True(t, ok)
+	require.Equal(t, 1.25, tokenScaling.SystemGlobalModelRatio)
+	require.Equal(t, 1.6, tokenScaling.ChannelModelRatio)
+	require.Equal(t, float64(1), tokenScaling.UserGlobalModelRatio)
+	require.Equal(t, int64(1415), tokenScaling.RawLineItemTokens["input"])
+	require.Equal(t, int64(284), tokenScaling.RawLineItemTokens["output"])
+	require.Equal(t, int64(111141), tokenScaling.RawLineItemTokens["cache_read"])
+	require.Equal(t, int64(10), tokenScaling.RawLineItemTokens["cache_write"])
+}
+
 func TestCalculateTextQuotaSummaryUsesAnthropicCachePriceFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

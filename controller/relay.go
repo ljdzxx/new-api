@@ -358,7 +358,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// Rebuild it after every selection so retries and settlement use the
 		// currently selected channel's immutable multiplier snapshot.
 		relayInfo.InitChannelMeta(c)
-		helper.BindChannelModelRatio(relayInfo, channel.GetModelRatio())
+		helper.BindChannelModelRatioConfig(relayInfo, channel.GetModelRatio(), channel.GetModelRatioInputTokenThreshold())
 		priceData, err = helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 		if err != nil {
 			newAPIError = types.NewError(err, types.ErrorCodeModelPriceError)

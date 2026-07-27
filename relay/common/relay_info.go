@@ -74,6 +74,7 @@ type ChannelMeta struct {
 	ChannelSetting       dto.ChannelSettings
 	ChannelOtherSettings dto.ChannelOtherSettings
 	ChannelModelRatio    float64
+	RatioThreshold       int64
 	AllowSubscription    bool
 	AllowWallet          bool
 	UpstreamModelName    string
@@ -220,6 +221,9 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	}
 	if channelRatio, ok := common.GetContextKeyType[float64](c, constant.ContextKeyChannelModelRatio); ok {
 		channelMeta.ChannelModelRatio = channelRatio
+	}
+	if channelThreshold, ok := common.GetContextKeyType[int64](c, constant.ContextKeyChannelRatioThreshold); ok {
+		channelMeta.RatioThreshold = channelThreshold
 	}
 	if _, ok := common.GetContextKey(c, constant.ContextKeyChannelAllowSubscription); !ok {
 		channelMeta.AllowSubscription = true

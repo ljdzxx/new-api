@@ -23,7 +23,7 @@ func TestGetEffectiveGlobalModelRatioIncludesChannelRatio(t *testing.T) {
 	})
 	ratio_setting.SetGlobalModelRatio(1.5)
 
-	systemRatio, userRatio, channelRatio, effectiveRatio := getEffectiveGlobalModelRatio(0, 2)
+	systemRatio, userRatio, channelRatio, effectiveRatio := getEffectiveGlobalModelRatio(0, 2, 0, 0)
 
 	require.Equal(t, 1.5, systemRatio)
 	require.Equal(t, 1.0, userRatio)
@@ -31,15 +31,49 @@ func TestGetEffectiveGlobalModelRatioIncludesChannelRatio(t *testing.T) {
 	require.Equal(t, 3.0, effectiveRatio)
 }
 
+func TestUserGlobalModelRatioInputTokenThreshold(t *testing.T) {
+	require.True(t, globalModelRatioApplies(0, 0))
+	require.False(t, globalModelRatioApplies(999, 1000))
+	require.True(t, globalModelRatioApplies(1000, 1000))
+	require.True(t, globalModelRatioApplies(1001, 1000))
+}
+
+func TestSystemAndChannelGlobalModelRatioInputTokenThresholds(t *testing.T) {
+	originalRatio := ratio_setting.GetGlobalModelRatio()
+	originalThreshold := ratio_setting.GetGlobalModelRatioInputTokenThreshold()
+	t.Cleanup(func() {
+		ratio_setting.SetGlobalModelRatio(originalRatio)
+		ratio_setting.SetGlobalModelRatioInputTokenThreshold(originalThreshold)
+	})
+	ratio_setting.SetGlobalModelRatio(1.5)
+	ratio_setting.SetGlobalModelRatioInputTokenThreshold(1000)
+
+	_, _, channelRatio, effectiveRatio := getEffectiveGlobalModelRatio(0, 2, 500, 499)
+	require.Equal(t, 1.0, channelRatio)
+	require.Equal(t, 1.0, effectiveRatio)
+
+	systemRatio, _, channelRatio, effectiveRatio := getEffectiveGlobalModelRatio(0, 2, 500, 500)
+	require.Equal(t, 1.0, systemRatio)
+	require.Equal(t, 2.0, channelRatio)
+	require.Equal(t, 2.0, effectiveRatio)
+
+	systemRatio, _, channelRatio, effectiveRatio = getEffectiveGlobalModelRatio(0, 2, 500, 1000)
+	require.Equal(t, 1.5, systemRatio)
+	require.Equal(t, 2.0, channelRatio)
+	require.Equal(t, 3.0, effectiveRatio)
+}
+
 func TestBindChannelModelRatio(t *testing.T) {
 	info := &relaycommon.RelayInfo{}
 
-	BindChannelModelRatio(info, 1.3)
+	BindChannelModelRatioConfig(info, 1.3, 1000)
 	require.NotNil(t, info.ChannelMeta)
 	require.Equal(t, 1.3, info.ChannelMeta.ChannelModelRatio)
+	require.Equal(t, int64(1000), info.ChannelMeta.RatioThreshold)
 
 	BindChannelModelRatio(info, math.NaN())
 	require.Equal(t, ratio_setting.DefaultGlobalModelRatio, info.ChannelMeta.ChannelModelRatio)
+	require.Zero(t, info.ChannelMeta.RatioThreshold)
 }
 
 func TestPerCallPriceIgnoresZeroGlobalTokenRatio(t *testing.T) {

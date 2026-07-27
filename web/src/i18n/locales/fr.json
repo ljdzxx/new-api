@@ -4213,5 +4213,11 @@
   "缩放API响应usage": "Mettre à l’échelle l’usage de la réponse API",
   "开启后，API响应中的token会按系统、用户和渠道全局模型倍率缩放；透传请求体渠道除外": "Une fois activée, les tokens des réponses API sont mis à l’échelle selon les ratios globaux du système, de l’utilisateur et du canal ; les canaux avec transmission directe du corps sont exclus.",
   "禁用非图片端点注入图片生成": "Désactiver l’injection de génération d’images sur les points de terminaison non-image",
-  "开启后，非图片生成端点的请求不会向上游发送 image_generation 工具。": "Lorsque cette option est activée, les requêtes vers les points de terminaison non-image n’envoient pas l’outil image_generation en amont."
+  "开启后，非图片生成端点的请求不会向上游发送 image_generation 工具。": "Lorsque cette option est activée, les requêtes vers les points de terminaison non-image n’envoient pas l’outil image_generation en amont.",
+  "倍率生效的总输入 Tokens 阈值": "Seuil de tokens d’entrée totaux pour activer le ratio",
+  "总输入 Tokens 大于等于该值后用户全局模型倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "Le ratio global du modèle de l’utilisateur s’applique lorsque le total des tokens d’entrée est supérieur ou égal à cette valeur ; 0 signifie aucune limite. Les tokens bruts sont comptés avant toute mise à l’échelle.",
+  "全局模型倍率生效的总输入 Tokens 阈值": "Seuil de tokens d’entrée totaux du ratio global du modèle",
+  "渠道模型倍率生效的总输入 Tokens 阈值": "Seuil de tokens d’entrée totaux du ratio de modèle du canal",
+  "总输入 Tokens 大于等于该值后此倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "Ce ratio s’applique lorsque le total des tokens d’entrée est supérieur ou égal à cette valeur ; 0 signifie aucune limite. Les tokens bruts sont comptés avant toute mise à l’échelle.",
+  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "Le seuil de tokens d’entrée du ratio de modèle du canal doit être un entier supérieur ou égal à 0"
 }

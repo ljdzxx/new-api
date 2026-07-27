@@ -45,6 +45,7 @@ type User struct {
 	UsedQuota                int                     `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
 	RequestCount             int                     `json:"request_count" gorm:"type:int;default:0;"`               // request number
 	GlobalModelRatio         float64                 `json:"-" gorm:"type:decimal(12,6);default:1;column:global_model_ratio"`
+	GlobalRatioThreshold     int64                   `json:"-" gorm:"type:bigint;default:0;column:global_model_ratio_input_token_threshold"`
 	Group                    string                  `json:"group" gorm:"type:varchar(64);default:'default'"`
 	UserLevelId              int                     `json:"user_level_id" gorm:"type:int;default:1;column:user_level_id;index"`
 	RateLimitEnabled         bool                    `json:"rate_limit_enabled" gorm:"default:false;column:rate_limit_enabled"`
@@ -93,6 +94,7 @@ func (user *User) ToBaseUser() *UserBase {
 		Setting:                  user.Setting,
 		Email:                    user.Email,
 		GlobalModelRatio:         user.GlobalModelRatio,
+		GlobalRatioThreshold:     user.GlobalRatioThreshold,
 	}
 	return cache
 }
@@ -839,6 +841,7 @@ func (user *User) Edit(updatePassword bool, updateQuota bool) error {
 		"rate_limit_count":            newUser.RateLimitCount,
 		"rate_limit_success_count":    newUser.RateLimitSuccessCount,
 	}
+	updates["global_model_ratio_input_token_threshold"] = newUser.GlobalRatioThreshold
 	if updatePassword {
 		updates["password"] = newUser.Password
 	}
@@ -1212,6 +1215,23 @@ func GetUserGlobalModelRatio(id int, fromDB bool) (ratio float64, err error) {
 		return 1, err
 	}
 	return ratio, nil
+}
+
+func GetUserGlobalModelRatioConfig(id int, fromDB bool) (ratio float64, inputTokenThreshold int64, err error) {
+	if !fromDB && common.RedisEnabled {
+		cache, cacheErr := GetUserCache(id)
+		if cacheErr == nil {
+			return cache.GlobalModelRatio, cache.GlobalRatioThreshold, nil
+		}
+	}
+	var user User
+	err = DB.Model(&User{}).Where("id = ?", id).
+		Select("global_model_ratio", "global_model_ratio_input_token_threshold").
+		First(&user).Error
+	if err != nil {
+		return 1, 0, err
+	}
+	return user.GlobalModelRatio, user.GlobalRatioThreshold, nil
 }
 
 func IncreaseUserQuota(id int, quota int, db bool) (err error) {

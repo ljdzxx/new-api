@@ -8,9 +8,22 @@ import (
 const DefaultGlobalModelRatio = 1.0
 
 var globalModelRatioBits atomic.Uint64
+var globalModelRatioInputTokenThreshold atomic.Int64
 
 func init() {
 	globalModelRatioBits.Store(math.Float64bits(DefaultGlobalModelRatio))
+	globalModelRatioInputTokenThreshold.Store(0)
+}
+
+func GetGlobalModelRatioInputTokenThreshold() int64 {
+	return globalModelRatioInputTokenThreshold.Load()
+}
+
+func SetGlobalModelRatioInputTokenThreshold(threshold int64) {
+	if threshold < 0 {
+		threshold = 0
+	}
+	globalModelRatioInputTokenThreshold.Store(threshold)
 }
 
 func GetGlobalModelRatio() float64 {

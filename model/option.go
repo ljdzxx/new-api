@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -128,6 +129,7 @@ func InitOptionMap() {
 	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
 	common.OptionMap["ModelBillingPolicy"] = billing_policy.MarshalConfig()
 	common.OptionMap["GlobalModelRatio"] = strconv.FormatFloat(ratio_setting.GetGlobalModelRatio(), 'f', -1, 64)
+	common.OptionMap["GlobalModelRatioInputTokenThreshold"] = strconv.FormatInt(ratio_setting.GetGlobalModelRatioInputTokenThreshold(), 10)
 	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
@@ -486,6 +488,17 @@ func updateOptionMap(key string, value string) (err error) {
 			break
 		}
 		ratio_setting.SetGlobalModelRatio(ratio)
+	case "GlobalModelRatioInputTokenThreshold":
+		threshold, parseErr := strconv.ParseInt(value, 10, 64)
+		if parseErr != nil || threshold < 0 {
+			if parseErr != nil {
+				err = parseErr
+			} else {
+				err = fmt.Errorf("global model ratio input token threshold must be greater than or equal to 0")
+			}
+			break
+		}
+		ratio_setting.SetGlobalModelRatioInputTokenThreshold(threshold)
 	case "GroupRatio":
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
 	case "GroupGroupRatio":

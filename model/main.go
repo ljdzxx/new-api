@@ -321,6 +321,9 @@ func migrateDB() error {
 	if err := migrateModelList(autoMigrateModels); err != nil {
 		return err
 	}
+	if err := ensureChannelModelRatioInputTokenThresholdSQLite(); err != nil {
+		return err
+	}
 	if err := backfillPaymentProviders(); err != nil {
 		return err
 	}
@@ -411,6 +414,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := ensureChannelModelRatioInputTokenThresholdSQLite(); err != nil {
+		return err
 	}
 	if err := backfillPaymentProviders(); err != nil {
 		return err
@@ -528,6 +534,16 @@ type sqliteColumnDef struct {
 	DDL  string
 }
 
+func ensureChannelModelRatioInputTokenThresholdSQLite() error {
+	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
+		return nil
+	}
+	if DB.Migrator().HasColumn(&Channel{}, "model_ratio_input_token_threshold") {
+		return nil
+	}
+	return DB.Exec("ALTER TABLE `channels` ADD COLUMN `model_ratio_input_token_threshold` bigint DEFAULT 0").Error
+}
+
 func ensureUsersTableSQLite() error {
 	if !common.UsingSQLite {
 		return nil
@@ -580,6 +596,7 @@ func ensureUsersTableSQLite() error {
 		{Name: "user_level_id", DDL: "`user_level_id` integer DEFAULT 1"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "global_model_ratio", DDL: "`global_model_ratio` decimal(12,6) DEFAULT 1.000000"},
+		{Name: "global_model_ratio_input_token_threshold", DDL: "`global_model_ratio_input_token_threshold` bigint DEFAULT 0"},
 	}
 	for _, col := range required {
 		if _, ok := existing[col.Name]; ok {

@@ -31,6 +31,15 @@ type textQuotaSummary struct {
 	ImageTokens              int
 	AudioTokens              int
 	AudioOutputTokens        int
+	RawPromptTokens          int
+	RawCompletionTokens      int
+	RawCacheTokens           int
+	RawCacheCreationTokens   int
+	RawCacheCreationTokens5m int
+	RawCacheCreationTokens1h int
+	RawImageTokens           int
+	RawAudioTokens           int
+	RawAudioOutputTokens     int
 	PolicyInputTotalTokens   int64
 	PolicyOutputTotalTokens  int64
 	ModelName                string
@@ -234,6 +243,16 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	rawCacheCreationTokens1h := summary.CacheCreationTokens1h
 	rawImageTokens := summary.ImageTokens
 	rawAudioTokens := summary.AudioTokens
+	rawAudioOutputTokens := summary.AudioOutputTokens
+	summary.RawPromptTokens = rawPromptTokens
+	summary.RawCompletionTokens = rawCompletionTokens
+	summary.RawCacheTokens = rawCacheTokens
+	summary.RawCacheCreationTokens = rawCacheCreationTokens
+	summary.RawCacheCreationTokens5m = rawCacheCreationTokens5m
+	summary.RawCacheCreationTokens1h = rawCacheCreationTokens1h
+	summary.RawImageTokens = rawImageTokens
+	summary.RawAudioTokens = rawAudioTokens
+	summary.RawAudioOutputTokens = rawAudioOutputTokens
 
 	summary.PromptTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.PromptTokens, summary.GlobalModelRatio)
 	summary.CompletionTokens = relayhelper.ScaleTokensByGlobalModelRatio(summary.CompletionTokens, summary.GlobalModelRatio)

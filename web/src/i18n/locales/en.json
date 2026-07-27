@@ -4274,5 +4274,11 @@
   "缩放API响应usage": "Scale API response usage",
   "开启后，API响应中的token会按系统、用户和渠道全局模型倍率缩放；透传请求体渠道除外": "When enabled, tokens in API responses are scaled by the system, user, and channel global model ratios; request-body pass-through channels are excluded.",
   "禁用非图片端点注入图片生成": "Disable image generation injection on non-image endpoints",
-  "开启后，非图片生成端点的请求不会向上游发送 image_generation 工具。": "When enabled, requests to non-image endpoints will not send the image_generation tool upstream."
+  "开启后，非图片生成端点的请求不会向上游发送 image_generation 工具。": "When enabled, requests to non-image endpoints will not send the image_generation tool upstream.",
+  "倍率生效的总输入 Tokens 阈值": "Total input token threshold for ratio activation",
+  "总输入 Tokens 大于等于该值后用户全局模型倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "The user's global model ratio takes effect when total input tokens are greater than or equal to this value; 0 means no limit. Raw tokens are counted here, before ratio scaling.",
+  "全局模型倍率生效的总输入 Tokens 阈值": "Total input token threshold for the global model ratio",
+  "渠道模型倍率生效的总输入 Tokens 阈值": "Total input token threshold for the channel model ratio",
+  "总输入 Tokens 大于等于该值后此倍率生效；0 表示不限。此处统计原始 Tokens，不受倍率缩放影响": "This ratio takes effect when total input tokens are greater than or equal to this value; 0 means no limit. Raw tokens are counted before ratio scaling.",
+  "渠道模型倍率总输入 Tokens 阈值必须是大于等于 0 的整数": "The channel model ratio input-token threshold must be an integer greater than or equal to 0"
 }

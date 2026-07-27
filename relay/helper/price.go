@@ -53,8 +53,15 @@ func scaleTokensByGlobalModelRatioStrict(tokens int, globalModelRatio float64) (
 	return common.QuotaFromFloatStrict(float64(tokens) * globalModelRatio)
 }
 
-func getEffectiveGlobalModelRatio(userID int, channelRatio float64) (float64, float64, float64, float64) {
+func globalModelRatioApplies(inputTokens int, threshold int64) bool {
+	return threshold <= 0 || int64(inputTokens) >= threshold
+}
+
+func getEffectiveGlobalModelRatio(userID int, channelRatio float64, channelThreshold int64, inputTokens int) (float64, float64, float64, float64) {
 	systemRatio := ratio_setting.GetGlobalModelRatio()
+	if !globalModelRatioApplies(inputTokens, ratio_setting.GetGlobalModelRatioInputTokenThreshold()) {
+		systemRatio = ratio_setting.DefaultGlobalModelRatio
+	}
 	userRatio := ratio_setting.DefaultGlobalModelRatio
 	if math.IsNaN(channelRatio) || math.IsInf(channelRatio, 0) {
 		channelRatio = ratio_setting.DefaultGlobalModelRatio
@@ -62,13 +69,20 @@ func getEffectiveGlobalModelRatio(userID int, channelRatio float64) (float64, fl
 	if channelRatio < 0 {
 		channelRatio = 0
 	}
+	if !globalModelRatioApplies(inputTokens, channelThreshold) {
+		channelRatio = ratio_setting.DefaultGlobalModelRatio
+	}
 	if userID <= 0 {
 		return systemRatio, userRatio, channelRatio, systemRatio * userRatio * channelRatio
 	}
 	var err error
-	userRatio, err = model.GetUserGlobalModelRatio(userID, false)
+	var inputTokenThreshold int64
+	userRatio, inputTokenThreshold, err = model.GetUserGlobalModelRatioConfig(userID, false)
 	if err != nil {
 		common.SysError(fmt.Sprintf("failed to get user global model ratio, user_id=%d: %s", userID, err.Error()))
+		userRatio = ratio_setting.DefaultGlobalModelRatio
+	}
+	if !globalModelRatioApplies(inputTokens, inputTokenThreshold) {
 		userRatio = ratio_setting.DefaultGlobalModelRatio
 	}
 	return systemRatio, userRatio, channelRatio, systemRatio * userRatio * channelRatio
@@ -81,9 +95,20 @@ func getChannelModelRatio(info *relaycommon.RelayInfo) float64 {
 	return info.ChannelMeta.ChannelModelRatio
 }
 
+func getChannelModelRatioInputTokenThreshold(info *relaycommon.RelayInfo) int64 {
+	if info == nil || info.ChannelMeta == nil {
+		return 0
+	}
+	return info.ChannelMeta.RatioThreshold
+}
+
 // BindChannelModelRatio updates relay metadata before price calculation so the
 // selected channel participates in both token scaling and the billing snapshot.
 func BindChannelModelRatio(info *relaycommon.RelayInfo, channelRatio float64) {
+	BindChannelModelRatioConfig(info, channelRatio, 0)
+}
+
+func BindChannelModelRatioConfig(info *relaycommon.RelayInfo, channelRatio float64, inputTokenThreshold int64) {
 	if info == nil {
 		return
 	}
@@ -94,6 +119,10 @@ func BindChannelModelRatio(info *relaycommon.RelayInfo, channelRatio float64) {
 		info.ChannelMeta = &relaycommon.ChannelMeta{}
 	}
 	info.ChannelMeta.ChannelModelRatio = channelRatio
+	if inputTokenThreshold < 0 {
+		inputTokenThreshold = 0
+	}
+	info.ChannelMeta.RatioThreshold = inputTokenThreshold
 }
 
 // HandleGroupRatio checks for "auto_group" in the context and updates the group ratio and relayInfo.UsingGroup if present
@@ -163,7 +192,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			}
 		}
 	}
-	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
+	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info), promptTokens)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -501,7 +530,7 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
-	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info))
+	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info), 0)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	if billing_policy.IsActive() {
