@@ -68,6 +68,7 @@ type textQuotaSummary struct {
 	ImageGenerationCallPrice float64
 	PolicyCalculation        *billing_policy.BillingCalculation
 	PolicyError              error
+	MissingUsagePreConsumed  bool
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -146,6 +147,46 @@ func noteQuotaClamp(relayInfo *relaycommon.RelayInfo, clamp *common.QuotaClamp) 
 	if relayInfo.QuotaClamp == nil {
 		relayInfo.QuotaClamp = clamp
 	}
+}
+
+func preConsumedQuotaForRelay(relayInfo *relaycommon.RelayInfo) int {
+	if relayInfo == nil {
+		return 0
+	}
+	if relayInfo.Billing != nil {
+		if preConsumed := relayInfo.Billing.GetPreConsumedQuota(); preConsumed > 0 {
+			return preConsumed
+		}
+	}
+	return relayInfo.FinalPreConsumedQuota
+}
+
+func shouldKeepPreConsumedQuotaForMissingStreamUsage(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, totalTokens int) (int, bool) {
+	if relayInfo == nil || !relayInfo.IsStream || totalTokens != 0 {
+		return 0, false
+	}
+	if relayInfo.GetFinalRequestRelayFormat() != types.RelayFormatOpenAIResponses {
+		return 0, false
+	}
+	if !common.GetContextKeyBool(ctx, constant.ContextKeyResponsesBillableStreamOutput) {
+		return 0, false
+	}
+	preConsumed := preConsumedQuotaForRelay(relayInfo)
+	if preConsumed <= 0 || relayInfo.StreamStatus == nil {
+		return 0, false
+	}
+	switch relayInfo.StreamStatus.EndReason {
+	case relaycommon.StreamEndReasonDone, relaycommon.StreamEndReasonNone:
+		return 0, false
+	case relaycommon.StreamEndReasonHandlerStop:
+		if !relayInfo.StreamStatus.HasErrors() {
+			return 0, false
+		}
+	}
+	if relayInfo.StreamStatus.IsNormalEnd() && relayInfo.StreamStatus.EndReason != relaycommon.StreamEndReasonEOF && !relayInfo.StreamStatus.HasErrors() {
+		return 0, false
+	}
+	return preConsumed, true
 }
 
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
@@ -486,7 +527,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		noteQuotaClamp(relayInfo, clamp)
 	}
 
-	if !hasBillableTokenUsage(summary) {
+	if preConsumed, ok := shouldKeepPreConsumedQuotaForMissingStreamUsage(ctx, relayInfo, summary.TotalTokens); ok {
+		summary.Quota = preConsumed
+		summary.MissingUsagePreConsumed = true
+	} else if !hasBillableTokenUsage(summary) {
 		summary.Quota = 0
 	} else if !ratio.IsZero() && summary.Quota == 0 {
 		summary.Quota = 1
@@ -587,10 +631,14 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		extraContent = append(extraContent, fmt.Sprintf("Image Generation Call 花费 %s", decimal.NewFromFloat(summary.ImageGenerationCallPrice).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
 
-	if !hasBillableTokenUsage(summary) {
+	if !hasBillableTokenUsage(summary) && !summary.MissingUsagePreConsumed {
 		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
-		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
+		logger.LogWarn(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, relayInfo.FinalPreConsumedQuota))
 	} else {
+		if summary.MissingUsagePreConsumed {
+			extraContent = append(extraContent, "流式响应已开始但缺少最终计费信息，按预扣额度结算")
+			logger.LogWarn(ctx, fmt.Sprintf("stream usage missing after response chunks, settling pre-consumed quota, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d, received %d, sent %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, summary.ModelName, summary.Quota, relayInfo.ReceivedResponseCount, relayInfo.SendResponseCount))
+		}
 		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, summary.Quota)
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, summary.Quota)
 	}
@@ -626,6 +674,10 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	attachBillingPolicySnapshot(ctx, relayInfo, summary, other)
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
+	}
+	if summary.MissingUsagePreConsumed {
+		other["missing_usage_pre_consumed"] = true
+		other["missing_usage_pre_consumed_quota"] = summary.Quota
 	}
 	if summary.ImageTokens != 0 {
 		other["image"] = true

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -89,7 +90,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var responseTextBuilder strings.Builder
 	completed := false
 
-	scanResult := helper.StreamScannerHandlerWithOptions(c, resp, info, func(data string) bool {
+	scanResult := helper.StreamScannerHandlerWithOptions(c, resp, info, func(data string, sr *helper.StreamResult) {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
@@ -99,11 +100,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				patched, patchErr := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatOpenAIResponses, helper.ResponseUsageRatio(info))
 				if patchErr != nil {
 					logger.LogError(c, "failed to scale responses stream usage: "+patchErr.Error())
-					return false
+					sr.Error(patchErr)
+					return
 				}
 				clientData = string(patched)
 			}
-			sendResponsesStreamData(c, streamResponse, clientData)
+			if err := sendResponsesStreamData(c, streamResponse, clientData); err != nil {
+				logger.LogWarn(c, "failed to write responses stream data: "+err.Error())
+				sr.Error(err)
+				return
+			}
 			switch streamResponse.Type {
 			case "response.completed":
 				completed = true
@@ -132,7 +138,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			case "response.output_text.delta":
 				// 处理输出文本
-				responseTextBuilder.WriteString(streamResponse.Delta)
+				if streamResponse.Delta != "" {
+					common.SetContextKey(c, constant.ContextKeyResponsesBillableStreamOutput, true)
+					responseTextBuilder.WriteString(streamResponse.Delta)
+				}
 			case dto.ResponsesOutputTypeItemDone:
 				// 函数调用处理
 				if streamResponse.Item != nil {
@@ -140,7 +149,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					case dto.BuildInCallWebSearchCall:
 						if info != nil && info.ResponsesUsageInfo != nil && info.ResponsesUsageInfo.BuiltInTools != nil {
 							if webSearchTool, exists := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolWebSearchPreview]; exists && webSearchTool != nil {
+								common.SetContextKey(c, constant.ContextKeyResponsesBillableStreamOutput, true)
 								webSearchTool.CallCount++
+							}
+						}
+					case dto.BuildInCallFileSearchCall:
+						if info != nil && info.ResponsesUsageInfo != nil && info.ResponsesUsageInfo.BuiltInTools != nil {
+							if fileSearchTool, exists := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolFileSearch]; exists && fileSearchTool != nil {
+								common.SetContextKey(c, constant.ContextKeyResponsesBillableStreamOutput, true)
+								fileSearchTool.CallCount++
 							}
 						}
 					}
@@ -148,8 +165,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		} else {
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
+			sr.Error(err)
 		}
-		return true
 	}, helper.StreamScannerOptions{
 		PingDataFunc: sendResponsesKeepAlive,
 	})
@@ -194,6 +211,5 @@ func sendResponsesKeepAlive(c *gin.Context) error {
 	if err != nil {
 		return fmt.Errorf("marshal responses keepalive failed: %w", err)
 	}
-	helper.ResponseChunkData(c, event, string(data))
-	return nil
+	return helper.ResponseChunkData(c, event, string(data))
 }

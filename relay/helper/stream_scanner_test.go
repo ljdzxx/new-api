@@ -232,6 +232,53 @@ func TestStreamScannerHandlerWithOptions_ClientDisconnected(t *testing.T) {
 	}
 }
 
+func TestStreamScannerHandler_ClientCancelClosesUpstreamBeforeReturn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pr, pw := io.Pipe()
+	t.Cleanup(func() {
+		_ = pr.Close()
+		_ = pw.Close()
+	})
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(ctx)
+	info := &relaycommon.RelayInfo{DisablePing: true, ChannelMeta: &relaycommon.ChannelMeta{}}
+	firstHandled := make(chan struct{})
+	done := make(chan struct{})
+	var count atomic.Int64
+	go func() {
+		StreamScannerHandler(c, &http.Response{Body: pr}, info, func(data string) bool {
+			count.Add(1)
+			if data == "first" {
+				close(firstHandled)
+			}
+			return true
+		})
+		close(done)
+	}()
+
+	_, err := fmt.Fprint(pw, "data: first\n")
+	require.NoError(t, err)
+	select {
+	case <-firstHandled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first chunk")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream handler did not return after client disconnect")
+	}
+
+	_, err = fmt.Fprint(pw, "data: second\n")
+	require.ErrorIs(t, err, io.ErrClosedPipe)
+	require.Equal(t, int64(1), count.Load())
+	require.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.EndReason)
+}
+
 func TestStreamScannerHandler_HandlerFailureStops(t *testing.T) {
 	t.Parallel()
 

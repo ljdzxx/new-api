@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/billing_policy"
@@ -422,6 +423,71 @@ func TestCacheWriteTokensTotal(t *testing.T) {
 		}
 		require.Equal(t, 30, cacheWriteTokensTotal(summary))
 	})
+}
+
+func TestCalculateTextQuotaSummaryMissingResponsesStreamUsage(t *testing.T) {
+	newContext := func(billable bool) *gin.Context {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		if billable {
+			common.SetContextKey(ctx, constant.ContextKeyResponsesBillableStreamOutput, true)
+		}
+		return ctx
+	}
+	newRelayInfo := func(format types.RelayFormat, reason relaycommon.StreamEndReason, withError bool, preConsumed int) *relaycommon.RelayInfo {
+		status := relaycommon.NewStreamStatus()
+		if withError {
+			status.RecordError("stream write failed")
+		}
+		status.SetEndReason(reason, nil)
+		return &relaycommon.RelayInfo{
+			IsStream:                true,
+			RelayFormat:             format,
+			FinalRequestRelayFormat: format,
+			OriginModelName:         "gpt-responses-test",
+			PriceData: types.PriceData{
+				ModelRatio:             1,
+				CompletionRatio:        1,
+				SystemGlobalModelRatio: 1,
+				UserGlobalModelRatio:   1,
+				ChannelModelRatio:      1,
+				GlobalModelRatio:       1,
+				GroupRatioInfo:         types.GroupRatioInfo{GroupRatio: 1},
+			},
+			StartTime:             time.Now(),
+			StreamStatus:          status,
+			FinalPreConsumedQuota: preConsumed,
+		}
+	}
+
+	tests := []struct {
+		name        string
+		billable    bool
+		format      types.RelayFormat
+		reason      relaycommon.StreamEndReason
+		withError   bool
+		preConsumed int
+		usage       dto.Usage
+		wantQuota   int
+		wantKeep    bool
+	}{
+		{name: "client disconnected after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000, wantQuota: 5000, wantKeep: true},
+		{name: "upstream eof after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonEOF, preConsumed: 5000, wantQuota: 5000, wantKeep: true},
+		{name: "handler write error after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonHandlerStop, withError: true, preConsumed: 5000, wantQuota: 5000, wantKeep: true},
+		{name: "handler stop without error refunds", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonHandlerStop, preConsumed: 5000},
+		{name: "normal done refunds missing usage", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonDone, preConsumed: 5000},
+		{name: "no billable output refunds", format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000},
+		{name: "zero pre-consume refunds", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone},
+		{name: "non responses stream refunds", billable: true, format: types.RelayFormatOpenAI, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000},
+		{name: "actual usage wins", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000, usage: dto.Usage{PromptTokens: 100, CompletionTokens: 20}, wantQuota: 120},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			summary := calculateTextQuotaSummary(newContext(tt.billable), newRelayInfo(tt.format, tt.reason, tt.withError, tt.preConsumed), &tt.usage)
+			require.Equal(t, tt.wantQuota, summary.Quota)
+			require.Equal(t, tt.wantKeep, summary.MissingUsagePreConsumed)
+		})
+	}
 }
 
 func TestCalculateTextQuotaSummaryBillsCacheOnlyUsage(t *testing.T) {

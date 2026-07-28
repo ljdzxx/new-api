@@ -185,14 +185,9 @@ func writeOpenaiImageStreamChunk(c *gin.Context, data []byte) error {
 	}
 	_ = common.Unmarshal(data, &payload)
 	if eventName := strings.TrimSpace(payload.Type); eventName != "" {
-		if _, err := fmt.Fprintf(c.Writer, "event: %s\n", eventName); err != nil {
-			return err
-		}
+		return helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: eventName}, string(data))
 	}
-	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
-		return err
-	}
-	return helper.FlushWriter(c)
+	return helper.StringData(c, string(data))
 }
 
 // isOpenAIImageStreamErrorEvent detects upstream error chunks by JSON content
