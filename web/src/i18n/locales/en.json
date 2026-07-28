@@ -4315,5 +4315,9 @@
   "产生有效邀请的用户": "Users with valid invites",
   "Top 100 有效邀请数": "Top 100 valid invites",
   "第一名有效邀请数": "Top user's valid invites",
-  "自定义查询范围不能超过 366 天": "A custom query range cannot exceed 366 days"
+  "自定义查询范围不能超过 366 天": "A custom query range cannot exceed 366 days",
+  "标记订阅订单退款": "Mark subscription order as refunded",
+  "订阅订单已作废，订阅权益已终止": "Subscription order invalidated and benefits terminated",
+  "请确认退款已完成。此操作会将订阅订单作废并立即终止剩余订阅权益；已升级的用户分组保持不变，也不会调用支付平台、退回用户余额或改变用户等级。": "Confirm that the refund is complete. This invalidates the subscription order and immediately terminates its remaining benefits. The upgraded user group remains unchanged; the payment provider is not called, the user's balance is not refunded, and the user's level is not changed.",
+  "请确认退款已完成。此操作会将兑换码订阅记录标记为退款并立即终止剩余订阅权益；兑换码保持已使用，已升级的用户分组保持不变，也不会退回用户余额或改变用户等级。": "Confirm that the refund is complete. This marks the redemption subscription record as refunded and immediately terminates its remaining benefits. The code remains used, the upgraded user group remains unchanged, and neither the user's balance nor level is changed."
 }

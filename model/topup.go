@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -14,24 +15,33 @@ import (
 )
 
 type TopUp struct {
-	Id               int     `json:"id"`
-	UserId           int     `json:"user_id" gorm:"index"`
-	Username         string  `json:"username" gorm:"-"`
-	Amount           int64   `json:"amount"`
-	Money            float64 `json:"money"`
-	TradeNo          string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider  string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	ReconcileStatus  string  `json:"reconcile_status" gorm:"type:varchar(32);default:'unchecked';index"`
-	ReconcileTime    int64   `json:"reconcile_time"`
-	ReconcileMessage string  `json:"reconcile_message" gorm:"type:text"`
-	CreateTime       int64   `json:"create_time"`
-	CompleteTime     int64   `json:"complete_time"`
-	Status           string  `json:"status"`
-	RefundTime       int64   `json:"refund_time" gorm:"column:refund_time"`
-	RefundOperatorId int     `json:"refund_operator_id" gorm:"column:refund_operator_id;index"`
-	RefundReason     string  `json:"refund_reason" gorm:"type:text;column:refund_reason"`
+	Id                 int     `json:"id"`
+	UserId             int     `json:"user_id" gorm:"index"`
+	Username           string  `json:"username" gorm:"-"`
+	Amount             int64   `json:"amount"`
+	Money              float64 `json:"money"`
+	TradeNo            string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod      string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider    string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	ReconcileStatus    string  `json:"reconcile_status" gorm:"type:varchar(32);default:'unchecked';index"`
+	ReconcileTime      int64   `json:"reconcile_time"`
+	ReconcileMessage   string  `json:"reconcile_message" gorm:"type:text"`
+	CreateTime         int64   `json:"create_time"`
+	CompleteTime       int64   `json:"complete_time"`
+	Status             string  `json:"status"`
+	RefundTime         int64   `json:"refund_time" gorm:"column:refund_time"`
+	RefundOperatorId   int     `json:"refund_operator_id" gorm:"column:refund_operator_id;index"`
+	RefundReason       string  `json:"refund_reason" gorm:"type:text;column:refund_reason"`
+	OrderType          string  `json:"order_type" gorm:"-"`
+	Refundable         bool    `json:"refundable" gorm:"-"`
+	SubscriptionStatus string  `json:"subscription_status,omitempty" gorm:"-"`
+	SubscriptionSource string  `json:"subscription_source,omitempty" gorm:"-"`
 }
+
+const (
+	TopUpOrderTypeWallet       = "topup"
+	TopUpOrderTypeSubscription = "subscription"
+)
 
 const (
 	PaymentProviderEpay      = "epay"
@@ -47,6 +57,7 @@ const (
 	PaymentMethodAffInviter = "aff_inviter"
 	PaymentMethodAffInvitee = "aff_invitee"
 	PaymentMethodBalance    = "balance"
+	PaymentMethodRedemption = "redemption"
 )
 
 const (
@@ -211,12 +222,111 @@ func recalculateUserLevelByRechargeTx(tx *gorm.DB, userId int, totalRecharge flo
 
 type TopUpRefundResult struct {
 	UserId          int
+	OrderType       string
+	SubscriptionId  int
+	RedemptionId    int
 	PreviousLevelId int
 	LevelChanged    bool
 	LevelName       string
 	UserLevelId     int
 	TotalRecharge   float64
 	AlreadyRefunded bool
+}
+
+func parseRedemptionTradeNo(tradeNo string) (redemptionId int, welfareUserId int, ok bool) {
+	const prefix = "redeem-"
+	if !strings.HasPrefix(tradeNo, prefix) {
+		return 0, 0, false
+	}
+	remainder := strings.TrimPrefix(tradeNo, prefix)
+	idPart := remainder
+	if strings.Contains(remainder, "-u") {
+		var userPart string
+		idPart, userPart, ok = strings.Cut(remainder, "-u")
+		if !ok || userPart == "" || strings.Contains(userPart, "-u") {
+			return 0, 0, false
+		}
+		welfareUserId, _ = strconv.Atoi(userPart)
+		if welfareUserId <= 0 {
+			return 0, 0, false
+		}
+	}
+	redemptionId, _ = strconv.Atoi(idPart)
+	if redemptionId <= 0 {
+		return 0, 0, false
+	}
+	return redemptionId, welfareUserId, true
+}
+
+func resolveRedemptionSubscriptionEntitlementTx(tx *gorm.DB, topUp *TopUp) (*UserSubscription, int, error) {
+	if tx == nil || topUp == nil || topUp.UserId <= 0 || topUp.PaymentMethod != PaymentMethodRedemption {
+		return nil, 0, errors.New("无效的订阅兑换码订单")
+	}
+	redemptionId, welfareUserId, ok := parseRedemptionTradeNo(topUp.TradeNo)
+	if !ok || (welfareUserId > 0 && welfareUserId != topUp.UserId) {
+		return nil, 0, errors.New("订阅兑换码订单号无效")
+	}
+
+	var redemption Redemption
+	if err := lockForUpdate(tx.Unscoped()).Where("id = ?", redemptionId).First(&redemption).Error; err != nil {
+		return nil, 0, err
+	}
+	if redemption.RewardType != common.RedemptionRewardTypeSubscription || redemption.PlanId <= 0 || redemption.PayMoney <= 0 || topUp.Money <= 0 {
+		return nil, 0, errors.New("仅实付金额大于0的订阅兑换码订单可以标记退款")
+	}
+
+	subscriptionId := 0
+	if welfareUserId > 0 {
+		var usage RedemptionUsage
+		if err := lockForUpdate(tx).Where("redemption_id = ? AND user_id = ?", redemptionId, topUp.UserId).First(&usage).Error; err != nil {
+			return nil, 0, err
+		}
+		if usage.RewardType != common.RedemptionRewardTypeSubscription || usage.PlanId != redemption.PlanId {
+			return nil, 0, errors.New("兑换码使用记录与订阅权益不匹配")
+		}
+		subscriptionId = usage.SubscriptionId
+	} else if redemption.UsedUserId != topUp.UserId {
+		return nil, 0, errors.New("兑换码使用用户与订单用户不匹配")
+	}
+
+	var sub UserSubscription
+	query := lockForUpdate(tx).Where("user_id = ? AND plan_id = ? AND source = ?", topUp.UserId, redemption.PlanId, PaymentMethodRedemption)
+	if subscriptionId > 0 {
+		query = query.Where("id = ?", subscriptionId)
+	} else {
+		query = query.Where("redemption_id = ?", redemptionId)
+	}
+	err := query.Order("id desc").First(&sub).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) && subscriptionId == 0 {
+		redeemedAt := topUp.CompleteTime
+		if redeemedAt <= 0 {
+			redeemedAt = redemption.RedeemedTime
+		}
+		var candidates []UserSubscription
+		err = lockForUpdate(tx).
+			Where("user_id = ? AND plan_id = ? AND source = ? AND redemption_id = ? AND created_at >= ? AND created_at <= ?",
+				topUp.UserId, redemption.PlanId, PaymentMethodRedemption, 0, redeemedAt-5, redeemedAt+5).
+			Order("id asc").Find(&candidates).Error
+		if err == nil {
+			if len(candidates) != 1 {
+				return nil, 0, errors.New("无法唯一确定兑换码对应的订阅权益")
+			}
+			sub = candidates[0]
+		}
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	if sub.RedemptionId != 0 && sub.RedemptionId != redemptionId {
+		return nil, 0, errors.New("兑换码关联的订阅权益不匹配")
+	}
+	if sub.RedemptionId == 0 {
+		if err := tx.Model(&UserSubscription{}).Where("id = ?", sub.Id).Update("redemption_id", redemptionId).Error; err != nil {
+			return nil, 0, err
+		}
+		sub.RedemptionId = redemptionId
+	}
+	return &sub, redemptionId, nil
 }
 
 func MarkTopUpRefunded(tradeNo string, operatorId int, reason string) (*TopUpRefundResult, error) {
@@ -235,7 +345,7 @@ func MarkTopUpRefunded(tradeNo string, operatorId int, reason string) (*TopUpRef
 		return nil, errors.New("退款原因不能超过500个字符")
 	}
 
-	result := &TopUpRefundResult{}
+	result := &TopUpRefundResult{OrderType: TopUpOrderTypeWallet}
 	refCol := "`trade_no`"
 	if common.UsingPostgreSQL {
 		refCol = `"trade_no"`
@@ -249,6 +359,117 @@ func MarkTopUpRefunded(tradeNo string, operatorId int, reason string) (*TopUpRef
 			return err
 		}
 		result.UserId = topUp.UserId
+
+		var subscriptionOrder SubscriptionOrder
+		subscriptionOrderErr := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(&subscriptionOrder).Error
+		if subscriptionOrderErr != nil && !errors.Is(subscriptionOrderErr, gorm.ErrRecordNotFound) {
+			return subscriptionOrderErr
+		}
+		if subscriptionOrderErr == nil {
+			result.OrderType = TopUpOrderTypeSubscription
+			result.SubscriptionId = subscriptionOrder.UserSubscriptionId
+			if topUp.Status == common.TopUpStatusRefunded && subscriptionOrder.Status == SubscriptionOrderStatusInvalidated {
+				result.AlreadyRefunded = true
+				totalRecharge, totalErr := getUserTotalRechargeAmountTx(tx, topUp.UserId)
+				if totalErr != nil {
+					return totalErr
+				}
+				result.TotalRecharge = totalRecharge
+				var user User
+				if userErr := tx.Select("user_level_id").Where("id = ?", topUp.UserId).First(&user).Error; userErr != nil {
+					return userErr
+				}
+				result.PreviousLevelId = user.UserLevelId
+				result.UserLevelId = user.UserLevelId
+				return nil
+			}
+			if topUp.Status != common.TopUpStatusSuccess && topUp.Status != common.TopUpStatusRefunded {
+				return errors.New("仅支付成功的订阅订单可以标记退款")
+			}
+			if subscriptionOrder.Status != common.TopUpStatusSuccess && subscriptionOrder.Status != SubscriptionOrderStatusInvalidated {
+				return errors.New("仅支付成功的订阅订单可以标记退款")
+			}
+			if topUp.Money <= 0 || subscriptionOrder.Money <= 0 {
+				return errors.New("仅实付金额大于0的订阅订单可以标记退款")
+			}
+
+			sub, err := resolveSubscriptionOrderEntitlementTx(tx, &subscriptionOrder)
+			if err != nil {
+				return err
+			}
+			result.SubscriptionId = sub.Id
+			now := common.GetTimestamp()
+			if err := cancelUserSubscriptionTx(tx, sub, now); err != nil {
+				return err
+			}
+			if err := tx.Model(&SubscriptionOrder{}).Where("id = ?", subscriptionOrder.Id).Updates(map[string]interface{}{
+				"status":             SubscriptionOrderStatusInvalidated,
+				"refund_time":        now,
+				"refund_operator_id": operatorId,
+				"refund_reason":      reason,
+			}).Error; err != nil {
+				return err
+			}
+			topUp.Status = common.TopUpStatusRefunded
+			topUp.RefundTime = now
+			topUp.RefundOperatorId = operatorId
+			topUp.RefundReason = reason
+			if err := tx.Save(topUp).Error; err != nil {
+				return err
+			}
+			result.TotalRecharge, err = getUserTotalRechargeAmountTx(tx, topUp.UserId)
+			if err != nil {
+				return err
+			}
+			var user User
+			if err := tx.Select("user_level_id").Where("id = ?", topUp.UserId).First(&user).Error; err != nil {
+				return err
+			}
+			result.PreviousLevelId = user.UserLevelId
+			result.UserLevelId = user.UserLevelId
+			return nil
+		}
+
+		if topUp.PaymentMethod == PaymentMethodRedemption && topUp.Amount == 0 {
+			if topUp.Status != common.TopUpStatusSuccess && topUp.Status != common.TopUpStatusRefunded {
+				return errors.New("仅支付成功的订阅兑换码订单可以标记退款")
+			}
+			sub, redemptionId, resolveErr := resolveRedemptionSubscriptionEntitlementTx(tx, topUp)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			result.OrderType = TopUpOrderTypeSubscription
+			result.SubscriptionId = sub.Id
+			result.RedemptionId = redemptionId
+			if topUp.Status == common.TopUpStatusRefunded {
+				result.AlreadyRefunded = true
+			} else {
+				now := common.GetTimestamp()
+				if err := cancelUserSubscriptionTx(tx, sub, now); err != nil {
+					return err
+				}
+				topUp.Status = common.TopUpStatusRefunded
+				topUp.RefundTime = now
+				topUp.RefundOperatorId = operatorId
+				topUp.RefundReason = reason
+				if err := tx.Save(topUp).Error; err != nil {
+					return err
+				}
+			}
+			var err error
+			result.TotalRecharge, err = getUserTotalRechargeAmountTx(tx, topUp.UserId)
+			if err != nil {
+				return err
+			}
+			var user User
+			if err := tx.Select("user_level_id").Where("id = ?", topUp.UserId).First(&user).Error; err != nil {
+				return err
+			}
+			result.PreviousLevelId = user.UserLevelId
+			result.UserLevelId = user.UserLevelId
+			return nil
+		}
+
 		if topUp.Status == common.TopUpStatusRefunded {
 			result.AlreadyRefunded = true
 			totalRecharge, totalErr := getUserTotalRechargeAmountTx(tx, topUp.UserId)
@@ -302,6 +523,79 @@ func MarkTopUpRefunded(tradeNo string, operatorId int, reason string) (*TopUpRef
 		_ = invalidateUserCache(result.UserId)
 	}
 	return result, nil
+}
+
+func fillTopUpOrderMetadata(topups []*TopUp) error {
+	if len(topups) == 0 {
+		return nil
+	}
+	tradeNos := make([]string, 0, len(topups))
+	redemptionIds := make([]int, 0)
+	redemptionIdByTradeNo := make(map[string]int)
+	welfareUserIdByTradeNo := make(map[string]int)
+	for _, topup := range topups {
+		if topup == nil {
+			continue
+		}
+		topup.OrderType = TopUpOrderTypeWallet
+		topup.Refundable = topup.Status == common.TopUpStatusSuccess && topup.Amount > 0 && topup.Money > 0
+		if topup.TradeNo != "" {
+			tradeNos = append(tradeNos, topup.TradeNo)
+		}
+		if topup.PaymentMethod == PaymentMethodRedemption && topup.Amount == 0 && topup.Money > 0 {
+			if redemptionId, welfareUserId, ok := parseRedemptionTradeNo(topup.TradeNo); ok {
+				redemptionIds = append(redemptionIds, redemptionId)
+				redemptionIdByTradeNo[topup.TradeNo] = redemptionId
+				welfareUserIdByTradeNo[topup.TradeNo] = welfareUserId
+			}
+		}
+	}
+	if len(tradeNos) == 0 {
+		return nil
+	}
+	var orders []SubscriptionOrder
+	if err := DB.Select("trade_no", "status").Where("trade_no IN ?", tradeNos).Find(&orders).Error; err != nil {
+		return err
+	}
+	statusByTradeNo := make(map[string]string, len(orders))
+	for _, order := range orders {
+		statusByTradeNo[order.TradeNo] = order.Status
+	}
+	redemptionById := make(map[int]Redemption, len(redemptionIds))
+	if len(redemptionIds) > 0 {
+		var redemptions []Redemption
+		if err := DB.Unscoped().Select("id", "reward_type", "plan_id", "pay_money", "used_user_id").
+			Where("id IN ?", redemptionIds).Find(&redemptions).Error; err != nil {
+			return err
+		}
+		for _, redemption := range redemptions {
+			redemptionById[redemption.Id] = redemption
+		}
+	}
+	for _, topup := range topups {
+		if topup == nil {
+			continue
+		}
+		if status, ok := statusByTradeNo[topup.TradeNo]; ok {
+			topup.OrderType = TopUpOrderTypeSubscription
+			topup.SubscriptionStatus = status
+			topup.Refundable = topup.Status == common.TopUpStatusSuccess && status == common.TopUpStatusSuccess && topup.Money > 0
+			continue
+		}
+		redemptionId, ok := redemptionIdByTradeNo[topup.TradeNo]
+		if !ok {
+			continue
+		}
+		redemption, exists := redemptionById[redemptionId]
+		welfareUserId := welfareUserIdByTradeNo[topup.TradeNo]
+		userMatches := welfareUserId == topup.UserId || (welfareUserId == 0 && redemption.UsedUserId == topup.UserId)
+		if exists && userMatches && redemption.RewardType == common.RedemptionRewardTypeSubscription && redemption.PlanId > 0 && redemption.PayMoney > 0 {
+			topup.OrderType = TopUpOrderTypeSubscription
+			topup.SubscriptionSource = PaymentMethodRedemption
+			topup.Refundable = topup.Status == common.TopUpStatusSuccess
+		}
+	}
+	return nil
 }
 
 func TryAutoUpgradeUserLevelByRecharge(userId int) error {
@@ -428,6 +722,9 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 	if err = tx.Commit().Error; err != nil {
 		return nil, 0, err
 	}
+	if err = fillTopUpOrderMetadata(topups); err != nil {
+		return nil, 0, err
+	}
 
 	return topups, total, nil
 }
@@ -466,6 +763,9 @@ func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (to
 	}
 
 	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+	if err = fillTopUpOrderMetadata(topups); err != nil {
 		return nil, 0, err
 	}
 	return topups, total, nil
@@ -573,6 +873,9 @@ func SearchAllTopUpsWithFilter(filter TopUpFilter, pageInfo *common.PageInfo) (t
 		return nil, 0, err
 	}
 	fillTopUpUsernames(topups)
+	if err = fillTopUpOrderMetadata(topups); err != nil {
+		return nil, 0, err
+	}
 	return topups, total, nil
 }
 

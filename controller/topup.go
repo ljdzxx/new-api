@@ -441,7 +441,7 @@ func AdminCompleteTopUp(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
-// AdminRefundTopUp marks an externally refunded wallet order and recalculates the user's level.
+// AdminRefundTopUp records an externally completed wallet or subscription refund.
 func AdminRefundTopUp(c *gin.Context) {
 	var req adminRefundTopUpRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
@@ -464,13 +464,24 @@ func AdminRefundTopUp(c *gin.Context) {
 		return
 	}
 	if !result.AlreadyRefunded {
-		model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("管理员将充值订单 %s 标记为退款，退款后累计充值 %.2f", req.TradeNo, result.TotalRecharge))
-		if result.LevelChanged {
-			model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("退款后重新计算等级：#%d -> %s (#%d)", result.PreviousLevelId, result.LevelName, result.UserLevelId))
+		if result.OrderType == model.TopUpOrderTypeSubscription {
+			if result.RedemptionId > 0 {
+				model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("管理员将订阅兑换码订单 %s 标记为退款并终止订阅权益 #%d，兑换码 #%d 保持已使用，用户分组保持不变", req.TradeNo, result.SubscriptionId, result.RedemptionId))
+			} else {
+				model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("管理员将订阅订单 %s 标记为作废并终止订阅权益 #%d，用户分组保持不变", req.TradeNo, result.SubscriptionId))
+			}
+		} else {
+			model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("管理员将充值订单 %s 标记为退款，退款后累计充值 %.2f", req.TradeNo, result.TotalRecharge))
+			if result.LevelChanged {
+				model.RecordLog(result.UserId, model.LogTypeManage, fmt.Sprintf("退款后重新计算等级：#%d -> %s (#%d)", result.PreviousLevelId, result.LevelName, result.UserLevelId))
+			}
 		}
 	}
 	common.ApiSuccess(c, gin.H{
 		"already_refunded": result.AlreadyRefunded,
+		"order_type":       result.OrderType,
+		"subscription_id":  result.SubscriptionId,
+		"redemption_id":    result.RedemptionId,
 		"total_recharge":   result.TotalRecharge,
 		"user_level_id":    result.UserLevelId,
 	})

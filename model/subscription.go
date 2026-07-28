@@ -40,6 +40,8 @@ var (
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
 )
 
+const SubscriptionOrderStatusInvalidated = "invalidated"
+
 const (
 	subscriptionPlanCacheNamespace     = "new-api:subscription_plan:v1"
 	subscriptionPlanInfoCacheNamespace = "new-api:subscription_plan_info:v1"
@@ -208,17 +210,21 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 
 // Subscription order (payment -> webhook -> create UserSubscription)
 type SubscriptionOrder struct {
-	Id     int     `json:"id"`
-	UserId int     `json:"user_id" gorm:"index"`
-	PlanId int     `json:"plan_id" gorm:"index"`
-	Money  float64 `json:"money"`
+	Id                 int     `json:"id"`
+	UserId             int     `json:"user_id" gorm:"index"`
+	PlanId             int     `json:"plan_id" gorm:"index"`
+	UserSubscriptionId int     `json:"user_subscription_id" gorm:"type:int;default:0;index"`
+	Money              float64 `json:"money"`
 
-	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status          string `json:"status"`
-	CreateTime      int64  `json:"create_time"`
-	CompleteTime    int64  `json:"complete_time"`
+	TradeNo          string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod    string `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider  string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	Status           string `json:"status"`
+	CreateTime       int64  `json:"create_time"`
+	CompleteTime     int64  `json:"complete_time"`
+	RefundTime       int64  `json:"refund_time"`
+	RefundOperatorId int    `json:"refund_operator_id" gorm:"type:int;default:0;index"`
+	RefundReason     string `json:"refund_reason" gorm:"type:text"`
 
 	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
 }
@@ -603,8 +609,15 @@ func getUserGroupByIdTx(tx *gorm.DB, userId int) (string, error) {
 	if tx == nil {
 		tx = DB
 	}
+	groupCol := commonGroupCol
+	if groupCol == "" {
+		groupCol = "`group`"
+		if common.UsingPostgreSQL {
+			groupCol = `"group"`
+		}
+	}
 	var group string
-	if err := tx.Model(&User{}).Where("id = ?", userId).Select(commonGroupCol).Find(&group).Error; err != nil {
+	if err := tx.Model(&User{}).Where("id = ?", userId).Select(groupCol).Find(&group).Error; err != nil {
 		return "", err
 	}
 	return group, nil
@@ -754,10 +767,11 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 			// still allow completion for already purchased orders
 		}
 		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
-		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
+		sub, err := CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
 		if err != nil {
 			return err
 		}
+		order.UserSubscriptionId = sub.Id
 		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
 			return err
 		}
@@ -935,23 +949,25 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			}
 		}
 
-		if _, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance); err != nil {
+		sub, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, PaymentMethodBalance)
+		if err != nil {
 			return err
 		}
 
 		now := common.GetTimestamp()
 		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
 		order := &SubscriptionOrder{
-			UserId:          userId,
-			PlanId:          plan.Id,
-			Money:           plan.PriceAmount,
-			TradeNo:         tradeNo,
-			PaymentMethod:   PaymentMethodBalance,
-			PaymentProvider: PaymentProviderBalance,
-			Status:          common.TopUpStatusSuccess,
-			CreateTime:      now,
-			CompleteTime:    now,
-			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
+			UserId:             userId,
+			PlanId:             plan.Id,
+			UserSubscriptionId: sub.Id,
+			Money:              plan.PriceAmount,
+			TradeNo:            tradeNo,
+			PaymentMethod:      PaymentMethodBalance,
+			PaymentProvider:    PaymentProviderBalance,
+			Status:             common.TopUpStatusSuccess,
+			CreateTime:         now,
+			CompleteTime:       now,
+			ProviderPayload:    fmt.Sprintf("charged_quota=%d", requiredQuota),
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return err
@@ -1230,6 +1246,108 @@ func buildSubscriptionSummaries(subs []UserSubscription) ([]SubscriptionSummary,
 	return result, nil
 }
 
+func cancelUserSubscriptionTx(tx *gorm.DB, sub *UserSubscription, now int64) error {
+	if tx == nil || sub == nil || sub.Id <= 0 {
+		return errors.New("invalid user subscription")
+	}
+	endTime := now
+	if sub.EndTime > 0 && sub.EndTime < now {
+		endTime = sub.EndTime
+	}
+	if err := tx.Model(&UserSubscription{}).Where("id = ?", sub.Id).Updates(map[string]interface{}{
+		"status":     "cancelled",
+		"end_time":   endTime,
+		"updated_at": now,
+	}).Error; err != nil {
+		return err
+	}
+	sub.Status = "cancelled"
+	sub.EndTime = endTime
+	sub.UpdatedAt = now
+	plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+	if err != nil {
+		return err
+	}
+	return SyncUserSubscriptionDailyStatTx(tx, sub, plan, now)
+}
+
+func resolveSubscriptionOrderEntitlementTx(tx *gorm.DB, order *SubscriptionOrder) (*UserSubscription, error) {
+	if tx == nil || order == nil || order.Id <= 0 {
+		return nil, errors.New("invalid subscription order")
+	}
+	if order.UserSubscriptionId > 0 {
+		var sub UserSubscription
+		if err := lockForUpdate(tx).Where("id = ?", order.UserSubscriptionId).First(&sub).Error; err != nil {
+			return nil, err
+		}
+		if sub.UserId != order.UserId || sub.PlanId != order.PlanId {
+			return nil, errors.New("订阅订单关联的用户权益不匹配")
+		}
+		return &sub, nil
+	}
+
+	source := "order"
+	if order.PaymentMethod == PaymentMethodBalance || order.PaymentProvider == PaymentProviderBalance {
+		source = PaymentMethodBalance
+	}
+	var candidates []UserSubscription
+	if err := tx.Where("user_id = ? AND plan_id = ? AND source = ?", order.UserId, order.PlanId, source).
+		Order("id asc").Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, errors.New("未找到订阅订单对应的用户权益")
+	}
+
+	candidateIds := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidateIds = append(candidateIds, candidate.Id)
+	}
+	var linkedOrders []SubscriptionOrder
+	if err := tx.Select("user_subscription_id").
+		Where("id <> ? AND user_subscription_id IN ?", order.Id, candidateIds).
+		Find(&linkedOrders).Error; err != nil {
+		return nil, err
+	}
+	linkedIds := make(map[int]struct{}, len(linkedOrders))
+	for _, linkedOrder := range linkedOrders {
+		linkedIds[linkedOrder.UserSubscriptionId] = struct{}{}
+	}
+
+	targetTime := order.CompleteTime
+	if targetTime <= 0 {
+		targetTime = order.CreateTime
+	}
+	var selected *UserSubscription
+	var selectedDistance int64
+	for i := range candidates {
+		candidate := &candidates[i]
+		if _, linked := linkedIds[candidate.Id]; linked {
+			continue
+		}
+		distance := candidate.CreatedAt - targetTime
+		if distance < 0 {
+			distance = -distance
+		}
+		if selected == nil || distance < selectedDistance || (distance == selectedDistance && candidate.Id > selected.Id) {
+			selected = candidate
+			selectedDistance = distance
+		}
+	}
+	if selected == nil {
+		return nil, errors.New("订阅订单对应的用户权益已关联到其他订单")
+	}
+	if err := lockForUpdate(tx).Where("id = ?", selected.Id).First(selected).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Model(&SubscriptionOrder{}).Where("id = ?", order.Id).
+		Update("user_subscription_id", selected.Id).Error; err != nil {
+		return nil, err
+	}
+	order.UserSubscriptionId = selected.Id
+	return selected, nil
+}
+
 // AdminInvalidateUserSubscription marks a user subscription as cancelled and ends it immediately.
 func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 	if userSubscriptionId <= 0 {
@@ -1246,21 +1364,7 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 			return err
 		}
 		userId = sub.UserId
-		if err := tx.Model(&sub).Updates(map[string]interface{}{
-			"status":     "cancelled",
-			"end_time":   now,
-			"updated_at": now,
-		}).Error; err != nil {
-			return err
-		}
-		sub.Status = "cancelled"
-		sub.EndTime = now
-		sub.UpdatedAt = now
-		plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
-		if err != nil {
-			return err
-		}
-		if err := SyncUserSubscriptionDailyStatTx(tx, &sub, plan, now); err != nil {
+		if err := cancelUserSubscriptionTx(tx, &sub, now); err != nil {
 			return err
 		}
 		target, err := downgradeUserGroupForSubscriptionTx(tx, &sub, now)

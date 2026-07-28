@@ -4254,5 +4254,9 @@
   "产生有效邀请的用户": "Utilisateurs avec des invitations valides",
   "Top 100 有效邀请数": "Invitations valides du Top 100",
   "第一名有效邀请数": "Invitations valides du premier",
-  "自定义查询范围不能超过 366 天": "La période personnalisée ne peut pas dépasser 366 jours"
+  "自定义查询范围不能超过 366 天": "La période personnalisée ne peut pas dépasser 366 jours",
+  "标记订阅订单退款": "Marquer la commande d'abonnement comme remboursée",
+  "订阅订单已作废，订阅权益已终止": "Commande d'abonnement invalidée et avantages résiliés",
+  "请确认退款已完成。此操作会将订阅订单作废并立即终止剩余订阅权益；已升级的用户分组保持不变，也不会调用支付平台、退回用户余额或改变用户等级。": "Confirmez que le remboursement est terminé. Cette action invalide la commande d'abonnement et résilie immédiatement les avantages restants. Le groupe utilisateur mis à niveau reste inchangé ; la plateforme de paiement n'est pas appelée, le solde utilisateur n'est pas recrédité et le niveau utilisateur ne change pas.",
+  "请确认退款已完成。此操作会将兑换码订阅记录标记为退款并立即终止剩余订阅权益；兑换码保持已使用，已升级的用户分组保持不变，也不会退回用户余额或改变用户等级。": "Confirmez que le remboursement est terminé. Cette action marque l'abonnement par code comme remboursé et résilie immédiatement les avantages restants. Le code reste utilisé, le groupe mis à niveau reste inchangé, et ni le solde ni le niveau utilisateur ne changent."
 }

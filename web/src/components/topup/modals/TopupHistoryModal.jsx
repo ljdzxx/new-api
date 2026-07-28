@@ -169,9 +169,14 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
         trade_no: refundOrder?.trade_no,
         reason,
       });
-      const { success, message } = res.data;
+      const { success, message, data } = res.data;
       if (success) {
-        Toast.success({ content: t('订单已标记为退款，用户等级已重新计算') });
+        Toast.success({
+          content:
+            data?.order_type === 'subscription'
+              ? t('订阅订单已作废，订阅权益已终止')
+              : t('订单已标记为退款，用户等级已重新计算'),
+        });
         setRefundOrder(null);
         setRefundReason('');
         await loadTopups(page, pageSize);
@@ -298,11 +303,7 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
               </Button>
             );
           }
-          if (
-            record.status === 'success' &&
-            Number(record.amount) > 0 &&
-            Number(record.money) > 0
-          ) {
+          if (record.refundable) {
             return (
               <Button
                 size='small'
@@ -387,7 +388,11 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
         }
       />
       <Modal
-        title={t('标记充值订单退款')}
+        title={
+          refundOrder?.order_type === 'subscription'
+            ? t('标记订阅订单退款')
+            : t('标记充值订单退款')
+        }
         visible={Boolean(refundOrder)}
         onCancel={() => {
           if (!refundLoading) setRefundOrder(null);
@@ -404,9 +409,13 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
             {t('订单号')}：{refundOrder?.trade_no || '-'}
           </Text>
           <Text type='warning' className='block'>
-            {t(
-              '请确认支付平台退款已完成。此操作只登记退款、排除等级累计充值并立即重算等级，不会调用支付平台退款，也不会扣减用户余额。',
-            )}
+            {refundOrder?.order_type === 'subscription'
+              ? t(
+                  '请确认退款已完成。此操作会将订阅订单作废并立即终止剩余订阅权益；已升级的用户分组保持不变，也不会调用支付平台、退回用户余额或改变用户等级。',
+                )
+              : t(
+                  '请确认支付平台退款已完成。此操作只登记退款、排除等级累计充值并立即重算等级，不会调用支付平台退款，也不会扣减用户余额。',
+                )}
           </Text>
           <TextArea
             value={refundReason}
