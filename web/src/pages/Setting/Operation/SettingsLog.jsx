@@ -156,15 +156,16 @@ export default function SettingsLog(props) {
         ) : (
           <div
             style={{
-              background: '#e6f4ff',
-              border: '1px solid #91caff',
+              backgroundColor: '#eaf4ff',
+              border: '1px solid #84b9e8',
               padding: '12px',
               borderRadius: '4px',
               marginTop: '12px',
+              color: '#0b4a7e',
             }}
           >
             <Spin size='small' />{' '}
-            <Text strong type='primary'>
+            <Text strong style={{ color: '#0b4a7e' }}>
               {t('正在清理，已清理 {{count}} 条日志', {
                 count: deletedCount,
               })}
@@ -348,9 +349,12 @@ export default function SettingsLog(props) {
                 </Spin>
                 {loadingCleanHistoryLog && (
                   <Text
-                    type='primary'
                     size='small'
-                    style={{ display: 'block', marginTop: 8 }}
+                    style={{
+                      color: '#0b4a7e',
+                      display: 'block',
+                      marginTop: 8,
+                    }}
                   >
                     {t('正在清理，已清理 {{count}} 条日志', {
                       count: cleanedHistoryLogCount,
