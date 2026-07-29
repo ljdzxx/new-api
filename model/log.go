@@ -519,6 +519,7 @@ func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64,
 	err := LOG_DB.WithContext(ctx).
 		Model(&Log{}).
 		Where("created_at < ?", targetTimestamp).
+		Order("id ASC").
 		Limit(limit).
 		Pluck("id", &ids).Error
 	if err != nil || len(ids) == 0 {

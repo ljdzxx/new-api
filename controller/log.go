@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -159,6 +162,7 @@ func DeleteHistoryLogs(c *gin.Context) {
 	}
 
 	const defaultBatchSize = 1000
+	const streamBatchSize = 100
 	const maxBatchSize = 10000
 	batchSize := 0
 	if value := c.Query("batch_size"); value != "" {
@@ -170,6 +174,14 @@ func DeleteHistoryLogs(c *gin.Context) {
 			})
 			return
 		}
+	}
+
+	if c.Query("stream") == "true" {
+		if batchSize == 0 {
+			batchSize = streamBatchSize
+		}
+		streamDeleteHistoryLogs(c, targetTimestamp, batchSize)
+		return
 	}
 
 	var count int64
@@ -194,4 +206,123 @@ func DeleteHistoryLogs(c *gin.Context) {
 		"data":    count,
 	})
 	return
+}
+
+type logDeletionEvent struct {
+	Type    string `json:"type"`
+	Deleted int64  `json:"deleted"`
+	Message string `json:"message,omitempty"`
+}
+
+type logDeletionResult struct {
+	deleted int64
+	err     error
+}
+
+func streamDeleteHistoryLogs(c *gin.Context, targetTimestamp int64, batchSize int) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	var deletedCount int64
+	writeLogDeletionEvent(c, logDeletionEvent{Type: "progress", Deleted: deletedCount})
+
+	for {
+		const maxLockRetries = 3
+		lockRetryCount := 0
+		var deleted int64
+
+		for {
+			var err error
+			deleted, err = deleteOldLogBatchWithHeartbeat(c, targetTimestamp, batchSize)
+			if err == nil {
+				break
+			}
+			if c.Request.Context().Err() != nil {
+				return
+			}
+			if !isRetryableLogDeletionError(err) || lockRetryCount >= maxLockRetries {
+				writeLogDeletionEvent(c, logDeletionEvent{
+					Type:    "error",
+					Deleted: deletedCount,
+					Message: err.Error(),
+				})
+				writeLogDeletionDone(c)
+				return
+			}
+
+			writeLogDeletionEvent(c, logDeletionEvent{
+				Type:    "retry",
+				Deleted: deletedCount,
+				Message: err.Error(),
+			})
+			if !waitForLogDeletionRetry(c, time.Second*time.Duration(1<<lockRetryCount)) {
+				return
+			}
+			lockRetryCount++
+		}
+
+		deletedCount += deleted
+		writeLogDeletionEvent(c, logDeletionEvent{Type: "progress", Deleted: deletedCount})
+		if deleted < int64(batchSize) {
+			writeLogDeletionEvent(c, logDeletionEvent{Type: "complete", Deleted: deletedCount})
+			writeLogDeletionDone(c)
+			return
+		}
+	}
+}
+
+func deleteOldLogBatchWithHeartbeat(c *gin.Context, targetTimestamp int64, batchSize int) (int64, error) {
+	resultChannel := make(chan logDeletionResult, 1)
+	go func() {
+		deleted, err := model.DeleteOldLog(c.Request.Context(), targetTimestamp, batchSize)
+		resultChannel <- logDeletionResult{deleted: deleted, err: err}
+	}()
+
+	heartbeatTicker := time.NewTicker(10 * time.Second)
+	defer heartbeatTicker.Stop()
+	for {
+		select {
+		case result := <-resultChannel:
+			return result.deleted, result.err
+		case <-heartbeatTicker.C:
+			_, _ = fmt.Fprint(c.Writer, ": keep-alive\n\n")
+			c.Writer.Flush()
+		case <-c.Request.Context().Done():
+			return 0, c.Request.Context().Err()
+		}
+	}
+}
+
+func waitForLogDeletionRetry(c *gin.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-c.Request.Context().Done():
+		return false
+	}
+}
+
+func isRetryableLogDeletionError(err error) bool {
+	message := err.Error()
+	return strings.Contains(message, "Error 1205") || strings.Contains(message, "Error 1213")
+}
+
+func writeLogDeletionEvent(c *gin.Context, event logDeletionEvent) {
+	data, err := common.Marshal(event)
+	if err != nil {
+		common.SysError("failed to marshal log deletion event: " + err.Error())
+		return
+	}
+	_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+	c.Writer.Flush()
+}
+
+func writeLogDeletionDone(c *gin.Context) {
+	_, _ = fmt.Fprint(c.Writer, "data: [DONE]\n\n")
+	c.Writer.Flush()
 }

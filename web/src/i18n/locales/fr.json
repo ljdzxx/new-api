@@ -1773,6 +1773,7 @@
     "条件规则": "",
     "条件项设置": "",
     "条日志已清理！": "les journaux ont été effacés !",
+    "正在清理，已清理 {{count}} 条日志": "Nettoyage en cours, {{count}} journaux supprimés",
     "来源": "Source",
     "来源于 IO.NET 部署": "From IO.NET Deployment",
     "来源端点": "",

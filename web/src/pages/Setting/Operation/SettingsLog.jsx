@@ -33,6 +33,7 @@ import { useTranslation } from 'react-i18next';
 import {
   compareObjects,
   API,
+  getUserIdFromLocalStorage,
   showError,
   showSuccess,
   showWarning,
@@ -44,6 +45,7 @@ export default function SettingsLog(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [loadingCleanHistoryLog, setLoadingCleanHistoryLog] = useState(false);
+  const [cleanedHistoryLogCount, setCleanedHistoryLogCount] = useState(0);
   const [inputs, setInputs] = useState({
     LogConsumeEnabled: false,
     historyTimestamp: dayjs().subtract(1, 'month').toDate(),
@@ -100,87 +102,172 @@ export default function SettingsLog(props) {
     const currentTime = now.format('YYYY-MM-DD HH:mm:ss');
     const daysDiff = now.diff(targetDate, 'day');
 
-    Modal.confirm({
-      title: t('确认清除历史日志'),
-      content: (
-        <div style={{ lineHeight: '1.8' }}>
-          <p>
-            <Text>{t('当前时间')}：</Text>
-            <Text strong style={{ color: '#52c41a' }}>
-              {currentTime}
+    const renderCleanHistoryLogContent = (deletedCount = null) => (
+      <div style={{ lineHeight: '1.8' }}>
+        <p>
+          <Text>{t('当前时间')}：</Text>
+          <Text strong style={{ color: '#52c41a' }}>
+            {currentTime}
+          </Text>
+        </p>
+        <p>
+          <Text>{t('选择时间')}：</Text>
+          <Text strong type='danger'>
+            {targetTime}
+          </Text>
+          {daysDiff > 0 && (
+            <Text type='tertiary'>
+              {' '}
+              ({t('约')} {daysDiff} {t('天前')})
             </Text>
-          </p>
-          <p>
-            <Text>{t('选择时间')}：</Text>
-            <Text strong type='danger'>
-              {targetTime}
+          )}
+        </p>
+        <div
+          style={{
+            background: '#fff7e6',
+            border: '1px solid #ffd591',
+            padding: '12px',
+            borderRadius: '4px',
+            marginTop: '12px',
+            color: '#333',
+          }}
+        >
+          <Text strong style={{ color: '#d46b08' }}>
+            ⚠️ {t('注意')}：
+          </Text>
+          <Text style={{ color: '#333' }}>{t('将删除')} </Text>
+          <Text strong style={{ color: '#cf1322' }}>
+            {targetTime}
+          </Text>
+          {daysDiff > 0 && (
+            <Text style={{ color: '#8c8c8c' }}>
+              {' '}
+              ({t('约')} {daysDiff} {t('天前')})
             </Text>
-            {daysDiff > 0 && (
-              <Text type='tertiary'>
-                {' '}
-                ({t('约')} {daysDiff} {t('天前')})
-              </Text>
-            )}
-          </p>
-          <div
-            style={{
-              background: '#fff7e6',
-              border: '1px solid #ffd591',
-              padding: '12px',
-              borderRadius: '4px',
-              marginTop: '12px',
-              color: '#333',
-            }}
-          >
-            <Text strong style={{ color: '#d46b08' }}>
-              ⚠️ {t('注意')}：
-            </Text>
-            <Text style={{ color: '#333' }}>{t('将删除')} </Text>
-            <Text strong style={{ color: '#cf1322' }}>
-              {targetTime}
-            </Text>
-            {daysDiff > 0 && (
-              <Text style={{ color: '#8c8c8c' }}>
-                {' '}
-                ({t('约')} {daysDiff} {t('天前')})
-              </Text>
-            )}
-            <Text style={{ color: '#333' }}> {t('之前的所有日志')}</Text>
-          </div>
+          )}
+          <Text style={{ color: '#333' }}> {t('之前的所有日志')}</Text>
+        </div>
+        {deletedCount === null ? (
           <p style={{ marginTop: '12px' }}>
             <Text type='danger'>
               {t('此操作不可恢复，请仔细确认时间后再操作！')}
             </Text>
           </p>
-        </div>
-      ),
+        ) : (
+          <div
+            style={{
+              background: '#e6f4ff',
+              border: '1px solid #91caff',
+              padding: '12px',
+              borderRadius: '4px',
+              marginTop: '12px',
+            }}
+          >
+            <Spin size='small' />{' '}
+            <Text strong type='primary'>
+              {t('正在清理，已清理 {{count}} 条日志', {
+                count: deletedCount,
+              })}
+            </Text>
+          </div>
+        )}
+      </div>
+    );
+
+    let confirmModal;
+    confirmModal = Modal.confirm({
+      title: t('确认清除历史日志'),
+      content: renderCleanHistoryLogContent(),
       okText: t('确认删除'),
       cancelText: t('取消'),
       okType: 'danger',
+      maskClosable: false,
+      closeOnEsc: false,
       onOk: async () => {
         try {
           setLoadingCleanHistoryLog(true);
+          setCleanedHistoryLogCount(0);
+          confirmModal.update({
+            content: renderCleanHistoryLogContent(0),
+            cancelButtonProps: { disabled: true },
+          });
           const targetTimestamp = Date.parse(inputs.historyTimestamp) / 1000;
-          const batchSize = 10000;
-          let deletedCount = 0;
-          let deletedInBatch;
+          const baseURL = String(API.defaults.baseURL || '').replace(/\/$/, '');
+          const response = await fetch(
+            `${baseURL}/api/log/?target_timestamp=${targetTimestamp}&stream=true`,
+            {
+              method: 'DELETE',
+              headers: {
+                Accept: 'text/event-stream',
+                'Cache-Control': 'no-store',
+                'New-API-User': String(getUserIdFromLocalStorage()),
+              },
+            },
+          );
 
-          do {
-            const res = await API.delete(
-              `/api/log/?target_timestamp=${targetTimestamp}&batch_size=${batchSize}`,
-              { skipErrorHandler: true },
-            );
-            const { success, message, data } = res.data;
-            if (!success) {
-              throw new Error(t('日志清理失败：') + message);
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          if (
+            !response.headers.get('content-type')?.includes('text/event-stream')
+          ) {
+            const result = await response.json();
+            throw new Error(t('日志清理失败：') + (result.message || ''));
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let deletedCount = 0;
+          let completed = false;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            buffer += decoder.decode(value || new Uint8Array(), {
+              stream: !done,
+            });
+            buffer = buffer.replace(/\r\n/g, '\n');
+            const eventBlocks = buffer.split('\n\n');
+            buffer = eventBlocks.pop() || '';
+
+            for (const eventBlock of eventBlocks) {
+              const dataLine = eventBlock
+                .split('\n')
+                .find((line) => line.startsWith('data: '));
+              if (!dataLine || dataLine === 'data: [DONE]') continue;
+
+              const event = JSON.parse(dataLine.substring(6));
+              if (event.type === 'progress' || event.type === 'retry') {
+                deletedCount = event.deleted;
+                setCleanedHistoryLogCount(deletedCount);
+                confirmModal.update({
+                  content: renderCleanHistoryLogContent(deletedCount),
+                });
+              } else if (event.type === 'complete') {
+                deletedCount = event.deleted;
+                setCleanedHistoryLogCount(deletedCount);
+                confirmModal.update({
+                  content: renderCleanHistoryLogContent(deletedCount),
+                });
+                completed = true;
+              } else if (event.type === 'error') {
+                throw new Error(t('日志清理失败：') + event.message);
+              }
             }
-            deletedInBatch = data;
-            deletedCount += deletedInBatch;
-          } while (deletedInBatch === batchSize);
+
+            if (done) break;
+          }
+
+          if (!completed) {
+            throw new Error(t('数据传输中断'));
+          }
 
           showSuccess(`${deletedCount} ${t('条日志已清理！')}`);
         } catch (error) {
-          if (error.name === 'AxiosError' && !error.response) {
+          if (
+            (error?.name === 'AxiosError' && !error.response) ||
+            error instanceof TypeError
+          ) {
             showError(t('网络错误'));
           } else {
             showError(error);
@@ -253,11 +340,23 @@ export default function SettingsLog(props) {
                   <Button
                     size='default'
                     type='danger'
+                    loading={loadingCleanHistoryLog}
                     onClick={onCleanHistoryLog}
                   >
                     {t('清除历史日志')}
                   </Button>
                 </Spin>
+                {loadingCleanHistoryLog && (
+                  <Text
+                    type='primary'
+                    size='small'
+                    style={{ display: 'block', marginTop: 8 }}
+                  >
+                    {t('正在清理，已清理 {{count}} 条日志', {
+                      count: cleanedHistoryLogCount,
+                    })}
+                  </Text>
+                )}
               </Col>
             </Row>
 

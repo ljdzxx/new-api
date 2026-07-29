@@ -1757,6 +1757,7 @@
     "条件规则": "",
     "条件项设置": "",
     "条日志已清理！": "nhật ký đã được xóa!",
+    "正在清理，已清理 {{count}} 条日志": "Đang dọn dẹp, đã xóa {{count}} nhật ký",
     "来源": "Nguồn",
     "来源于 IO.NET 部署": "From IO.NET Deployment",
     "来源端点": "",
