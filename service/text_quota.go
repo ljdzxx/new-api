@@ -191,6 +191,7 @@ func shouldKeepPreConsumedQuotaForMissingStreamUsage(ctx *gin.Context, relayInfo
 
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
 	ensureBillingPolicySnapshot(ctx, relayInfo)
+	hasActualUsage := usage != nil
 	summary := textQuotaSummary{
 		ModelName:            relayInfo.OriginModelName,
 		TokenName:            ctx.GetString("token_name"),
@@ -232,6 +233,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	if summary.IsClaudeUsageSemantic {
 		summary.PolicyInputTotalTokens += int64(summary.CacheTokens + summary.CacheCreationTokens)
+	}
+	if hasActualUsage {
+		summary.GlobalModelRatio = relayhelper.ReevaluateGlobalModelRatioForActualInput(relayInfo, summary.PolicyInputTotalTokens)
 	}
 
 	if relayInfo.ChannelMeta != nil && relayInfo.ChannelType == constant.ChannelTypeOpenRouter {

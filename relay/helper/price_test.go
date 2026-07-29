@@ -63,6 +63,42 @@ func TestSystemAndChannelGlobalModelRatioInputTokenThresholds(t *testing.T) {
 	require.Equal(t, 3.0, effectiveRatio)
 }
 
+func TestReevaluateGlobalModelRatioForActualInput(t *testing.T) {
+	originalRatio := ratio_setting.GetGlobalModelRatio()
+	originalThreshold := ratio_setting.GetGlobalModelRatioInputTokenThreshold()
+	t.Cleanup(func() {
+		ratio_setting.SetGlobalModelRatio(originalRatio)
+		ratio_setting.SetGlobalModelRatioInputTokenThreshold(originalThreshold)
+	})
+	ratio_setting.SetGlobalModelRatio(1.25)
+	ratio_setting.SetGlobalModelRatioInputTokenThreshold(20_000)
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelModelRatio: 1.1, RatioThreshold: 10_000},
+		PriceData: types.PriceData{
+			SystemGlobalModelRatio: 1,
+			UserGlobalModelRatio:   1,
+			ChannelModelRatio:      1,
+			GlobalModelRatio:       1,
+		},
+	}
+
+	ratio := ReevaluateGlobalModelRatioForActualInput(info, 15_000)
+	require.Equal(t, 1.0, info.PriceData.SystemGlobalModelRatio)
+	require.Equal(t, 1.1, info.PriceData.ChannelModelRatio)
+	require.Equal(t, 1.1, ratio)
+
+	ratio = ReevaluateGlobalModelRatioForActualInput(info, 25_000)
+	require.Equal(t, 1.25, info.PriceData.SystemGlobalModelRatio)
+	require.Equal(t, 1.1, info.PriceData.ChannelModelRatio)
+	require.Equal(t, 1.375, ratio)
+
+	ratio = ReevaluateGlobalModelRatioForActualInput(info, 5_000)
+	require.Equal(t, 1.0, info.PriceData.SystemGlobalModelRatio)
+	require.Equal(t, 1.0, info.PriceData.ChannelModelRatio)
+	require.Equal(t, 1.0, ratio)
+}
+
 func TestBindChannelModelRatio(t *testing.T) {
 	info := &relaycommon.RelayInfo{}
 

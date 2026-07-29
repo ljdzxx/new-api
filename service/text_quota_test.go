@@ -8,8 +8,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/billing_policy"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -41,6 +44,138 @@ func fullTextBillingPolicy() billing_policy.Policy {
 			ImageInput: "8", AudioInput: "9", AudioOutput: "10",
 		},
 	}
+}
+
+func TestCalculateTextQuotaSummaryRechecksChannelRatioWithActualInputTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	originalSystemRatio := ratio_setting.GetGlobalModelRatio()
+	originalSystemThreshold := ratio_setting.GetGlobalModelRatioInputTokenThreshold()
+	t.Cleanup(func() {
+		ratio_setting.SetGlobalModelRatio(originalSystemRatio)
+		ratio_setting.SetGlobalModelRatioInputTokenThreshold(originalSystemThreshold)
+	})
+	ratio_setting.SetGlobalModelRatio(1)
+	ratio_setting.SetGlobalModelRatioInputTokenThreshold(0)
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "actual-input-channel-threshold",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelModelRatio: 1.1,
+			RatioThreshold:    10_000,
+		},
+		PriceData: types.PriceData{
+			ModelRatio:             1,
+			CompletionRatio:        1,
+			CacheRatio:             1,
+			SystemGlobalModelRatio: 1,
+			UserGlobalModelRatio:   1,
+			ChannelModelRatio:      1,
+			GlobalModelRatio:       1,
+			GroupRatioInfo:         types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:     40_936,
+		CompletionTokens: 355,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 145_152,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 1.1, relayInfo.PriceData.ChannelModelRatio)
+	require.Equal(t, 1.1, relayInfo.PriceData.GlobalModelRatio)
+	require.Equal(t, 45_029, summary.PromptTokens)
+	require.Equal(t, 159_667, summary.CacheTokens)
+}
+
+func TestReevaluateGlobalModelRatioFreezesSystemAndUserThresholdConfig(t *testing.T) {
+	const userID = 91001
+	require.NoError(t, model.DB.Create(&model.User{
+		Id:                   userID,
+		Username:             "global-ratio-threshold-user",
+		Status:               common.UserStatusEnabled,
+		GlobalModelRatio:     1.6,
+		GlobalRatioThreshold: 20_000,
+	}).Error)
+	t.Cleanup(func() { model.DB.Delete(&model.User{}, userID) })
+
+	originalSystemRatio := ratio_setting.GetGlobalModelRatio()
+	originalSystemThreshold := ratio_setting.GetGlobalModelRatioInputTokenThreshold()
+	t.Cleanup(func() {
+		ratio_setting.SetGlobalModelRatio(originalSystemRatio)
+		ratio_setting.SetGlobalModelRatioInputTokenThreshold(originalSystemThreshold)
+	})
+	ratio_setting.SetGlobalModelRatio(1.25)
+	ratio_setting.SetGlobalModelRatioInputTokenThreshold(10_000)
+
+	info := &relaycommon.RelayInfo{
+		UserId: userID,
+		PriceData: types.PriceData{
+			SystemGlobalModelRatio: 1,
+			UserGlobalModelRatio:   1,
+			ChannelModelRatio:      1,
+			GlobalModelRatio:       1,
+		},
+	}
+
+	require.Equal(t, 1.25, relayhelper.ReevaluateGlobalModelRatioForActualInput(info, 15_000))
+	require.True(t, info.PriceData.GlobalRatioConfigSnapshot)
+
+	// A request must settle with the configuration captured on its first actual
+	// usage, even if an administrator changes settings while it is in flight.
+	ratio_setting.SetGlobalModelRatio(3)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", userID).
+		Updates(map[string]interface{}{
+			"global_model_ratio":                       4,
+			"global_model_ratio_input_token_threshold": 1,
+		}).Error)
+
+	require.Equal(t, 2.0, relayhelper.ReevaluateGlobalModelRatioForActualInput(info, 25_000))
+	require.Equal(t, 1.25, info.PriceData.SystemGlobalModelRatio)
+	require.Equal(t, 1.6, info.PriceData.UserGlobalModelRatio)
+}
+
+func TestCalculateTextQuotaSummaryCountsAnthropicCacheInActualInputThreshold(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "anthropic-cache-channel-threshold",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelModelRatio: 1.2,
+			RatioThreshold:    10_000,
+		},
+		PriceData: types.PriceData{
+			ModelRatio:             1,
+			CompletionRatio:        1,
+			CacheRatio:             1,
+			SystemGlobalModelRatio: 1,
+			UserGlobalModelRatio:   1,
+			ChannelModelRatio:      1,
+			GlobalModelRatio:       1,
+			GroupRatioInfo:         types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:  100,
+		UsageSemantic: "anthropic",
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens: 9_900,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, int64(10_000), summary.PolicyInputTotalTokens)
+	require.Equal(t, 1.2, relayInfo.PriceData.ChannelModelRatio)
+	require.Equal(t, 120, summary.PromptTokens)
+	require.Equal(t, 11_880, summary.CacheTokens)
 }
 
 func TestRequestBillingSnapshotSurvivesPolicyAndTimeRuleChanges(t *testing.T) {

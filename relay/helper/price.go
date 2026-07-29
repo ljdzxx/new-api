@@ -53,39 +53,99 @@ func scaleTokensByGlobalModelRatioStrict(tokens int, globalModelRatio float64) (
 	return common.QuotaFromFloatStrict(float64(tokens) * globalModelRatio)
 }
 
-func globalModelRatioApplies(inputTokens int, threshold int64) bool {
-	return threshold <= 0 || int64(inputTokens) >= threshold
+func globalModelRatioApplies(inputTokens int64, threshold int64) bool {
+	return threshold <= 0 || inputTokens >= threshold
 }
 
-func getEffectiveGlobalModelRatio(userID int, channelRatio float64, channelThreshold int64, inputTokens int) (float64, float64, float64, float64) {
-	systemRatio := ratio_setting.GetGlobalModelRatio()
-	if !globalModelRatioApplies(inputTokens, ratio_setting.GetGlobalModelRatioInputTokenThreshold()) {
-		systemRatio = ratio_setting.DefaultGlobalModelRatio
-	}
-	userRatio := ratio_setting.DefaultGlobalModelRatio
+type globalModelRatioConfig struct {
+	systemRatio      float64
+	systemThreshold  int64
+	userRatio        float64
+	userThreshold    int64
+	channelRatio     float64
+	channelThreshold int64
+}
+
+func captureGlobalModelRatioConfig(userID int, channelRatio float64, channelThreshold int64) globalModelRatioConfig {
 	if math.IsNaN(channelRatio) || math.IsInf(channelRatio, 0) {
 		channelRatio = ratio_setting.DefaultGlobalModelRatio
 	}
 	if channelRatio < 0 {
 		channelRatio = 0
 	}
-	if !globalModelRatioApplies(inputTokens, channelThreshold) {
-		channelRatio = ratio_setting.DefaultGlobalModelRatio
+	config := globalModelRatioConfig{
+		systemRatio:      ratio_setting.GetGlobalModelRatio(),
+		systemThreshold:  ratio_setting.GetGlobalModelRatioInputTokenThreshold(),
+		userRatio:        ratio_setting.DefaultGlobalModelRatio,
+		channelRatio:     channelRatio,
+		channelThreshold: channelThreshold,
 	}
 	if userID <= 0 {
-		return systemRatio, userRatio, channelRatio, systemRatio * userRatio * channelRatio
+		return config
 	}
-	var err error
-	var inputTokenThreshold int64
-	userRatio, inputTokenThreshold, err = model.GetUserGlobalModelRatioConfig(userID, false)
+	userRatio, inputTokenThreshold, err := model.GetUserGlobalModelRatioConfig(userID, false)
 	if err != nil {
 		common.SysError(fmt.Sprintf("failed to get user global model ratio, user_id=%d: %s", userID, err.Error()))
+		return config
+	}
+	config.userRatio = userRatio
+	config.userThreshold = inputTokenThreshold
+	return config
+}
+
+func (config globalModelRatioConfig) effective(inputTokens int64) (float64, float64, float64, float64) {
+	systemRatio := config.systemRatio
+	userRatio := config.userRatio
+	channelRatio := config.channelRatio
+	if !globalModelRatioApplies(inputTokens, config.systemThreshold) {
+		systemRatio = ratio_setting.DefaultGlobalModelRatio
+	}
+	if !globalModelRatioApplies(inputTokens, config.userThreshold) {
 		userRatio = ratio_setting.DefaultGlobalModelRatio
 	}
-	if !globalModelRatioApplies(inputTokens, inputTokenThreshold) {
-		userRatio = ratio_setting.DefaultGlobalModelRatio
+	if !globalModelRatioApplies(inputTokens, config.channelThreshold) {
+		channelRatio = ratio_setting.DefaultGlobalModelRatio
 	}
 	return systemRatio, userRatio, channelRatio, systemRatio * userRatio * channelRatio
+}
+
+func getEffectiveGlobalModelRatio(userID int, channelRatio float64, channelThreshold int64, inputTokens int64) (float64, float64, float64, float64) {
+	return captureGlobalModelRatioConfig(userID, channelRatio, channelThreshold).effective(inputTokens)
+}
+
+// ReevaluateGlobalModelRatioForActualInput rechecks thresholded global model
+// ratios against the upstream-reported raw input token total. Ratios without a
+// threshold keep the request-time snapshot so a settings change during an
+// in-flight request cannot alter its settlement.
+func ReevaluateGlobalModelRatioForActualInput(info *relaycommon.RelayInfo, inputTokens int64) float64 {
+	if info == nil {
+		return ratio_setting.DefaultGlobalModelRatio
+	}
+
+	if !info.PriceData.GlobalRatioConfigSnapshot {
+		config := captureGlobalModelRatioConfig(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info))
+		info.PriceData.ConfiguredSystemGlobalModelRatio = config.systemRatio
+		info.PriceData.ConfiguredUserGlobalModelRatio = config.userRatio
+		info.PriceData.ConfiguredChannelModelRatio = config.channelRatio
+		info.PriceData.SystemGlobalRatioThreshold = config.systemThreshold
+		info.PriceData.UserGlobalRatioThreshold = config.userThreshold
+		info.PriceData.ChannelGlobalRatioThreshold = config.channelThreshold
+		info.PriceData.GlobalRatioConfigSnapshot = true
+	}
+	if info.PriceData.SystemGlobalRatioThreshold <= 0 && info.PriceData.UserGlobalRatioThreshold <= 0 && info.PriceData.ChannelGlobalRatioThreshold <= 0 {
+		return info.PriceData.GlobalModelRatio
+	}
+	config := globalModelRatioConfig{
+		systemRatio: info.PriceData.ConfiguredSystemGlobalModelRatio, systemThreshold: info.PriceData.SystemGlobalRatioThreshold,
+		userRatio: info.PriceData.ConfiguredUserGlobalModelRatio, userThreshold: info.PriceData.UserGlobalRatioThreshold,
+		channelRatio: info.PriceData.ConfiguredChannelModelRatio, channelThreshold: info.PriceData.ChannelGlobalRatioThreshold,
+	}
+	systemRatio, userRatio, channelRatio, globalRatio := config.effective(inputTokens)
+	info.PriceData.SystemGlobalModelRatio = systemRatio
+	info.PriceData.UserGlobalModelRatio = userRatio
+	info.PriceData.ChannelModelRatio = channelRatio
+	info.PriceData.GlobalModelRatio = globalRatio
+	return globalRatio
 }
 
 func getChannelModelRatio(info *relaycommon.RelayInfo) float64 {
@@ -192,7 +252,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			}
 		}
 	}
-	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info), promptTokens)
+	globalRatioConfig := captureGlobalModelRatioConfig(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info))
+	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := globalRatioConfig.effective(int64(promptTokens))
 
 	groupRatioInfo := HandleGroupRatio(c, info)
 
@@ -374,24 +435,31 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	priceData := types.PriceData{
-		FreeModel:              freeModel,
-		ModelPrice:             modelPrice,
-		ModelRatio:             modelRatio,
-		SystemGlobalModelRatio: systemGlobalModelRatio,
-		UserGlobalModelRatio:   userGlobalModelRatio,
-		ChannelModelRatio:      channelModelRatio,
-		GlobalModelRatio:       globalModelRatio,
-		CompletionRatio:        completionRatio,
-		GroupRatioInfo:         groupRatioInfo,
-		UsePrice:               usePrice,
-		CacheRatio:             cacheRatio,
-		ImageRatio:             imageRatio,
-		AudioRatio:             audioRatio,
-		AudioCompletionRatio:   audioCompletionRatio,
-		CacheCreationRatio:     cacheCreationRatio,
-		CacheCreation5mRatio:   cacheCreationRatio5m,
-		CacheCreation1hRatio:   cacheCreationRatio1h,
-		QuotaToPreConsume:      preConsumedQuota,
+		FreeModel:                        freeModel,
+		ModelPrice:                       modelPrice,
+		ModelRatio:                       modelRatio,
+		SystemGlobalModelRatio:           systemGlobalModelRatio,
+		UserGlobalModelRatio:             userGlobalModelRatio,
+		ChannelModelRatio:                channelModelRatio,
+		GlobalModelRatio:                 globalModelRatio,
+		ConfiguredSystemGlobalModelRatio: globalRatioConfig.systemRatio,
+		ConfiguredUserGlobalModelRatio:   globalRatioConfig.userRatio,
+		ConfiguredChannelModelRatio:      globalRatioConfig.channelRatio,
+		SystemGlobalRatioThreshold:       globalRatioConfig.systemThreshold,
+		UserGlobalRatioThreshold:         globalRatioConfig.userThreshold,
+		ChannelGlobalRatioThreshold:      globalRatioConfig.channelThreshold,
+		GlobalRatioConfigSnapshot:        true,
+		CompletionRatio:                  completionRatio,
+		GroupRatioInfo:                   groupRatioInfo,
+		UsePrice:                         usePrice,
+		CacheRatio:                       cacheRatio,
+		ImageRatio:                       imageRatio,
+		AudioRatio:                       audioRatio,
+		AudioCompletionRatio:             audioCompletionRatio,
+		CacheCreationRatio:               cacheCreationRatio,
+		CacheCreation5mRatio:             cacheCreationRatio5m,
+		CacheCreation1hRatio:             cacheCreationRatio1h,
+		QuotaToPreConsume:                preConsumedQuota,
 	}
 	if policyAdjustmentMultiplier != 1 {
 		priceData.SetPolicyAdjustmentMultiplier(policyAdjustmentMultiplier)
@@ -530,7 +598,8 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
 	groupRatioInfo := HandleGroupRatio(c, info)
-	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := getEffectiveGlobalModelRatio(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info), 0)
+	globalRatioConfig := captureGlobalModelRatioConfig(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info))
+	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := globalRatioConfig.effective(0)
 
 	modelPrice, success := ratio_setting.GetModelPrice(info.OriginModelName, true)
 	if billing_policy.IsActive() {
@@ -600,14 +669,21 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 	}
 
 	priceData := types.PriceData{
-		FreeModel:              freeModel,
-		ModelPrice:             modelPrice,
-		SystemGlobalModelRatio: systemGlobalModelRatio,
-		UserGlobalModelRatio:   userGlobalModelRatio,
-		ChannelModelRatio:      channelModelRatio,
-		GlobalModelRatio:       globalModelRatio,
-		Quota:                  quota,
-		GroupRatioInfo:         groupRatioInfo,
+		FreeModel:                        freeModel,
+		ModelPrice:                       modelPrice,
+		SystemGlobalModelRatio:           systemGlobalModelRatio,
+		UserGlobalModelRatio:             userGlobalModelRatio,
+		ChannelModelRatio:                channelModelRatio,
+		GlobalModelRatio:                 globalModelRatio,
+		ConfiguredSystemGlobalModelRatio: globalRatioConfig.systemRatio,
+		ConfiguredUserGlobalModelRatio:   globalRatioConfig.userRatio,
+		ConfiguredChannelModelRatio:      globalRatioConfig.channelRatio,
+		SystemGlobalRatioThreshold:       globalRatioConfig.systemThreshold,
+		UserGlobalRatioThreshold:         globalRatioConfig.userThreshold,
+		ChannelGlobalRatioThreshold:      globalRatioConfig.channelThreshold,
+		GlobalRatioConfigSnapshot:        true,
+		Quota:                            quota,
+		GroupRatioInfo:                   groupRatioInfo,
 	}
 	if policyAdjustmentMultiplier != 1 {
 		priceData.SetPolicyAdjustmentMultiplier(policyAdjustmentMultiplier)

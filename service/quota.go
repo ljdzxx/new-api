@@ -214,6 +214,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	if err != nil {
 		return err
 	}
+	relayInfo.WssConsumedQuota += quota
 	logger.LogInfo(ctx, "realtime streaming consume quota success, quota: "+fmt.Sprintf("%d", quota))
 	return nil
 }
@@ -228,6 +229,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
 	applyActivePolicyUsage(ctx, relayInfo, int64(usage.InputTokens), int64(usage.OutputTokens))
+	relayhelper.ReevaluateGlobalModelRatioForActualInput(relayInfo, int64(usage.InputTokens))
 
 	tokenName := ctx.GetString("token_name")
 	completionRatio := decimal.NewFromFloat(relayInfo.PriceData.CompletionRatio)
@@ -287,6 +289,15 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
+	quotaDelta := quota - relayInfo.WssConsumedQuota
+	if quotaDelta != 0 {
+		if err := PostConsumeQuota(relayInfo, quotaDelta, relayInfo.WssConsumedQuota, true); err != nil {
+			logger.LogError(ctx, "error settling realtime billing: "+err.Error())
+		} else {
+			relayInfo.WssConsumedQuota = quota
+		}
+	}
+
 	logModel := modelName
 	if extraContent != "" {
 		logContent += ", " + extraContent
@@ -343,6 +354,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	audioInputTokens := usage.PromptTokensDetails.AudioTokens
 	audioOutTokens := usage.CompletionTokenDetails.AudioTokens
 	applyActivePolicyUsage(ctx, relayInfo, int64(usage.PromptTokens), int64(usage.CompletionTokens))
+	relayhelper.ReevaluateGlobalModelRatioForActualInput(relayInfo, int64(usage.PromptTokens))
 
 	tokenName := ctx.GetString("token_name")
 	completionRatio := decimal.NewFromFloat(relayInfo.PriceData.CompletionRatio)
