@@ -149,18 +149,44 @@ func GetLogsSelfStat(c *gin.Context) {
 }
 
 func DeleteHistoryLogs(c *gin.Context) {
-	targetTimestamp, _ := strconv.ParseInt(c.Query("target_timestamp"), 10, 64)
-	if targetTimestamp == 0 {
+	targetTimestamp, err := strconv.ParseInt(c.Query("target_timestamp"), 10, 64)
+	if err != nil || targetTimestamp <= 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "target timestamp is required",
 		})
 		return
 	}
-	count, err := model.DeleteOldLog(c.Request.Context(), targetTimestamp, 100)
-	if err != nil {
-		common.ApiError(c, err)
-		return
+
+	const defaultBatchSize = 1000
+	const maxBatchSize = 10000
+	batchSize := 0
+	if value := c.Query("batch_size"); value != "" {
+		batchSize, err = strconv.Atoi(value)
+		if err != nil || batchSize <= 0 || batchSize > maxBatchSize {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "batch size must be between 1 and 10000",
+			})
+			return
+		}
+	}
+
+	var count int64
+	for {
+		limit := defaultBatchSize
+		if batchSize > 0 {
+			limit = batchSize
+		}
+		deleted, deleteErr := model.DeleteOldLog(c.Request.Context(), targetTimestamp, limit)
+		if deleteErr != nil {
+			common.ApiError(c, deleteErr)
+			return
+		}
+		count += deleted
+		if batchSize > 0 || deleted < int64(limit) {
+			break
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

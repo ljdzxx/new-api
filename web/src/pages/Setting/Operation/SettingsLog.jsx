@@ -160,18 +160,31 @@ export default function SettingsLog(props) {
       onOk: async () => {
         try {
           setLoadingCleanHistoryLog(true);
-          const res = await API.delete(
-            `/api/log/?target_timestamp=${Date.parse(inputs.historyTimestamp) / 1000}`,
-          );
-          const { success, message, data } = res.data;
-          if (success) {
-            showSuccess(`${data} ${t('条日志已清理！')}`);
-            return;
-          } else {
-            throw new Error(t('日志清理失败：') + message);
-          }
+          const targetTimestamp = Date.parse(inputs.historyTimestamp) / 1000;
+          const batchSize = 10000;
+          let deletedCount = 0;
+          let deletedInBatch;
+
+          do {
+            const res = await API.delete(
+              `/api/log/?target_timestamp=${targetTimestamp}&batch_size=${batchSize}`,
+              { skipErrorHandler: true },
+            );
+            const { success, message, data } = res.data;
+            if (!success) {
+              throw new Error(t('日志清理失败：') + message);
+            }
+            deletedInBatch = data;
+            deletedCount += deletedInBatch;
+          } while (deletedInBatch === batchSize);
+
+          showSuccess(`${deletedCount} ${t('条日志已清理！')}`);
         } catch (error) {
-          showError(error.message);
+          if (error.name === 'AxiosError' && !error.response) {
+            showError(t('网络错误'));
+          } else {
+            showError(error);
+          }
         } finally {
           setLoadingCleanHistoryLog(false);
         }
