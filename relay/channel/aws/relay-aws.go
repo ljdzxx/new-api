@@ -348,7 +348,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 
 	clientResponse := response
 	if helper.ShouldScaleResponseUsage(info) {
-		clientResponse.Usage = *helper.ScaleOpenAIUsageForResponse(&response.Usage, helper.ResponseUsageRatio(info))
+		clientResponse.Usage = *helper.ScaleOpenAIUsageForRelayResponse(&response.Usage, info)
 	}
 	c.JSON(http.StatusOK, clientResponse)
 	return nil, &response.Usage

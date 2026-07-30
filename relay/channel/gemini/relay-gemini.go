@@ -1587,7 +1587,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		break
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		responseBody, err = helper.PatchResponseUsageJSON(responseBody, info.RelayFormat, helper.ResponseUsageRatio(info))
+		responseBody, err = helper.PatchResponseUsageJSONForRelay(responseBody, info.RelayFormat, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
@@ -1662,7 +1662,7 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	usage := service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())
 	openAIResponse.Usage = *usage
 	if helper.ShouldScaleResponseUsage(info) {
-		openAIResponse.Usage = *helper.ScaleOpenAIUsageForResponse(usage, helper.ResponseUsageRatio(info))
+		openAIResponse.Usage = *helper.ScaleOpenAIUsageForRelayResponse(usage, info)
 	}
 
 	jsonResponse, jsonErr := common.Marshal(openAIResponse)

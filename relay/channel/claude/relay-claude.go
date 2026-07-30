@@ -924,7 +924,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			}
 		}
 		if helper.ShouldScaleResponseUsage(info) {
-			patched, patchErr := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatClaude, helper.ResponseUsageRatio(info))
+			patched, patchErr := helper.PatchResponseUsageJSONForRelay(common.StringToByteSlice(data), types.RelayFormatClaude, info)
 			if patchErr != nil {
 				return types.NewError(patchErr, types.ErrorCodeBadResponseBody)
 			}
@@ -939,7 +939,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 
 		if response != nil && response.Usage != nil && helper.ShouldScaleResponseUsage(info) {
-			response.Usage = helper.ScaleOpenAIUsageForResponse(response.Usage, helper.ResponseUsageRatio(info))
+			response.Usage = helper.ScaleOpenAIUsageForRelayResponse(response.Usage, info)
 		}
 		err = helper.ObjectData(c, response)
 		if err != nil {
@@ -979,7 +979,7 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 		if info.ShouldIncludeUsage {
 			openAIUsage := buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
 			if helper.ShouldScaleResponseUsage(info) {
-				openAIUsage = *helper.ScaleOpenAIUsageForResponse(&openAIUsage, helper.ResponseUsageRatio(info))
+				openAIUsage = *helper.ScaleOpenAIUsageForRelayResponse(&openAIUsage, info)
 			}
 			response := helper.GenerateFinalUsageResponse(claudeInfo.ResponseId, claudeInfo.Created, info.UpstreamModelName, openAIUsage)
 			err := helper.ObjectData(c, response)
@@ -1292,7 +1292,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		responseData = data
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		responseData, err = helper.PatchResponseUsageJSON(responseData, info.RelayFormat, helper.ResponseUsageRatio(info))
+		responseData, err = helper.PatchResponseUsageJSONForRelay(responseData, info.RelayFormat, info)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

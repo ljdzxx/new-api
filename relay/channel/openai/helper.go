@@ -49,7 +49,7 @@ func handleClaudeFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 			return err
 		}
 		if helper.ShouldScaleResponseUsage(info) {
-			jsonData, err = helper.PatchResponseUsageJSON(jsonData, types.RelayFormatClaude, helper.ResponseUsageRatio(info))
+			jsonData, err = helper.PatchResponseUsageJSONForRelay(jsonData, types.RelayFormatClaude, info)
 			if err != nil {
 				return err
 			}
@@ -81,7 +81,7 @@ func handleGeminiFormat(c *gin.Context, data string, info *relaycommon.RelayInfo
 		return err
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		geminiResponseStr, err = helper.PatchResponseUsageJSON(geminiResponseStr, types.RelayFormatGemini, helper.ResponseUsageRatio(info))
+		geminiResponseStr, err = helper.PatchResponseUsageJSONForRelay(geminiResponseStr, types.RelayFormatGemini, info)
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 		if info.ShouldIncludeUsage && !containStreamUsage {
 			clientUsage := usage
 			if helper.ShouldScaleResponseUsage(info) {
-				clientUsage = helper.ScaleOpenAIUsageForResponse(usage, helper.ResponseUsageRatio(info))
+				clientUsage = helper.ScaleOpenAIUsageForRelayResponse(usage, info)
 			}
 			response := helper.GenerateFinalUsageResponse(responseId, createAt, model, *clientUsage)
 			response.SetSystemFingerprint(systemFingerprint)
@@ -269,7 +269,7 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 				continue
 			}
 			if helper.ShouldScaleResponseUsage(info) {
-				jsonData, err = helper.PatchResponseUsageJSON(jsonData, types.RelayFormatClaude, helper.ResponseUsageRatio(info))
+				jsonData, err = helper.PatchResponseUsageJSONForRelay(jsonData, types.RelayFormatClaude, info)
 				if err != nil {
 					continue
 				}
@@ -303,7 +303,7 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 			return
 		}
 		if helper.ShouldScaleResponseUsage(info) {
-			geminiResponseStr, err = helper.PatchResponseUsageJSON(geminiResponseStr, types.RelayFormatGemini, helper.ResponseUsageRatio(info))
+			geminiResponseStr, err = helper.PatchResponseUsageJSONForRelay(geminiResponseStr, types.RelayFormatGemini, info)
 			if err != nil {
 				common.SysLog("error scaling gemini response usage: " + err.Error())
 				return

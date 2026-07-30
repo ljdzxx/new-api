@@ -79,7 +79,7 @@ func mokaEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		jsonResponse, err = helper.PatchResponseUsageJSON(jsonResponse, types.RelayFormatEmbedding, helper.ResponseUsageRatio(info))
+		jsonResponse, err = helper.PatchResponseUsageJSONForRelay(jsonResponse, types.RelayFormatEmbedding, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

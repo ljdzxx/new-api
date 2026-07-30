@@ -16,16 +16,13 @@ import (
 )
 
 // ShouldScaleResponseUsage defines the single egress boundary for client-facing
-// usage scaling. Request-body pass-through deliberately opts out because those
-// channels promise minimal protocol intervention.
+// usage scaling. Request pass-through only controls the upstream request body;
+// the explicit response-usage setting still controls the client response.
 func ShouldScaleResponseUsage(info *relaycommon.RelayInfo) bool {
 	if info == nil || info.ChannelMeta == nil || !model_setting.GetGlobalSettings().ResponseUsageScaleEnabled {
 		return false
 	}
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled {
-		return false
-	}
-	return !info.ChannelMeta.ChannelSetting.PassThroughBodyEnabled
+	return true
 }
 
 func ResponseUsageRatio(info *relaycommon.RelayInfo) float64 {
@@ -33,6 +30,56 @@ func ResponseUsageRatio(info *relaycommon.RelayInfo) float64 {
 		return 1
 	}
 	return info.PriceData.GlobalModelRatio
+}
+
+func responseUsageRatioForInput(info *relaycommon.RelayInfo, inputTokens int64) float64 {
+	if !ShouldScaleResponseUsage(info) {
+		return 1
+	}
+	ReevaluateGlobalModelRatioForActualInput(info, inputTokens)
+	return info.PriceData.GlobalModelRatio
+}
+
+func openAIResponseInputTokens(raw *dto.Usage) int64 {
+	if raw == nil {
+		return 0
+	}
+	inputTokens := raw.InputTokens
+	if inputTokens == 0 {
+		inputTokens = raw.PromptTokens
+	}
+	if raw.UsageSemantic == dto.BillingUsageSemanticAnthropic {
+		inputTokens += raw.PromptTokensDetails.CachedTokens + raw.PromptTokensDetails.CacheCreationTokensTotal()
+	}
+	return int64(inputTokens)
+}
+
+func ScaleOpenAIUsageForRelayResponse(raw *dto.Usage, info *relaycommon.RelayInfo) *dto.Usage {
+	return ScaleOpenAIUsageForResponse(raw, responseUsageRatioForInput(info, openAIResponseInputTokens(raw)))
+}
+
+func ScaleClaudeUsageForRelayResponse(raw *dto.ClaudeUsage, info *relaycommon.RelayInfo) *dto.ClaudeUsage {
+	inputTokens := int64(0)
+	if raw != nil {
+		inputTokens = int64(raw.InputTokens + raw.CacheReadInputTokens + raw.GetCacheCreationTotalTokens())
+	}
+	return ScaleClaudeUsageForResponse(raw, responseUsageRatioForInput(info, inputTokens))
+}
+
+func ScaleGeminiUsageForRelayResponse(raw *dto.GeminiUsageMetadata, info *relaycommon.RelayInfo) *dto.GeminiUsageMetadata {
+	inputTokens := int64(0)
+	if raw != nil {
+		inputTokens = int64(raw.PromptTokenCount)
+	}
+	return ScaleGeminiUsageForResponse(raw, responseUsageRatioForInput(info, inputTokens))
+}
+
+func ScaleRealtimeUsageForRelayResponse(raw *dto.RealtimeUsage, info *relaycommon.RelayInfo) *dto.RealtimeUsage {
+	inputTokens := int64(0)
+	if raw != nil {
+		inputTokens = int64(raw.InputTokens)
+	}
+	return ScaleRealtimeUsageForResponse(raw, responseUsageRatioForInput(info, inputTokens))
 }
 
 // ScaleOpenAIUsageForResponse returns a detached client view. The raw usage and
@@ -210,6 +257,69 @@ func PatchResponseUsageJSON(data []byte, format types.RelayFormat, ratio float64
 	return data, err
 }
 
+// PatchResponseUsageJSONForRelay resolves thresholded global ratios from the
+// actual upstream usage before changing the client-facing response.
+func PatchResponseUsageJSONForRelay(data []byte, format types.RelayFormat, info *relaycommon.RelayInfo) ([]byte, error) {
+	if !ShouldScaleResponseUsage(info) {
+		return data, nil
+	}
+	inputTokens, ok := responseInputTokensFromJSON(data, format)
+	ratio := ResponseUsageRatio(info)
+	if ok {
+		ratio = responseUsageRatioForInput(info, inputTokens)
+	}
+	return PatchResponseUsageJSON(data, format, ratio)
+}
+
+func responseInputTokensFromJSON(data []byte, format types.RelayFormat) (int64, bool) {
+	var usagePath string
+	switch format {
+	case types.RelayFormatOpenAI, types.RelayFormatEmbedding, types.RelayFormatRerank, types.RelayFormatOpenAIAudio:
+		usagePath = "usage"
+	case types.RelayFormatOpenAIResponses, types.RelayFormatOpenAIResponsesCompaction, types.RelayFormatOpenAIRealtime:
+		usagePath = "response.usage"
+		if !gjson.GetBytes(data, usagePath).Exists() {
+			usagePath = "usage"
+		}
+	case types.RelayFormatClaude:
+		usagePath = "usage"
+		if !gjson.GetBytes(data, usagePath).Exists() {
+			usagePath = "message.usage"
+		}
+	case types.RelayFormatGemini:
+		usagePath = "usageMetadata"
+	default:
+		return 0, false
+	}
+	usage := gjson.GetBytes(data, usagePath)
+	if !usage.Exists() {
+		return 0, false
+	}
+
+	switch format {
+	case types.RelayFormatClaude:
+		input := usage.Get("input_tokens")
+		if !input.Exists() {
+			return 0, false
+		}
+		cacheCreation := usage.Get("cache_creation_input_tokens").Int()
+		if cacheCreation == 0 {
+			cacheCreation = usage.Get("cache_creation.ephemeral_5m_input_tokens").Int() + usage.Get("cache_creation.ephemeral_1h_input_tokens").Int()
+		}
+		return input.Int() + usage.Get("cache_read_input_tokens").Int() + cacheCreation, true
+	case types.RelayFormatGemini:
+		input := usage.Get("promptTokenCount")
+		return input.Int(), input.Exists()
+	default:
+		input := usage.Get("input_tokens")
+		if input.Exists() {
+			return input.Int(), true
+		}
+		prompt := usage.Get("prompt_tokens")
+		return prompt.Int(), prompt.Exists()
+	}
+}
+
 func PatchSSEUsageLine(line []byte, format types.RelayFormat, ratio float64) ([]byte, error) {
 	trimmed := bytes.TrimRight(line, "\r\n")
 	ending := line[len(trimmed):]
@@ -242,7 +352,7 @@ func ObjectDataWithScaledUsage(c *gin.Context, info *relaycommon.RelayInfo, form
 		return err
 	}
 	if ShouldScaleResponseUsage(info) {
-		data, err = PatchResponseUsageJSON(data, format, ResponseUsageRatio(info))
+		data, err = PatchResponseUsageJSONForRelay(data, format, info)
 		if err != nil {
 			return err
 		}

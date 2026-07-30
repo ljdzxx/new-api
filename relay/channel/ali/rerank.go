@@ -65,7 +65,7 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 		Usage:   usage,
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		rerankResponse.Usage = *helper.ScaleOpenAIUsageForResponse(&usage, helper.ResponseUsageRatio(info))
+		rerankResponse.Usage = *helper.ScaleOpenAIUsageForRelayResponse(&usage, info)
 	}
 
 	jsonResponse, err := json.Marshal(rerankResponse)

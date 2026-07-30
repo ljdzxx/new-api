@@ -65,7 +65,7 @@ func TestPatchSSEUsageLinePreservesFrame(t *testing.T) {
 	assert.Equal(t, "data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":20,\"output_tokens\":6}}\r\n", string(patched))
 }
 
-func TestShouldScaleResponseUsageSkipsPassThroughChannel(t *testing.T) {
+func TestShouldScaleResponseUsageIsIndependentOfRequestPassThrough(t *testing.T) {
 	settings := model_setting.GetGlobalSettings()
 	originalScale := settings.ResponseUsageScaleEnabled
 	originalPassThrough := settings.PassThroughRequestEnabled
@@ -79,5 +79,36 @@ func TestShouldScaleResponseUsageSkipsPassThroughChannel(t *testing.T) {
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 	assert.True(t, ShouldScaleResponseUsage(info))
 	info.ChannelSetting.PassThroughBodyEnabled = true
-	assert.False(t, ShouldScaleResponseUsage(info))
+	assert.True(t, ShouldScaleResponseUsage(info))
+	settings.PassThroughRequestEnabled = true
+	assert.True(t, ShouldScaleResponseUsage(info))
+}
+
+func TestPatchResponseUsageJSONForRelayReevaluatesThresholdWithActualUsage(t *testing.T) {
+	settings := model_setting.GetGlobalSettings()
+	originalScale := settings.ResponseUsageScaleEnabled
+	t.Cleanup(func() { settings.ResponseUsageScaleEnabled = originalScale })
+	settings.ResponseUsageScaleEnabled = true
+
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{},
+		PriceData: types.PriceData{
+			SystemGlobalModelRatio:           1,
+			UserGlobalModelRatio:             1,
+			ChannelModelRatio:                1,
+			GlobalModelRatio:                 1,
+			ConfiguredSystemGlobalModelRatio: 1.25,
+			ConfiguredUserGlobalModelRatio:   1,
+			ConfiguredChannelModelRatio:      1,
+			SystemGlobalRatioThreshold:       100,
+			GlobalRatioConfigSnapshot:        true,
+		},
+	}
+	body := []byte(`{"usage":{"prompt_tokens":101,"completion_tokens":9,"total_tokens":110}}`)
+	patched, err := PatchResponseUsageJSONForRelay(body, types.RelayFormatOpenAI, info)
+	require.NoError(t, err)
+	assert.Equal(t, 1.25, info.PriceData.GlobalModelRatio)
+	assert.EqualValues(t, 126, gjson.GetBytes(patched, "usage.prompt_tokens").Int())
+	assert.EqualValues(t, 11, gjson.GetBytes(patched, "usage.completion_tokens").Int())
+	assert.EqualValues(t, 137, gjson.GetBytes(patched, "usage.total_tokens").Int())
 }

@@ -35,7 +35,7 @@ func siliconflowRerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 		Usage:   *usage,
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		rerankResp.Usage = *helper.ScaleOpenAIUsageForResponse(usage, helper.ResponseUsageRatio(info))
+		rerankResp.Usage = *helper.ScaleOpenAIUsageForRelayResponse(usage, info)
 	}
 
 	jsonResponse, err := json.Marshal(rerankResp)

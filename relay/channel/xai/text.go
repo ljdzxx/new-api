@@ -101,7 +101,7 @@ func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		encodeJson, err = helper.PatchResponseUsageJSON(encodeJson, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		encodeJson, err = helper.PatchResponseUsageJSONForRelay(encodeJson, types.RelayFormatOpenAI, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

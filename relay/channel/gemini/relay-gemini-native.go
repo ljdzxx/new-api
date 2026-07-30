@@ -45,7 +45,7 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
 
 	if helper.ShouldScaleResponseUsage(info) {
-		responseBody, err = helper.PatchResponseUsageJSON(responseBody, types.RelayFormatGemini, helper.ResponseUsageRatio(info))
+		responseBody, err = helper.PatchResponseUsageJSONForRelay(responseBody, types.RelayFormatGemini, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
@@ -93,7 +93,7 @@ func GeminiTextGenerationStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 
 	return geminiStreamHandler(c, info, resp, func(data string, geminiResponse *dto.GeminiChatResponse) bool {
 		if helper.ShouldScaleResponseUsage(info) {
-			patched, err := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatGemini, helper.ResponseUsageRatio(info))
+			patched, err := helper.PatchResponseUsageJSONForRelay(common.StringToByteSlice(data), types.RelayFormatGemini, info)
 			if err != nil {
 				logger.LogError(c, "failed to scale native gemini stream usage: "+err.Error())
 				return false

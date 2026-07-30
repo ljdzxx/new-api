@@ -61,7 +61,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	service.MarkImageRecordSuccess(c, responseBody)
 	clientBody := responseBody
 	if helper.ShouldScaleResponseUsage(info) {
-		clientBody, err = helper.PatchResponseUsageJSON(clientBody, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		clientBody, err = helper.PatchResponseUsageJSONForRelay(clientBody, types.RelayFormatOpenAI, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

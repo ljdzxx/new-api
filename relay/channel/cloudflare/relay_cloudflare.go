@@ -114,7 +114,7 @@ func cfHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response)
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		jsonResponse, err = helper.PatchResponseUsageJSON(jsonResponse, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		jsonResponse, err = helper.PatchResponseUsageJSONForRelay(jsonResponse, types.RelayFormatOpenAI, info)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 		}

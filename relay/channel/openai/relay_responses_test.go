@@ -60,7 +60,7 @@ func TestOaiResponsesHandlerScalesClientUsageWithoutMutatingBillingUsage(t *test
 	assert.EqualValues(t, 13, gjson.Get(recorder.Body.String(), "usage.input_tokens_details.cached_tokens").Int())
 }
 
-func TestOaiResponsesHandlerSkipsClientUsageScalingForPassThroughChannel(t *testing.T) {
+func TestOaiResponsesHandlerScalesClientUsageForPassThroughChannel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -77,9 +77,9 @@ func TestOaiResponsesHandlerSkipsClientUsageScalingForPassThroughChannel(t *test
 
 	_, apiErr := OaiResponsesHandler(c, info, resp)
 	require.Nil(t, apiErr)
-	assert.EqualValues(t, 101, gjson.Get(recorder.Body.String(), "usage.input_tokens").Int())
-	assert.EqualValues(t, 9, gjson.Get(recorder.Body.String(), "usage.output_tokens").Int())
-	assert.EqualValues(t, 110, gjson.Get(recorder.Body.String(), "usage.total_tokens").Int())
+	assert.EqualValues(t, 202, gjson.Get(recorder.Body.String(), "usage.input_tokens").Int())
+	assert.EqualValues(t, 18, gjson.Get(recorder.Body.String(), "usage.output_tokens").Int())
+	assert.EqualValues(t, 220, gjson.Get(recorder.Body.String(), "usage.total_tokens").Int())
 }
 
 func TestOaiResponsesHandlerPreservesInputTokenDetailsForBilling(t *testing.T) {

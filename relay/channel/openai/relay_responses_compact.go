@@ -32,7 +32,7 @@ func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response, info *re
 
 	clientBody := responseBody
 	if helper.ShouldScaleResponseUsage(info) {
-		clientBody, err = helper.PatchResponseUsageJSON(clientBody, types.RelayFormatOpenAIResponsesCompaction, helper.ResponseUsageRatio(info))
+		clientBody, err = helper.PatchResponseUsageJSONForRelay(clientBody, types.RelayFormatOpenAIResponsesCompaction, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

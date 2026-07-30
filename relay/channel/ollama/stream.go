@@ -289,7 +289,7 @@ func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 	out, _ := common.Marshal(full)
 	if helper.ShouldScaleResponseUsage(info) {
-		out, err = helper.PatchResponseUsageJSON(out, types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		out, err = helper.PatchResponseUsageJSONForRelay(out, types.RelayFormatOpenAI, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

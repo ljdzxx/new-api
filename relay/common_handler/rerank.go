@@ -73,7 +73,7 @@ func RerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	c.Writer.Header().Set("Content-Type", "application/json")
 	clientResp := jinaResp
 	if helper.ShouldScaleResponseUsage(info) {
-		clientResp.Usage = *helper.ScaleOpenAIUsageForResponse(&jinaResp.Usage, helper.ResponseUsageRatio(info))
+		clientResp.Usage = *helper.ScaleOpenAIUsageForRelayResponse(&jinaResp.Usage, info)
 	}
 	c.JSON(http.StatusOK, clientResp)
 	return &jinaResp.Usage, nil

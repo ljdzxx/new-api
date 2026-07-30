@@ -64,7 +64,7 @@ func handleMockTestRelay(c *gin.Context, info *relaycommon.RelayInfo) *types.New
 	usage := mockTestUsage(c, info, responseText)
 	clientUsage := usage
 	if helper.ShouldScaleResponseUsage(info) {
-		clientUsage = *helper.ScaleOpenAIUsageForResponse(&usage, helper.ResponseUsageRatio(info))
+		clientUsage = *helper.ScaleOpenAIUsageForRelayResponse(&usage, info)
 	}
 
 	var apiErr *types.NewAPIError

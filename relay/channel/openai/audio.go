@@ -122,7 +122,7 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	// 写出缩放后的客户端副本，后续仍从原始 responseBody 提取计费用量。
 	clientBody := responseBody
 	if helper.ShouldScaleResponseUsage(info) {
-		clientBody, err = helper.PatchResponseUsageJSON(clientBody, types.RelayFormatOpenAIAudio, helper.ResponseUsageRatio(info))
+		clientBody, err = helper.PatchResponseUsageJSONForRelay(clientBody, types.RelayFormatOpenAIAudio, info)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 		}

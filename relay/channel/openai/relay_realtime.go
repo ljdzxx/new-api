@@ -190,7 +190,7 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 
 				clientMessage := message
 				if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone && helper.ShouldScaleResponseUsage(info) {
-					clientMessage, err = helper.PatchResponseUsageJSON(message, types.RelayFormatOpenAIRealtime, helper.ResponseUsageRatio(info))
+					clientMessage, err = helper.PatchResponseUsageJSONForRelay(message, types.RelayFormatOpenAIRealtime, info)
 					if err != nil {
 						errChan <- fmt.Errorf("error scaling realtime response usage: %v", err)
 						return

@@ -43,7 +43,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 
 	// Only the client copy is scaled. responsesResponse remains raw for billing.
 	if helper.ShouldScaleResponseUsage(info) {
-		responseBody, err = helper.PatchResponseUsageJSON(responseBody, types.RelayFormatOpenAIResponses, helper.ResponseUsageRatio(info))
+		responseBody, err = helper.PatchResponseUsageJSONForRelay(responseBody, types.RelayFormatOpenAIResponses, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
@@ -97,7 +97,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
 			clientData := data
 			if helper.ShouldScaleResponseUsage(info) {
-				patched, patchErr := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatOpenAIResponses, helper.ResponseUsageRatio(info))
+				patched, patchErr := helper.PatchResponseUsageJSONForRelay(common.StringToByteSlice(data), types.RelayFormatOpenAIResponses, info)
 				if patchErr != nil {
 					logger.LogError(c, "failed to scale responses stream usage: "+patchErr.Error())
 					sr.Error(patchErr)

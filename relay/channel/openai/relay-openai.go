@@ -24,7 +24,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 		return nil
 	}
 	if helper.ShouldScaleResponseUsage(info) {
-		patched, err := helper.PatchResponseUsageJSON(common.StringToByteSlice(data), types.RelayFormatOpenAI, helper.ResponseUsageRatio(info))
+		patched, err := helper.PatchResponseUsageJSONForRelay(common.StringToByteSlice(data), types.RelayFormatOpenAI, info)
 		if err != nil {
 			return err
 		}
@@ -300,7 +300,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	if helper.ShouldScaleResponseUsage(info) {
-		responseBody, err = helper.PatchResponseUsageJSON(responseBody, info.RelayFormat, helper.ResponseUsageRatio(info))
+		responseBody, err = helper.PatchResponseUsageJSONForRelay(responseBody, info.RelayFormat, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}

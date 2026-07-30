@@ -276,7 +276,7 @@ func ollamaEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	embResp := &dto.OpenAIEmbeddingResponse{Object: "list", Data: data, Model: info.UpstreamModelName, Usage: *usage}
 	out, _ := common.Marshal(embResp)
 	if helper.ShouldScaleResponseUsage(info) {
-		out, err = helper.PatchResponseUsageJSON(out, types.RelayFormatEmbedding, helper.ResponseUsageRatio(info))
+		out, err = helper.PatchResponseUsageJSONForRelay(out, types.RelayFormatEmbedding, info)
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
