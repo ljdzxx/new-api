@@ -27,6 +27,7 @@ import SettingsLog from '../../pages/Setting/Operation/SettingsLog';
 import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring';
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
+import SettingsInvoice from '../../pages/Setting/Operation/SettingsInvoice';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -100,6 +101,18 @@ const OperationSetting = () => {
 
     /* 令牌设置 */
     'token_setting.max_user_tokens': 1000,
+
+    /* 发票设置 */
+    'invoice_setting.min_amount': 300,
+    'invoice_setting.online_time': '2026-08-01 00:00:00',
+    'invoice_setting.r2_enabled': false,
+    'invoice_setting.r2_account_id': '',
+    'invoice_setting.r2_bucket': '',
+    'invoice_setting.r2_endpoint': '',
+    'invoice_setting.r2_access_key_id': '',
+    'invoice_setting.r2_secret': '',
+    'invoice_setting.r2_object_prefix': 'invoices/',
+    'invoice_setting.r2_url_expire_hours': 24,
   });
 
   let [loading, setLoading] = useState(false);
@@ -172,6 +185,10 @@ const OperationSetting = () => {
         {/* 签到设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsCheckin options={inputs} refresh={onRefresh} />
+        </Card>
+        {/* 发票设置 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsInvoice options={inputs} refresh={onRefresh} />
         </Card>
       </Spin>
     </>

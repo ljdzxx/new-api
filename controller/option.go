@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -136,6 +137,25 @@ func UpdateOption(c *gin.Context) {
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
 	switch option.Key {
+	case "invoice_setting.min_amount":
+		if v, parseErr := strconv.ParseFloat(strings.TrimSpace(option.Value.(string)), 64); parseErr != nil || v < 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "开票金额阈值必须是不小于 0 的数字",
+			})
+			return
+		}
+	case "invoice_setting.online_time":
+		onlineTime := strings.TrimSpace(option.Value.(string))
+		if onlineTime != "" {
+			if _, parseErr := time.ParseInLocation("2006-01-02 15:04:05", onlineTime, time.Local); parseErr != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "开票上线时间格式应为：2006-01-02 15:04:05",
+				})
+				return
+			}
+		}
 	case "GitHubOAuthEnabled":
 		if option.Value == "true" && common.GitHubClientId == "" {
 			c.JSON(http.StatusOK, gin.H{

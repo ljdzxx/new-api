@@ -54,6 +54,8 @@ const ImageGenerationV2 = lazy(() => import('./pages/ImageGenerationV2'));
 const Subscription = lazy(() => import('./pages/Subscription'));
 const UserSubscriptions = lazy(() => import('./pages/UserSubscriptions'));
 const Order = lazy(() => import('./pages/Order'));
+const Invoice = lazy(() => import('./pages/Invoice'));
+const InvoiceAdmin = lazy(() => import('./pages/InvoiceAdmin'));
 const UserLevelPage = lazy(() => import('./pages/UserLevel'));
 const SubscriptionUsageRank = lazy(() => import('./pages/SubscriptionUsageRank'));
 const InviteRank = lazy(() => import('./pages/InviteRank'));
@@ -241,6 +243,14 @@ function App() {
         <Route
           path='/console/order'
           element={withAdminRoute(<Order />)}
+        />
+        <Route
+          path='/console/invoice'
+          element={withPrivateRoute(<Invoice />)}
+        />
+        <Route
+          path='/console/invoice-admin'
+          element={withAdminRoute(<InvoiceAdmin />)}
         />
         <Route
           path='/console/level'

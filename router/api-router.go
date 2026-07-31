@@ -111,6 +111,11 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/aff", controller.GetAffCode)
 				selfRoute.GET("/topup/info", controller.GetTopUpInfo)
 				selfRoute.GET("/topup/self", controller.GetUserTopUps)
+				selfRoute.GET("/invoice/config", controller.GetInvoiceConfig)
+				selfRoute.GET("/invoice/topups", controller.GetUserInvoiceTopUps)
+				selfRoute.GET("/invoice/self", controller.GetUserInvoices)
+				selfRoute.POST("/invoice/apply", controller.ApplyInvoice)
+				selfRoute.GET("/invoice/download/:id", controller.DownloadUserInvoice)
 				selfRoute.POST("/topup", middleware.CriticalRateLimit(), controller.TopUp)
 				selfRoute.POST("/pay", middleware.CriticalRateLimit(), controller.RequestEpayCompat)
 				selfRoute.POST("/amount", controller.RequestAmount)
@@ -168,6 +173,14 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+		}
+
+		invoiceRoute := apiRouter.Group("/invoice")
+		invoiceRoute.Use(middleware.AdminAuth())
+		{
+			invoiceRoute.GET("/", controller.AdminGetInvoices)
+			invoiceRoute.PUT("/:id/issue", controller.AdminIssueInvoice)
+			invoiceRoute.PUT("/:id/reject", controller.AdminRejectInvoice)
 		}
 
 		paymentRoute := apiRouter.Group("/payment")

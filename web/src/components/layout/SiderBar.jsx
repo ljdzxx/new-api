@@ -37,6 +37,8 @@ const routerMap = {
   redemption: '/console/redemption',
   topup: '/console/topup',
   order: '/console/order',
+  invoice: '/console/invoice',
+  invoice_admin: '/console/invoice-admin',
   user: '/console/user',
   user_subscriptions: '/console/user-subscriptions',
   consumption_rank: '/console/consumption-rank',
@@ -144,6 +146,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         to: '/level',
       },
       {
+        text: t('自助发票'),
+        itemKey: 'invoice',
+        to: '/invoice',
+      },
+      {
         text: t('个人设置'),
         itemKey: 'personal',
         to: '/personal',
@@ -177,6 +184,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('订单管理'),
         itemKey: 'order',
         to: '/order',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('发票管理'),
+        itemKey: 'invoice_admin',
+        to: '/invoice-admin',
         className: isAdmin() ? '' : 'tableHiddle',
       },
       {

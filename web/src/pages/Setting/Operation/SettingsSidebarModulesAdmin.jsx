@@ -60,6 +60,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       topup: true,
       level: true,
       lottery: true,
+      invoice: true,
       personal: true,
     },
     admin: {
@@ -68,6 +69,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       models: true,
       deployment: true,
       order: true,
+      invoice_admin: true,
       redemption: true,
       lottery_admin: true,
       user: true,
@@ -131,6 +133,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         topup: true,
         level: true,
         lottery: true,
+        invoice: true,
         personal: true,
       },
       admin: {
@@ -139,6 +142,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         models: true,
         deployment: true,
         order: true,
+        invoice_admin: true,
         redemption: true,
         lottery_admin: true,
         user: true,
@@ -225,6 +229,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             topup: true,
             level: true,
             lottery: true,
+            invoice: true,
             personal: true,
           },
           admin: {
@@ -233,6 +238,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             models: true,
             deployment: true,
             order: true,
+            invoice_admin: true,
             redemption: true,
             lottery_admin: true,
             user: true,
@@ -307,6 +313,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           description: t('参与抽奖和查看中奖结果'),
         },
         {
+          key: 'invoice',
+          title: t('自助发票'),
+          description: t('查看可开票充值记录并提交开票申请'),
+        },
+        {
           key: 'personal',
           title: t('个人设置'),
           description: t('个人信息设置'),
@@ -334,6 +345,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'order',
           title: t('订单管理'),
           description: t('管理员查询和处理充值订单'),
+        },
+        {
+          key: 'invoice_admin',
+          title: t('发票管理'),
+          description: t('查询用户开票申请并开具发票'),
         },
         {
           key: 'consumption_rank',
