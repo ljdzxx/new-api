@@ -25,7 +25,6 @@ import {
   Empty,
   Input,
   Modal,
-  Table,
   Tag,
   Toast,
   Typography,
@@ -39,12 +38,16 @@ import {
   Clock3,
   Download,
   FileText,
+  History,
   Mail,
+  Receipt,
   RefreshCw,
+  Wallet,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API, showError, timestamp2string } from '../../helpers';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
+import CardTable from '../../components/common/ui/CardTable';
 
 const { Text, Title } = Typography;
 
@@ -374,15 +377,22 @@ const InvoicePage = () => {
   );
 
   return (
-    <div className='w-full max-w-7xl mx-auto relative min-h-screen lg:min-h-0 mt-[60px] px-2 pb-24'>
+    <div className='mt-[60px] px-2 pb-24'>
       {/* 顶部说明 */}
       <Card className='!rounded-2xl mb-4' bodyStyle={{ padding: '20px 24px' }}>
-        <Title heading={4} style={{ margin: 0 }}>
-          {t('自助发票')}
-        </Title>
-        <Text type='secondary' className='block mt-1'>
-          {t('查看符合条件的充值记录并提交开票申请。')}
-        </Text>
+        <div className='flex items-center gap-3'>
+          <div className='w-11 h-11 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white shrink-0 shadow-sm'>
+            <Receipt size={22} />
+          </div>
+          <div>
+            <Title heading={4} style={{ margin: 0 }}>
+              {t('自助发票')}
+            </Title>
+            <Text type='secondary' className='block mt-1'>
+              {t('查看符合条件的充值记录并提交开票申请。')}
+            </Text>
+          </div>
+        </div>
         <div className='flex flex-wrap items-center gap-x-8 gap-y-2 mt-4'>
           <Text
             type='tertiary'
@@ -409,11 +419,15 @@ const InvoicePage = () => {
         bodyStyle={{ padding: '20px 24px' }}
         title={
           <div className='flex items-center justify-between w-full'>
-            <div>
-              <Text strong>{t('可申请充值')}</Text>
-              <Text type='tertiary' size='small' className='block'>
-                {t('单笔充值金额达到')} {config.min_amount} {t('才可申请开票')}
-              </Text>
+            <div className='flex items-center gap-2'>
+              <Wallet size={16} className='text-blue-500' />
+              <div>
+                <Text strong>{t('可申请充值')}</Text>
+                <Text type='tertiary' size='small' className='block'>
+                  {t('单笔充值金额达到')} {config.min_amount}{' '}
+                  {t('才可申请开票')}
+                </Text>
+              </div>
             </div>
             <Button
               theme='outline'
@@ -425,12 +439,13 @@ const InvoicePage = () => {
           </div>
         }
       >
-        <Table
+        <CardTable
           columns={topupColumns}
           dataSource={topups}
           loading={topupsLoading}
           rowKey='id'
           size='small'
+          className='rounded-xl overflow-hidden'
           pagination={{
             currentPage: topupsPage,
             pageSize: topupsPageSize,
@@ -452,20 +467,24 @@ const InvoicePage = () => {
         className='!rounded-2xl'
         bodyStyle={{ padding: '20px 24px' }}
         title={
-          <div>
-            <Text strong>{t('申请记录')}</Text>
-            <Text type='tertiary' size='small' className='block'>
-              {t('发票将在处理后通过您提交的邮箱发送，也可在此处下载。')}
-            </Text>
+          <div className='flex items-center gap-2'>
+            <History size={16} className='text-teal-500' />
+            <div>
+              <Text strong>{t('申请记录')}</Text>
+              <Text type='tertiary' size='small' className='block'>
+                {t('发票将在处理后通过您提交的邮箱发送，也可在此处下载。')}
+              </Text>
+            </div>
           </div>
         }
       >
-        <Table
+        <CardTable
           columns={invoiceColumns}
           dataSource={invoices}
           loading={invoicesLoading}
           rowKey='id'
           size='small'
+          className='rounded-xl overflow-hidden'
           pagination={{
             currentPage: invoicesPage,
             pageSize: invoicesPageSize,

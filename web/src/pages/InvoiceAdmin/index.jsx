@@ -26,7 +26,6 @@ import {
   Input,
   Modal,
   Select,
-  Table,
   Tag,
   TextArea,
   Toast,
@@ -37,10 +36,11 @@ import {
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
 import { IconSearch } from '@douyinfe/semi-icons';
-import { FileUp, Mail, RefreshCw } from 'lucide-react';
+import { FileUp, Mail, Receipt, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API, showError, timestamp2string } from '../../helpers';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
+import CardTable from '../../components/common/ui/CardTable';
 
 const { Text } = Typography;
 
@@ -374,17 +374,24 @@ const InvoiceAdminPage = () => {
   );
 
   return (
-    <div className='w-full max-w-7xl mx-auto relative min-h-screen lg:min-h-0 mt-[60px] px-2 pb-24'>
+    <div className='mt-[60px] px-2 pb-24'>
       <Card
         className='!rounded-2xl'
         bodyStyle={{ padding: '20px 24px' }}
         title={
           <div className='flex items-center justify-between w-full'>
-            <div>
-              <Text strong>{t('发票管理')}</Text>
-              <Text type='tertiary' size='small' className='block'>
-                {t('查询用户开票申请，上传开具的发票文件并邮件通知用户。')}
-              </Text>
+            <div className='flex items-center gap-3'>
+              <div className='w-11 h-11 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 flex items-center justify-center text-white shrink-0 shadow-sm'>
+                <Receipt size={22} />
+              </div>
+              <div>
+                <Text strong className='text-base'>
+                  {t('发票管理')}
+                </Text>
+                <Text type='tertiary' size='small' className='block'>
+                  {t('查询用户开票申请，上传开具的发票文件并邮件通知用户。')}
+                </Text>
+              </div>
             </div>
             <Button
               theme='outline'
@@ -430,13 +437,14 @@ const InvoiceAdminPage = () => {
           </Button>
         </div>
 
-        <Table
+        <CardTable
           columns={columns}
           dataSource={invoices}
           loading={loading}
           rowKey='id'
           size='small'
-          scroll={{ x: 1500 }}
+          className='rounded-xl overflow-hidden'
+          scroll={{ x: 'max-content' }}
           pagination={{
             currentPage: page,
             pageSize: pageSize,
