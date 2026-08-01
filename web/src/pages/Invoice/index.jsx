@@ -61,6 +61,12 @@ const INVOICE_STATUS_CONFIG = {
   3: { color: 'red', key: '已拒绝' },
 };
 
+const PAYMENT_METHOD_MAP = {
+  alipay: '支付宝',
+  wxpay: '微信',
+  redemption: '兑换码',
+};
+
 function formatMoney(money) {
   return `CNY ${Number(money || 0).toFixed(2)}`;
 }
@@ -70,6 +76,7 @@ const InvoicePage = () => {
   const isMobile = useIsMobile();
 
   const [config, setConfig] = useState({ min_amount: 300, online_time: '' });
+  const [lastInvoiceProfile, setLastInvoiceProfile] = useState(null);
 
   // 可申请充值
   const [topups, setTopups] = useState([]);
@@ -96,7 +103,9 @@ const InvoicePage = () => {
     try {
       const res = await API.get('/api/user/invoice/config');
       if (res.data.success) {
-        setConfig(res.data.data || {});
+        const data = res.data.data || {};
+        setConfig(data);
+        setLastInvoiceProfile(data.last_invoice_profile || null);
       }
     } catch (e) {
       // 配置加载失败时使用默认值
@@ -160,9 +169,9 @@ const InvoicePage = () => {
 
   const openApplyModal = (record) => {
     setApplyTarget(record);
-    setApplyTitle('');
-    setApplyTaxNo('');
-    setApplyEmails('');
+    setApplyTitle(lastInvoiceProfile?.title || '');
+    setApplyTaxNo(lastInvoiceProfile?.tax_no || '');
+    setApplyEmails(lastInvoiceProfile?.emails || '');
   };
 
   const submitApply = async () => {
@@ -185,6 +194,11 @@ const InvoicePage = () => {
       const { success, message } = res.data;
       if (success) {
         Toast.success({ content: t('开票申请已提交') });
+        setLastInvoiceProfile({
+          title: applyTitle.trim(),
+          tax_no: applyTaxNo.trim(),
+          emails: applyEmails.trim(),
+        });
         setApplyTarget(null);
         loadTopups();
         setInvoicesPage(1);
@@ -252,6 +266,17 @@ const InvoicePage = () => {
         dataIndex: 'money',
         key: 'money',
         render: (money) => <Text>{formatMoney(money)}</Text>,
+      },
+      {
+        title: t('支付方式'),
+        dataIndex: 'payment_method',
+        key: 'payment_method',
+        render: (paymentMethod) => {
+          const displayName = PAYMENT_METHOD_MAP[paymentMethod];
+          return (
+            <Text>{displayName ? t(displayName) : paymentMethod || '-'}</Text>
+          );
+        },
       },
       {
         title: t('完成时间'),
@@ -359,11 +384,19 @@ const InvoicePage = () => {
           {t('查看符合条件的充值记录并提交开票申请。')}
         </Text>
         <div className='flex flex-wrap items-center gap-x-8 gap-y-2 mt-4'>
-          <Text type='tertiary' size='small' className='flex items-center gap-1'>
+          <Text
+            type='tertiary'
+            size='small'
+            className='flex items-center gap-1'
+          >
             <Clock3 size={14} />
             {t('发票需要大约1-3个工作日会发送到您提交邮箱')}
           </Text>
-          <Text type='tertiary' size='small' className='flex items-center gap-1'>
+          <Text
+            type='tertiary'
+            size='small'
+            className='flex items-center gap-1'
+          >
             <FileText size={14} />
             {t('开票内容为研发服务')}
           </Text>
@@ -379,8 +412,7 @@ const InvoicePage = () => {
             <div>
               <Text strong>{t('可申请充值')}</Text>
               <Text type='tertiary' size='small' className='block'>
-                {t('单笔充值金额达到')}{' '}
-                {config.min_amount} {t('才可申请开票')}
+                {t('单笔充值金额达到')} {config.min_amount} {t('才可申请开票')}
               </Text>
             </div>
             <Button
@@ -423,7 +455,7 @@ const InvoicePage = () => {
           <div>
             <Text strong>{t('申请记录')}</Text>
             <Text type='tertiary' size='small' className='block'>
-              {t('发票将在处理后通过您提交的邮箱发送，平台不展示发票文件内容。')}
+              {t('发票将在处理后通过您提交的邮箱发送，也可在此处下载。')}
             </Text>
           </div>
         }

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,9 +39,23 @@ var invoiceAllowedExts = map[string]string{
 // GetInvoiceConfig 用户获取开票相关配置（阈值、上线时间）
 func GetInvoiceConfig(c *gin.Context) {
 	setting := operation_setting.GetInvoiceSetting()
+	profile, err := model.GetLatestUserInvoiceProfile(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var lastProfile any
+	if profile != nil {
+		lastProfile = gin.H{
+			"title":  profile.Title,
+			"tax_no": profile.TaxNo,
+			"emails": profile.Emails,
+		}
+	}
 	common.ApiSuccess(c, gin.H{
-		"min_amount":  setting.MinAmount,
-		"online_time": setting.OnlineTime,
+		"min_amount":           setting.MinAmount,
+		"online_time":          setting.OnlineTime,
+		"last_invoice_profile": lastProfile,
 	})
 }
 
@@ -84,6 +99,7 @@ func GetUserInvoiceTopUps(c *gin.Context) {
 			"id":             topup.Id,
 			"trade_no":       topup.TradeNo,
 			"money":          topup.Money,
+			"payment_method": topup.PaymentMethod,
 			"complete_time":  topup.CompleteTime,
 			"invoice_status": status,
 			"invoice_id":     invoiceId,
@@ -357,12 +373,46 @@ func AdminIssueInvoice(c *gin.Context) {
 	if err = sendInvoiceIssuedEmail(invoice); err != nil {
 		emailSent = false
 		emailError = err.Error()
-		common.SysError(fmt.Sprintf("failed to send invoice email for invoice #%d: %v", invoice.Id, err))
+		common.SysError(fmt.Sprintf(
+			"failed to send invoice email: invoice_id=%d, user_id=%d, recipients=%s, file_key=%q, error_type=%T, error=%v",
+			invoice.Id, invoice.UserId, maskInvoiceEmails(invoice.Emails), invoice.FileKey, err, err,
+		))
 	}
 	common.ApiSuccess(c, gin.H{
 		"email_sent":  emailSent,
 		"email_error": emailError,
 	})
+}
+
+// AdminResendInvoiceEmail re-sends the notification for an issued invoice.
+func AdminResendInvoiceEmail(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "无效的参数")
+		return
+	}
+	invoice, err := model.GetInvoiceById(id)
+	if err != nil {
+		common.ApiErrorMsg(c, "开票申请不存在")
+		return
+	}
+	if invoice.Status != model.InvoiceStatusIssued {
+		common.ApiErrorMsg(c, "仅已开具的发票可以重发邮件")
+		return
+	}
+	if strings.TrimSpace(invoice.FileKey) == "" {
+		common.ApiErrorMsg(c, "发票文件不存在，无法重发邮件")
+		return
+	}
+	if err = sendInvoiceIssuedEmail(invoice); err != nil {
+		common.SysError(fmt.Sprintf(
+			"failed to resend invoice email: invoice_id=%d, user_id=%d, recipients=%s, file_key=%q, error_type=%T, error=%v",
+			invoice.Id, invoice.UserId, maskInvoiceEmails(invoice.Emails), invoice.FileKey, err, err,
+		))
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, nil)
 }
 
 // AdminTestInvoiceR2Connection 测试发票 R2 配置（可用表单中未保存的值测试，空字段回落到已保存配置）
@@ -439,7 +489,7 @@ func sendInvoiceIssuedEmail(invoice *model.Invoice) error {
 	defer cancel()
 	downloadURL, err := service.GetInvoiceFilePresignedURL(ctx, invoice.FileKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("生成发票下载链接失败: %w", err)
 	}
 	expireHours := operation_setting.GetInvoiceSetting().R2URLExpireHours
 	if expireHours <= 0 {
@@ -453,7 +503,19 @@ func sendInvoiceIssuedEmail(invoice *model.Invoice) error {
 			"公司抬头：<strong>%s</strong></p>"+
 			"<p>请点击以下链接下载发票文件（链接 %d 小时内有效）：</p>"+
 			"<p><a href=\"%s\">下载发票</a></p>"+
-			"<p>如链接已过期，请登录%s，在「自助发票」页面的申请记录中重新获取下载链接。</p>",
-		invoice.TradeNo, invoice.Money, invoice.Title, expireHours, downloadURL, common.SystemName)
-	return common.SendEmail(subject, invoice.Emails, content)
+			"<p>如链接已过期，请登录<a href=\"%s\">%s</a>，在「自助发票」页面的申请记录中重新获取下载链接。</p>",
+		invoice.TradeNo, invoice.Money, invoice.Title, expireHours, downloadURL,
+		system_setting.ServerAddress, common.SystemName)
+	if err = common.SendEmail(subject, invoice.Emails, content); err != nil {
+		return fmt.Errorf("发送发票邮件失败: %w", err)
+	}
+	return nil
+}
+
+func maskInvoiceEmails(emails string) string {
+	items := strings.Split(emails, ";")
+	for i, item := range items {
+		items[i] = common.MaskEmail(strings.TrimSpace(item))
+	}
+	return strings.Join(items, ";")
 }

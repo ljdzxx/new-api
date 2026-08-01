@@ -703,7 +703,7 @@
     "兑换订阅": "",
     "兑换额度": "Redeem",
     "兑换记录": "",
-    "兑换码": "",
+    "兑换码": "Redemption code",
     "兑换码充值": "Redemption code recharge",
     "兑换码创建成功": "Redemption Code Created",
     "兑换码创建成功，是否下载兑换码？": "Redemption code created successfully. Do you want to download it?",
@@ -743,7 +743,7 @@
     "发布日期": "Publish Date",
     "发布时间": "Publish Time",
     "发票管理": "",
-    "发票将在处理后通过您提交的邮箱发送，平台不展示发票文件内容。": "",
+    "发票将在处理后通过您提交的邮箱发送，也可在此处下载。": "The invoice will be sent to the email address you provided after processing and can also be downloaded here.",
     "发票设置": "",
     "发票文件 R2 存储": "",
     "发票文件将上传至 Cloudflare R2 存储，开具后系统会向收票邮箱发送含下载链接的通知邮件。请先在「系统设置-运营设置-发票设置」中完成 R2 配置。": "",
@@ -4453,5 +4453,7 @@
   "标记订阅订单退款": "Mark subscription order as refunded",
   "订阅订单已作废，订阅权益已终止": "Subscription order invalidated and benefits terminated",
   "请确认退款已完成。此操作会将订阅订单作废并立即终止剩余订阅权益；已升级的用户分组保持不变，也不会调用支付平台、退回用户余额或改变用户等级。": "Confirm that the refund is complete. This invalidates the subscription order and immediately terminates its remaining benefits. The upgraded user group remains unchanged; the payment provider is not called, the user's balance is not refunded, and the user's level is not changed.",
-  "请确认退款已完成。此操作会将兑换码订阅记录标记为退款并立即终止剩余订阅权益；兑换码保持已使用，已升级的用户分组保持不变，也不会退回用户余额或改变用户等级。": "Confirm that the refund is complete. This marks the redemption subscription record as refunded and immediately terminates its remaining benefits. The code remains used, the upgraded user group remains unchanged, and neither the user's balance nor level is changed."
+  "请确认退款已完成。此操作会将兑换码订阅记录标记为退款并立即终止剩余订阅权益；兑换码保持已使用，已升级的用户分组保持不变，也不会退回用户余额或改变用户等级。": "Confirm that the refund is complete. This marks the redemption subscription record as refunded and immediately terminates its remaining benefits. The code remains used, the upgraded user group remains unchanged, and neither the user's balance nor level is changed.",
+  "重发邮件": "Resend email",
+  "发票邮件已重新发送": "Invoice email resent"
 }

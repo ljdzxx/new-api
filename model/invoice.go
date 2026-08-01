@@ -15,21 +15,22 @@ const (
 
 // Invoice 用户开票申请
 type Invoice struct {
-	Id          int     `json:"id"`
-	UserId      int     `json:"user_id" gorm:"index"`
-	Username    string  `json:"username" gorm:"-"`
-	TopUpId     int     `json:"top_up_id" gorm:"uniqueIndex"`
-	TradeNo     string  `json:"trade_no" gorm:"type:varchar(255);index"`
-	Money       float64 `json:"money"`
-	Title       string  `json:"title" gorm:"type:varchar(255)"`
-	TaxNo       string  `json:"tax_no" gorm:"type:varchar(64)"`
-	Emails      string  `json:"emails" gorm:"type:text"`
-	Status      int     `json:"status" gorm:"index"`
-	FileKey     string  `json:"file_key" gorm:"type:varchar(512)"`
-	Remark      string  `json:"remark" gorm:"type:text"`
-	HandledTime int64   `json:"handled_time"`
-	CreatedTime int64   `json:"created_time"`
-	UpdatedTime int64   `json:"updated_time"`
+	Id            int     `json:"id"`
+	UserId        int     `json:"user_id" gorm:"index"`
+	Username      string  `json:"username" gorm:"-"`
+	PaymentMethod string  `json:"payment_method" gorm:"-"`
+	TopUpId       int     `json:"top_up_id" gorm:"uniqueIndex"`
+	TradeNo       string  `json:"trade_no" gorm:"type:varchar(255);index"`
+	Money         float64 `json:"money"`
+	Title         string  `json:"title" gorm:"type:varchar(255)"`
+	TaxNo         string  `json:"tax_no" gorm:"type:varchar(64)"`
+	Emails        string  `json:"emails" gorm:"type:text"`
+	Status        int     `json:"status" gorm:"index"`
+	FileKey       string  `json:"file_key" gorm:"type:varchar(512)"`
+	Remark        string  `json:"remark" gorm:"type:text"`
+	HandledTime   int64   `json:"handled_time"`
+	CreatedTime   int64   `json:"created_time"`
+	UpdatedTime   int64   `json:"updated_time"`
 }
 
 func (invoice *Invoice) Insert() error {
@@ -107,6 +108,24 @@ func GetUserInvoices(userId int, pageInfo *common.PageInfo) (invoices []*Invoice
 	return invoices, total, nil
 }
 
+// GetLatestUserInvoiceProfile returns the invoice fields most recently submitted by a user.
+func GetLatestUserInvoiceProfile(userId int) (*Invoice, error) {
+	var invoice Invoice
+	result := DB.Select("title", "tax_no", "emails").
+		Where("user_id = ?", userId).
+		Order("updated_time desc").
+		Order("id desc").
+		Limit(1).
+		Find(&invoice)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &invoice, nil
+}
+
 type InvoiceFilter struct {
 	Keyword  string // 充值订单号 / 公司抬头
 	Username string
@@ -137,8 +156,40 @@ func SearchInvoicesWithFilter(filter InvoiceFilter, pageInfo *common.PageInfo) (
 		Find(&invoices).Error; err != nil {
 		return nil, 0, err
 	}
+	if err = fillInvoicePaymentMethods(invoices); err != nil {
+		return nil, 0, err
+	}
 	fillInvoiceUsernames(invoices)
 	return invoices, total, nil
+}
+
+func fillInvoicePaymentMethods(invoices []*Invoice) error {
+	if len(invoices) == 0 {
+		return nil
+	}
+	topUpIds := make([]int, 0, len(invoices))
+	for _, invoice := range invoices {
+		if invoice != nil && invoice.TopUpId > 0 {
+			topUpIds = append(topUpIds, invoice.TopUpId)
+		}
+	}
+	if len(topUpIds) == 0 {
+		return nil
+	}
+	var topups []TopUp
+	if err := DB.Select("id", "payment_method").Where("id IN ?", topUpIds).Find(&topups).Error; err != nil {
+		return err
+	}
+	paymentMethodByTopUpId := make(map[int]string, len(topups))
+	for _, topup := range topups {
+		paymentMethodByTopUpId[topup.Id] = topup.PaymentMethod
+	}
+	for _, invoice := range invoices {
+		if invoice != nil {
+			invoice.PaymentMethod = paymentMethodByTopUpId[invoice.TopUpId]
+		}
+	}
+	return nil
 }
 
 func fillInvoiceUsernames(invoices []*Invoice) {

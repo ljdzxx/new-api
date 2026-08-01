@@ -762,7 +762,7 @@
     "兑换订阅": "",
     "兑换额度": "Đổi",
     "兑换记录": "",
-    "兑换码": "",
+    "兑换码": "Mã đổi thưởng",
     "兑换码充值": "Nạp tiền bằng mã đổi thưởng",
     "兑换码创建成功": "Đã tạo mã đổi thưởng",
     "兑换码创建成功，是否下载兑换码？": "Tạo mã đổi thưởng thành công. Bạn có muốn tải xuống không?",
@@ -799,7 +799,7 @@
     "发布日期": "Ngày xuất bản",
     "发布时间": "Thời gian xuất bản",
     "发票管理": "",
-    "发票将在处理后通过您提交的邮箱发送，平台不展示发票文件内容。": "",
+    "发票将在处理后通过您提交的邮箱发送，也可在此处下载。": "Sau khi được xử lý, hóa đơn sẽ được gửi đến địa chỉ email bạn đã cung cấp và cũng có thể tải xuống tại đây.",
     "发票设置": "",
     "发票文件 R2 存储": "",
     "发票文件将上传至 Cloudflare R2 存储，开具后系统会向收票邮箱发送含下载链接的通知邮件。请先在「系统设置-运营设置-发票设置」中完成 R2 配置。": "",
@@ -4905,5 +4905,7 @@
   "标记订阅订单退款": "Đánh dấu hoàn tiền đơn đăng ký",
   "订阅订单已作废，订阅权益已终止": "Đơn đăng ký đã bị vô hiệu và quyền lợi đã chấm dứt",
   "请确认退款已完成。此操作会将订阅订单作废并立即终止剩余订阅权益；已升级的用户分组保持不变，也不会调用支付平台、退回用户余额或改变用户等级。": "Hãy xác nhận việc hoàn tiền đã hoàn tất. Thao tác này sẽ vô hiệu đơn đăng ký và chấm dứt ngay các quyền lợi còn lại. Nhóm người dùng đã nâng cấp vẫn được giữ nguyên; hệ thống không gọi nền tảng thanh toán, không hoàn lại số dư và không thay đổi cấp độ người dùng.",
-  "请确认退款已完成。此操作会将兑换码订阅记录标记为退款并立即终止剩余订阅权益；兑换码保持已使用，已升级的用户分组保持不变，也不会退回用户余额或改变用户等级。": "Hãy xác nhận việc hoàn tiền đã hoàn tất. Thao tác này đánh dấu đăng ký bằng mã là đã hoàn tiền và chấm dứt ngay quyền lợi còn lại. Mã vẫn ở trạng thái đã sử dụng, nhóm đã nâng cấp được giữ nguyên, số dư và cấp độ người dùng không thay đổi."
+  "请确认退款已完成。此操作会将兑换码订阅记录标记为退款并立即终止剩余订阅权益；兑换码保持已使用，已升级的用户分组保持不变，也不会退回用户余额或改变用户等级。": "Hãy xác nhận việc hoàn tiền đã hoàn tất. Thao tác này đánh dấu đăng ký bằng mã là đã hoàn tiền và chấm dứt ngay quyền lợi còn lại. Mã vẫn ở trạng thái đã sử dụng, nhóm đã nâng cấp được giữ nguyên, số dư và cấp độ người dùng không thay đổi.",
+  "重发邮件": "Gửi lại email",
+  "发票邮件已重新发送": "Đã gửi lại email hóa đơn"
 }

@@ -49,45 +49,66 @@ func SendEmail(subject string, receiver string, content string) error {
 		}
 		conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", SMTPServer, SMTPPort), tlsConfig)
 		if err != nil {
-			return err
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP TLS connection failed: %w", err))
 		}
 		client, err := smtp.NewClient(conn, SMTPServer)
 		if err != nil {
-			return err
+			_ = conn.Close()
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP client initialization failed after TLS connection: %w", err))
 		}
 		defer client.Close()
 		if err = client.Auth(auth); err != nil {
-			return err
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP authentication failed: %w", err))
 		}
 		if err = client.Mail(SMTPFrom); err != nil {
-			return err
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP MAIL FROM command failed: %w", err))
 		}
 		receiverEmails := strings.Split(receiver, ";")
-		for _, receiver := range receiverEmails {
-			if err = client.Rcpt(receiver); err != nil {
-				return err
+		for _, receiverEmail := range receiverEmails {
+			if err = client.Rcpt(receiverEmail); err != nil {
+				return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP RCPT TO command failed for %s: %w", MaskEmail(receiverEmail), err))
 			}
 		}
 		w, err := client.Data()
 		if err != nil {
-			return err
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP DATA command failed: %w", err))
 		}
 		_, err = w.Write(mail)
 		if err != nil {
-			return err
+			_ = w.Close()
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP message body write failed: %w", err))
 		}
 		err = w.Close()
 		if err != nil {
-			return err
+			return logEmailSendError(receiver, "implicit_tls", fmt.Errorf("SMTP message submission failed while closing DATA: %w", err))
 		}
 	} else if isOutlookServer(SMTPAccount) || slices.Contains(EmailLoginAuthServerList, SMTPServer) {
 		auth = LoginAuth(SMTPAccount, SMTPToken)
 		err = smtp.SendMail(addr, auth, SMTPFrom, to, mail)
+		if err != nil {
+			return logEmailSendError(receiver, "starttls_login", fmt.Errorf("SMTP send failed: %w", err))
+		}
 	} else {
 		err = smtp.SendMail(addr, auth, SMTPFrom, to, mail)
+		if err != nil {
+			return logEmailSendError(receiver, "starttls_plain", fmt.Errorf("SMTP send failed: %w", err))
+		}
 	}
-	if err != nil {
-		SysError(fmt.Sprintf("failed to send email to %s: %v", receiver, err))
-	}
+	return nil
+}
+
+func logEmailSendError(receiver string, transport string, err error) error {
+	SysError(fmt.Sprintf(
+		"failed to send email: receiver=%s, smtp_server=%q, smtp_port=%d, transport=%s, smtp_account=%s, smtp_from=%s, error_type=%T, error=%v",
+		maskEmailList(receiver), SMTPServer, SMTPPort, transport, MaskEmail(SMTPAccount), MaskEmail(SMTPFrom), err, err,
+	))
 	return err
+}
+
+func maskEmailList(receivers string) string {
+	items := strings.Split(receivers, ";")
+	for i, item := range items {
+		items[i] = MaskEmail(strings.TrimSpace(item))
+	}
+	return strings.Join(items, ";")
 }

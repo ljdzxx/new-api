@@ -79,7 +79,7 @@ func InvoiceR2Configured() bool {
 
 // TestInvoiceR2Connection 测试发票 R2 配置是否可用。
 // override 中非空字段会覆盖已保存的配置（密钥等不回显的字段传空时自动回落到已保存值）。
-// 验证链路：配置完整性 -> HeadBucket（凭证/Endpoint/桶）-> 写入并删除探针对象（签名/写权限）。
+// 验证链路：配置完整性 -> 写入并删除探针对象（凭证/Endpoint/桶及对象读写权限）。
 func TestInvoiceR2Connection(ctx context.Context, override *operation_setting.InvoiceSetting) error {
 	effective := *operation_setting.GetInvoiceSetting()
 	if override != nil {
@@ -107,26 +107,30 @@ func TestInvoiceR2Connection(ctx context.Context, override *operation_setting.In
 	if err != nil {
 		return err
 	}
+	return testInvoiceR2ConnectionWithClient(ctx, client, &effective)
+}
 
-	if _, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(effective.R2Bucket),
-	}); err != nil {
-		return fmt.Errorf("无法访问存储桶 %q（请检查 R2 Account ID/Endpoint、Access Key ID 与 Secret 是否匹配、桶名称是否正确）: %w", effective.R2Bucket, err)
-	}
+type invoiceR2ProbeClient interface {
+	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	DeleteObject(context.Context, *s3.DeleteObjectInput, ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+}
 
-	probeKey := path.Join(effective.ObjectPrefix(), ".connection-probe")
-	if _, err = client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(effective.R2Bucket),
+func testInvoiceR2ConnectionWithClient(ctx context.Context, client invoiceR2ProbeClient, setting *operation_setting.InvoiceSetting) error {
+	probeKey := path.Join(setting.ObjectPrefix(), fmt.Sprintf(".connection-probe-%d", time.Now().UnixNano()))
+	if _, err := client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(setting.R2Bucket),
 		Key:         aws.String(probeKey),
 		Body:        bytes.NewReader([]byte("ok")),
 		ContentType: aws.String("text/plain"),
 	}); err != nil {
-		return fmt.Errorf("存储桶可访问但写入测试失败（请确认 R2 API Token 具有该桶的 Object Read & Write 权限）: %w", err)
+		return fmt.Errorf("无法向存储桶 %q 写入测试对象（请检查 R2 Account ID/Endpoint、Access Key ID 与 Secret、桶名称，并确认令牌具有 Object Read & Write 权限）: %w", setting.R2Bucket, err)
 	}
-	_, _ = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(effective.R2Bucket),
+	if _, err := client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(setting.R2Bucket),
 		Key:    aws.String(probeKey),
-	})
+	}); err != nil {
+		return fmt.Errorf("测试对象已写入，但无法从存储桶 %q 删除（请确认令牌具有 Object Read & Write 权限；测试对象键为 %q）: %w", setting.R2Bucket, probeKey, err)
+	}
 	return nil
 }
 

@@ -128,3 +128,47 @@ func TestInvoiceUniqueTopUpAndReapply(t *testing.T) {
 	assert.Equal(t, InvoiceStatusPending, reloaded.Status)
 	assert.Equal(t, "重新提交的公司", reloaded.Title)
 }
+
+func TestGetLatestUserInvoiceProfile(t *testing.T) {
+	setupInvoiceTest(t)
+	user := createRegisteredUser(t, "invoice_profile")
+	other := createRegisteredUser(t, "invoice_profile_other")
+
+	firstTopUp := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 500, 100)
+	latestTopUp := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 600, 200)
+	otherTopUp := insertInvoiceTopUp(t, other.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 700, 300)
+
+	for _, invoice := range []*Invoice{
+		{UserId: user.Id, TopUpId: firstTopUp.Id, Title: "旧抬头", TaxNo: "OLD", Emails: "old@example.com", UpdatedTime: 100},
+		{UserId: user.Id, TopUpId: latestTopUp.Id, Title: "最新抬头", TaxNo: "NEW", Emails: "new@example.com", UpdatedTime: 200},
+		{UserId: other.Id, TopUpId: otherTopUp.Id, Title: "其他用户", TaxNo: "OTHER", Emails: "other@example.com", UpdatedTime: 300},
+	} {
+		require.NoError(t, invoice.Insert())
+	}
+
+	profile, err := GetLatestUserInvoiceProfile(user.Id)
+	require.NoError(t, err)
+	require.NotNil(t, profile)
+	assert.Equal(t, "最新抬头", profile.Title)
+	assert.Equal(t, "NEW", profile.TaxNo)
+	assert.Equal(t, "new@example.com", profile.Emails)
+
+	emptyProfile, err := GetLatestUserInvoiceProfile(999999)
+	require.NoError(t, err)
+	assert.Nil(t, emptyProfile)
+}
+
+func TestSearchInvoicesWithFilterIncludesPaymentMethod(t *testing.T) {
+	setupInvoiceTest(t)
+	user := createRegisteredUser(t, "invoice_payment_method")
+	topup := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "wxpay", common.TopUpStatusSuccess, 500, 100)
+	require.NoError(t, (&Invoice{
+		UserId: user.Id, TopUpId: topup.Id, TradeNo: topup.TradeNo, Status: InvoiceStatusPending,
+	}).Insert())
+
+	invoices, total, err := SearchInvoicesWithFilter(InvoiceFilter{}, &common.PageInfo{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, invoices, 1)
+	assert.Equal(t, "wxpay", invoices[0].PaymentMethod)
+}

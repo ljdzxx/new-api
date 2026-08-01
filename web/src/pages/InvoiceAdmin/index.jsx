@@ -37,7 +37,7 @@ import {
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
 import { IconSearch } from '@douyinfe/semi-icons';
-import { FileUp, RefreshCw } from 'lucide-react';
+import { FileUp, Mail, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API, showError, timestamp2string } from '../../helpers';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
@@ -48,6 +48,12 @@ const INVOICE_STATUS_CONFIG = {
   1: { color: 'orange', key: '未处理' },
   2: { color: 'green', key: '已开具' },
   3: { color: 'red', key: '已拒绝' },
+};
+
+const PAYMENT_METHOD_MAP = {
+  alipay: '支付宝',
+  wxpay: '微信',
+  redemption: '兑换码',
 };
 
 const InvoiceAdminPage = () => {
@@ -74,6 +80,7 @@ const InvoiceAdminPage = () => {
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectRemark, setRejectRemark] = useState('');
   const [rejectLoading, setRejectLoading] = useState(false);
+  const [resendingInvoiceId, setResendingInvoiceId] = useState(null);
 
   const loadInvoices = async (
     currentPage = page,
@@ -135,7 +142,8 @@ const InvoiceAdminPage = () => {
       if (success) {
         if (data?.email_sent === false) {
           Toast.warning({
-            content: t('发票已开具，但邮件发送失败') +
+            content:
+              t('发票已开具，但邮件发送失败') +
               (data?.email_error ? `：${data.email_error}` : ''),
             duration: 5,
           });
@@ -177,6 +185,23 @@ const InvoiceAdminPage = () => {
     }
   };
 
+  const resendInvoiceEmail = async (invoiceId) => {
+    setResendingInvoiceId(invoiceId);
+    try {
+      const res = await API.post(`/api/invoice/${invoiceId}/resend-email`);
+      const { success, message } = res.data;
+      if (success) {
+        Toast.success({ content: t('发票邮件已重新发送') });
+      } else {
+        showError(message || t('操作失败'));
+      }
+    } catch (e) {
+      showError(t('操作失败'));
+    } finally {
+      setResendingInvoiceId(null);
+    }
+  };
+
   const columns = useMemo(
     () => [
       {
@@ -215,6 +240,18 @@ const InvoiceAdminPage = () => {
         render: (money) => (
           <Text type='danger'>CNY {Number(money || 0).toFixed(2)}</Text>
         ),
+      },
+      {
+        title: t('支付方式'),
+        dataIndex: 'payment_method',
+        key: 'payment_method',
+        width: 110,
+        render: (paymentMethod) => {
+          const displayName = PAYMENT_METHOD_MAP[paymentMethod];
+          return (
+            <Text>{displayName ? t(displayName) : paymentMethod || '-'}</Text>
+          );
+        },
       },
       {
         title: t('公司抬头'),
@@ -283,6 +320,19 @@ const InvoiceAdminPage = () => {
         fixed: 'right',
         render: (_, record) => {
           if (record.status !== 1) {
+            if (record.status === 2) {
+              return (
+                <Button
+                  size='small'
+                  theme='outline'
+                  icon={<Mail size={14} />}
+                  loading={resendingInvoiceId === record.id}
+                  onClick={() => resendInvoiceEmail(record.id)}
+                >
+                  {t('重发邮件')}
+                </Button>
+              );
+            }
             return record.status === 3 && record.remark ? (
               <Text
                 type='tertiary'
@@ -320,7 +370,7 @@ const InvoiceAdminPage = () => {
         },
       },
     ],
-    [t],
+    [resendingInvoiceId, t],
   );
 
   return (
@@ -434,9 +484,7 @@ const InvoiceAdminPage = () => {
           </div>
           <div className='flex justify-between'>
             <Text type='secondary'>{t('充值金额')}</Text>
-            <Text strong>
-              CNY {Number(issueTarget?.money || 0).toFixed(2)}
-            </Text>
+            <Text strong>CNY {Number(issueTarget?.money || 0).toFixed(2)}</Text>
           </div>
           <div className='flex justify-between'>
             <Text type='secondary'>{t('公司抬头')}</Text>
