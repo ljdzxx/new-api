@@ -234,12 +234,18 @@ func newR2S3Client(setting *image_storage_setting.ImageStorageSetting) (*s3.Clie
 	}
 
 	cfg := aws.Config{
-		Region:      "auto",
-		Credentials: credentials.NewStaticCredentialsProvider(setting.R2AccessKeyID, setting.R2SecretAccessKey, ""),
+		Region: "auto",
+		Credentials: credentials.NewStaticCredentialsProvider(
+			strings.TrimSpace(setting.R2AccessKeyID),
+			strings.TrimSpace(setting.R2SecretAccessKey), ""),
 	}
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.BaseEndpoint = aws.String(endpoint)
 		o.UsePathStyle = true
+		// Cloudflare R2 不支持新版 SDK 默认的 CRC32 请求校验和，
+		// 需改为 WhenRequired，否则会出现 SignatureDoesNotMatch
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
 	})
 	return client, nil
 }

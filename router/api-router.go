@@ -179,6 +179,7 @@ func SetApiRouter(router *gin.Engine) {
 		invoiceRoute.Use(middleware.AdminAuth())
 		{
 			invoiceRoute.GET("/", controller.AdminGetInvoices)
+			invoiceRoute.POST("/r2/test", controller.AdminTestInvoiceR2Connection)
 			invoiceRoute.PUT("/:id/issue", controller.AdminIssueInvoice)
 			invoiceRoute.PUT("/:id/reject", controller.AdminRejectInvoice)
 		}

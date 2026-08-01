@@ -44,6 +44,7 @@ const defaultInvoiceInputs = {
 export default function SettingsInvoice(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const [testingR2, setTestingR2] = useState(false);
   const [inputs, setInputs] = useState(defaultInvoiceInputs);
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
@@ -57,32 +58,44 @@ export default function SettingsInvoice(props) {
   function onSubmit() {
     const updateArray = compareObjects(inputs, inputsRow);
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
-    const requestQueue = updateArray
-      .map((item) => {
-        // 敏感信息不回显，未填写新值时不提交
-        if (item.key === 'invoice_setting.r2_secret' && !inputs[item.key]) {
-          return null;
-        }
-        let value = '';
-        if (typeof inputs[item.key] === 'boolean') {
-          value = String(inputs[item.key]);
-        } else {
-          value = String(inputs[item.key] ?? '');
-        }
-        return API.put('/api/option/', {
-          key: item.key,
-          value,
-        });
-      })
+    const buildRequest = (item) => {
+      // 敏感信息不回显，未填写新值时不提交
+      if (item.key === 'invoice_setting.r2_secret' && !inputs[item.key]) {
+        return null;
+      }
+      let value = '';
+      if (typeof inputs[item.key] === 'boolean') {
+        value = String(inputs[item.key]);
+      } else {
+        value = String(inputs[item.key] ?? '');
+      }
+      return { key: item.key, value };
+    };
+    // 启用开关放最后提交，避免后端校验先于其他字段保存完成
+    const enabledKey = 'invoice_setting.r2_enabled';
+    const otherPayloads = updateArray
+      .filter((item) => item.key !== enabledKey)
+      .map(buildRequest)
       .filter(Boolean);
+    const enabledPayloads = updateArray
+      .filter((item) => item.key === enabledKey)
+      .map(buildRequest)
+      .filter(Boolean);
+
     setLoading(true);
-    Promise.all(requestQueue)
-      .then((res) => {
-        if (requestQueue.length === 1) {
+    Promise.all(otherPayloads.map((p) => API.put('/api/option/', p)))
+      .then(async (res) => {
+        if (otherPayloads.length === 1) {
           if (res.includes(undefined)) return;
-        } else if (requestQueue.length > 1) {
+        } else if (otherPayloads.length > 1) {
           if (res.includes(undefined))
             return showError(t('部分保存失败，请重试'));
+        }
+        for (const p of enabledPayloads) {
+          const r = await API.put('/api/option/', p);
+          if (r?.data && r.data.success === false) {
+            return showError(r.data.message || t('保存失败，请重试'));
+          }
         }
         showSuccess(t('保存成功'));
         props.refresh();
@@ -93,6 +106,31 @@ export default function SettingsInvoice(props) {
       .finally(() => {
         setLoading(false);
       });
+  }
+
+  async function onTestR2() {
+    setTestingR2(true);
+    try {
+      const res = await API.post('/api/invoice/r2/test', {
+        account_id: inputs['invoice_setting.r2_account_id'],
+        bucket: inputs['invoice_setting.r2_bucket'],
+        endpoint: inputs['invoice_setting.r2_endpoint'],
+        access_key_id: inputs['invoice_setting.r2_access_key_id'],
+        // 密钥不回显：留空时后端自动使用已保存的值
+        secret: inputs['invoice_setting.r2_secret'],
+        object_prefix: inputs['invoice_setting.r2_object_prefix'],
+      });
+      const { success, message } = res.data;
+      if (success) {
+        showSuccess(t('R2 连接测试成功，配置可用'));
+      } else {
+        showError(message || t('R2 连接测试失败'));
+      }
+    } catch (e) {
+      showError(t('R2 连接测试失败'));
+    } finally {
+      setTestingR2(false);
+    }
   }
 
   useEffect(() => {
@@ -248,6 +286,15 @@ export default function SettingsInvoice(props) {
           <Row>
             <Button size='default' onClick={onSubmit}>
               {t('保存发票设置')}
+            </Button>
+            <Button
+              size='default'
+              type='secondary'
+              style={{ marginLeft: 8 }}
+              loading={testingR2}
+              onClick={onTestR2}
+            >
+              {t('测试 R2 连接')}
             </Button>
           </Row>
         </Form.Section>

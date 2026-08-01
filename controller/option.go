@@ -156,6 +156,30 @@ func UpdateOption(c *gin.Context) {
 				return
 			}
 		}
+	case "invoice_setting.r2_enabled":
+		if option.Value == "true" {
+			inv := operation_setting.GetInvoiceSetting()
+			var missing []string
+			if strings.TrimSpace(inv.Endpoint()) == "" {
+				missing = append(missing, "R2 Account ID 或 R2 Endpoint")
+			}
+			if strings.TrimSpace(inv.R2Bucket) == "" {
+				missing = append(missing, "R2 Bucket")
+			}
+			if strings.TrimSpace(inv.R2AccessKeyID) == "" {
+				missing = append(missing, "R2 Access Key ID")
+			}
+			if strings.TrimSpace(inv.R2SecretAccessKey) == "" {
+				missing = append(missing, "R2 Secret Access Key")
+			}
+			if len(missing) > 0 {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "无法启用发票 R2 存储，请先保存以下配置：" + strings.Join(missing, "、"),
+				})
+				return
+			}
+		}
 	case "GitHubOAuthEnabled":
 		if option.Value == "true" && common.GitHubClientId == "" {
 			c.JSON(http.StatusOK, gin.H{

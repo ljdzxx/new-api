@@ -336,6 +336,8 @@ func AdminIssueInvoice(c *gin.Context) {
 	defer cancel()
 	objectKey := service.BuildInvoiceObjectKey(invoice.UserId, invoice.Id, ext)
 	if err = service.UploadInvoiceFileToR2(ctx, objectKey, data, contentType); err != nil {
+		common.SysError(fmt.Sprintf("invoice R2 upload failed, effective config: %s, error: %v",
+			service.InvoiceR2EffectiveConfigForLog(), err))
 		common.ApiError(c, err)
 		return
 	}
@@ -361,6 +363,37 @@ func AdminIssueInvoice(c *gin.Context) {
 		"email_sent":  emailSent,
 		"email_error": emailError,
 	})
+}
+
+// AdminTestInvoiceR2Connection 测试发票 R2 配置（可用表单中未保存的值测试，空字段回落到已保存配置）
+func AdminTestInvoiceR2Connection(c *gin.Context) {
+	var req struct {
+		AccountID    string `json:"account_id"`
+		Bucket       string `json:"bucket"`
+		Endpoint     string `json:"endpoint"`
+		AccessKeyID  string `json:"access_key_id"`
+		Secret       string `json:"secret"`
+		ObjectPrefix string `json:"object_prefix"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorMsg(c, "无效的参数")
+		return
+	}
+	override := &operation_setting.InvoiceSetting{
+		R2AccountID:       req.AccountID,
+		R2Bucket:          req.Bucket,
+		R2Endpoint:        req.Endpoint,
+		R2AccessKeyID:     req.AccessKeyID,
+		R2SecretAccessKey: req.Secret,
+		R2ObjectPrefix:    req.ObjectPrefix,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := service.TestInvoiceR2Connection(ctx, override); err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, nil)
 }
 
 // AdminRejectInvoice 管理员拒绝开票申请
