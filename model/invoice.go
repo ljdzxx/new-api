@@ -75,13 +75,13 @@ func GetInvoicesByTopUpIds(topUpIds []int) (map[int]*Invoice, error) {
 }
 
 // GetUserInvoiceableTopUps 查询用户可参与开票的充值记录：
-// 支付成功、在完成时间上线之后，且支付通道为 EPay 或兑换码兑换（实付金额大于 0）
-func GetUserInvoiceableTopUps(userId int, onlineTs int64, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+// 支付成功、在完成时间上线之后、支付通道为 EPay 或兑换码兑换，且实付金额大于等于开票阈值。
+func GetUserInvoiceableTopUps(userId int, onlineTs int64, minAmount float64, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
 	query := DB.Model(&TopUp{}).
 		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
 		Where("complete_time >= ?", onlineTs).
-		Where("(payment_provider = ? OR (payment_method = ? AND money > 0))",
-			PaymentProviderEpay, PaymentMethodRedemption)
+		Where("(payment_provider = ? OR payment_method = ?)", PaymentProviderEpay, PaymentMethodRedemption).
+		Where("money >= ?", minAmount)
 
 	if err = query.Count(&total).Error; err != nil {
 		return nil, 0, err

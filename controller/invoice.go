@@ -27,6 +27,11 @@ const (
 	InvoiceTopUpStatusIssued       = "issued"       // 已开具
 )
 
+// invoiceAmountMeetsMinimum 判断单笔实付金额是否达到开票阈值（含等于）。
+func invoiceAmountMeetsMinimum(amount, minAmount float64) bool {
+	return amount >= minAmount
+}
+
 const invoiceFileMaxSize = 20 << 20 // 20MB
 
 var invoiceAllowedExts = map[string]string{
@@ -65,7 +70,9 @@ func GetUserInvoiceTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	setting := operation_setting.GetInvoiceSetting()
 
-	topups, total, err := model.GetUserInvoiceableTopUps(userId, setting.OnlineTimestamp(), pageInfo)
+	topups, total, err := model.GetUserInvoiceableTopUps(
+		userId, setting.OnlineTimestamp(), setting.MinAmount, pageInfo,
+	)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -92,7 +99,7 @@ func GetUserInvoiceTopUps(c *gin.Context) {
 			} else {
 				status = InvoiceTopUpStatusApplied
 			}
-		} else if topup.Money < setting.MinAmount {
+		} else if !invoiceAmountMeetsMinimum(topup.Money, setting.MinAmount) {
 			status = InvoiceTopUpStatusInsufficient
 		}
 		items = append(items, gin.H{
@@ -193,7 +200,7 @@ func ApplyInvoice(c *gin.Context) {
 		common.ApiErrorMsg(c, "该订单的支付方式不支持申请开票")
 		return
 	}
-	if topUp.Money < setting.MinAmount {
+	if !invoiceAmountMeetsMinimum(topUp.Money, setting.MinAmount) {
 		common.ApiErrorMsg(c, fmt.Sprintf("单笔充值金额达到 %v 才可申请开票", setting.MinAmount))
 		return
 	}

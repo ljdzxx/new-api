@@ -49,18 +49,20 @@ func TestGetUserInvoiceableTopUpsFiltering(t *testing.T) {
 	onlineTs := time.Date(2026, 8, 1, 0, 0, 0, 0, time.Local).Unix()
 	after := onlineTs + 3600
 	before := onlineTs - 3600
+	minAmount := 300.0
 
-	// 符合条件：EPay 且支付成功（金额达标 / 不达标都应出现在列表中）
-	eligibleEpay := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 500, after)
-	eligibleEpayLowAmount := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "wxpay", common.TopUpStatusSuccess, 100, after)
-	// 符合条件：兑换码兑换且实付金额大于 0
-	eligibleRedemption := insertInvoiceTopUp(t, user.Id, PaymentProviderMall, PaymentMethodRedemption, common.TopUpStatusSuccess, 50, after)
+	// 符合条件：金额大于或等于阈值（等于阈值必须能查出）
+	eligibleEpayEqual := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, minAmount, after)
+	eligibleEpayAbove := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "wxpay", common.TopUpStatusSuccess, minAmount+0.01, after)
+	eligibleRedemptionEqual := insertInvoiceTopUp(t, user.Id, PaymentProviderMall, PaymentMethodRedemption, common.TopUpStatusSuccess, minAmount, after)
+	// 不符合：金额小于阈值
+	ineligibleBelowAmount := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, minAmount-0.01, after)
 
 	// 不符合：未支付成功
 	insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusPending, 500, after)
 	// 不符合：非 EPay 通道
 	insertInvoiceTopUp(t, user.Id, PaymentProviderStripe, "stripe", common.TopUpStatusSuccess, 500, after)
-	// 不符合：兑换码实付金额为 0
+	// 不符合：兑换码实付金额为 0（也低于阈值）
 	insertInvoiceTopUp(t, user.Id, PaymentProviderMall, PaymentMethodRedemption, common.TopUpStatusSuccess, 0, after)
 	// 不符合：上线时间之前完成
 	insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 500, before)
@@ -68,7 +70,7 @@ func TestGetUserInvoiceableTopUpsFiltering(t *testing.T) {
 	insertInvoiceTopUp(t, other.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 500, after)
 
 	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
-	topups, total, err := GetUserInvoiceableTopUps(user.Id, onlineTs, pageInfo)
+	topups, total, err := GetUserInvoiceableTopUps(user.Id, onlineTs, minAmount, pageInfo)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 
@@ -76,9 +78,10 @@ func TestGetUserInvoiceableTopUpsFiltering(t *testing.T) {
 	for _, topup := range topups {
 		ids[topup.Id] = true
 	}
-	assert.True(t, ids[eligibleEpay.Id])
-	assert.True(t, ids[eligibleEpayLowAmount.Id])
-	assert.True(t, ids[eligibleRedemption.Id])
+	assert.True(t, ids[eligibleEpayEqual.Id])
+	assert.True(t, ids[eligibleEpayAbove.Id])
+	assert.True(t, ids[eligibleRedemptionEqual.Id])
+	assert.False(t, ids[ineligibleBelowAmount.Id])
 }
 
 func TestInvoiceUniqueTopUpAndReapply(t *testing.T) {

@@ -424,7 +424,10 @@ const InvoicePage = () => {
               <div>
                 <Text strong>{t('可申请充值')}</Text>
                 <Text type='tertiary' size='small' className='block'>
-                  {t('单笔充值金额达到')} {config.min_amount}{' '}
+                  {t('单笔充值金额达到')}
+                  <Text type='success' size='normal' strong className='mx-1'>
+                    {config.min_amount}
+                  </Text>
                   {t('才可申请开票')}
                 </Text>
               </div>
