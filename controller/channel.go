@@ -150,6 +150,9 @@ func GetAllChannels(c *gin.Context) {
 	if err := model.FillChannelsTodayUsedQuota(channelData); err != nil {
 		common.SysError("failed to fill channels today used quota: " + err.Error())
 	}
+	if err := model.FillChannelsQuotaInsufficientMark(channelData); err != nil {
+		common.SysError("failed to fill channels quota insufficient mark: " + err.Error())
+	}
 
 	countQuery := model.DB.Model(&model.Channel{})
 	if statusFilter == common.ChannelStatusEnabled {
@@ -350,6 +353,9 @@ func SearchChannels(c *gin.Context) {
 	}
 	if err := model.FillChannelsTodayUsedQuota(pagedData); err != nil {
 		common.SysError("failed to fill channels today used quota: " + err.Error())
+	}
+	if err := model.FillChannelsQuotaInsufficientMark(pagedData); err != nil {
+		common.SysError("failed to fill channels quota insufficient mark: " + err.Error())
 	}
 
 	c.JSON(http.StatusOK, gin.H{

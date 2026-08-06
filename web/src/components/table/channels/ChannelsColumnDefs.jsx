@@ -493,6 +493,7 @@ export const getChannelsColumns = ({
       title: t('状态'),
       dataIndex: 'status',
       render: (text, record, index) => {
+        let statusNode;
         if (text === 3) {
           if (record.other_info === '') {
             record.other_info = '{}';
@@ -500,20 +501,41 @@ export const getChannelsColumns = ({
           let otherInfo = JSON.parse(record.other_info);
           let reason = otherInfo['status_reason'];
           let time = otherInfo['status_time'];
-          return (
-            <div>
-              <Tooltip
-                content={
-                  t('原因：') + reason + t('，时间：') + timestamp2string(time)
-                }
-              >
-                {renderStatus(text, record.channel_info, t)}
-              </Tooltip>
-            </div>
+          statusNode = (
+            <Tooltip
+              content={
+                t('原因：') + reason + t('，时间：') + timestamp2string(time)
+              }
+            >
+              {renderStatus(text, record.channel_info, t)}
+            </Tooltip>
           );
         } else {
-          return renderStatus(text, record.channel_info, t);
+          statusNode = renderStatus(text, record.channel_info, t);
         }
+        const quotaMark = record.quota_insufficient_mark;
+        if (!quotaMark) {
+          return <div>{statusNode}</div>;
+        }
+        return (
+          <div className='flex items-center gap-1 flex-wrap'>
+            {statusNode}
+            <Tooltip
+              content={
+                t('该渠道今日已被标记为欠费（上游额度不足），选路时将被自动跳过') +
+                (quotaMark.reason
+                  ? t('，原因：') + quotaMark.reason
+                  : '') +
+                t('，恢复时间：') +
+                timestamp2string(quotaMark.expire_at)
+              }
+            >
+              <Tag color='red' shape='circle' type='solid'>
+                {t('欠费')}
+              </Tag>
+            </Tooltip>
+          </div>
+        );
       },
     },
     {

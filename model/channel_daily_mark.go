@@ -70,6 +70,55 @@ func CleanupExpiredChannelDailyMarks() error {
 	return DB.Where("expire_at <= ?", nowTs).Delete(&ChannelDailyMark{}).Error
 }
 
+// QuotaInsufficientMarkInfo 用于控制台展示当日"额度不足"标记详情
+type QuotaInsufficientMarkInfo struct {
+	Reason   string `json:"reason"`
+	ExpireAt int64  `json:"expire_at"`
+}
+
+// FillChannelsQuotaInsufficientMark 批量填充渠道的当日"额度不足"标记信息（仅未过期的）
+func FillChannelsQuotaInsufficientMark(channels []*Channel) error {
+	if len(channels) == 0 || DB == nil {
+		return nil
+	}
+	ids := make([]int, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		ids = append(ids, channel.Id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	nowTs := time.Now().Unix()
+	var marks []ChannelDailyMark
+	err := DB.Where("mark_type = ? AND expire_at > ? AND channel_id IN ?",
+		ChannelDailyMarkTypeQuotaInsufficient, nowTs, ids).Find(&marks).Error
+	if err != nil {
+		return err
+	}
+	if len(marks) == 0 {
+		return nil
+	}
+	markMap := make(map[int]*ChannelDailyMark, len(marks))
+	for i := range marks {
+		markMap[marks[i].ChannelID] = &marks[i]
+	}
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if mark, ok := markMap[channel.Id]; ok {
+			channel.QuotaInsufficientMark = &QuotaInsufficientMarkInfo{
+				Reason:   mark.Reason,
+				ExpireAt: mark.ExpireAt,
+			}
+		}
+	}
+	return nil
+}
+
 func GetQuotaInsufficientMarkedSet(channelIDs []int) (map[int]struct{}, error) {
 	result := make(map[int]struct{})
 	if len(channelIDs) == 0 || DB == nil {
