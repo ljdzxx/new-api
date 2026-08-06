@@ -166,6 +166,8 @@ export default function SettingsInvoice(props) {
         values={inputs}
         getFormApi={(formAPI) => (refForm.current = formAPI)}
         style={{ marginBottom: 15 }}
+        autoComplete='off'
+        data-form-type='other'
       >
         <Form.Section text={t('发票设置')}>
           <Banner
@@ -192,7 +194,9 @@ export default function SettingsInvoice(props) {
                 field={'invoice_setting.online_time'}
                 label={t('开票上线时间')}
                 placeholder={'2026-08-01 00:00:00'}
-                extraText={t('仅此时间之后完成的订单才能申请开票，格式：2006-01-02 15:04:05')}
+                extraText={t(
+                  '仅此时间之后完成的订单才能申请开票，格式：2006-01-02 15:04:05',
+                )}
                 onChange={handleFieldChange('invoice_setting.online_time')}
                 showClear
               />
@@ -222,8 +226,12 @@ export default function SettingsInvoice(props) {
             <Col xs={24} sm={12} md={8} lg={8} xl={8}>
               <Form.Input
                 field={'invoice_setting.r2_account_id'}
+                name='invoice-r2-account-id'
                 label={t('R2 Account ID')}
                 placeholder={t('Cloudflare Account ID')}
+                autoComplete='off'
+                data-1p-ignore
+                data-lpignore='true'
                 onChange={handleFieldChange('invoice_setting.r2_account_id')}
               />
             </Col>
@@ -247,17 +255,25 @@ export default function SettingsInvoice(props) {
             <Col xs={24} sm={12} md={8} lg={8} xl={8}>
               <Form.Input
                 field={'invoice_setting.r2_access_key_id'}
+                name='invoice-r2-access-key-id'
                 label={t('R2 Access Key ID')}
                 placeholder={t('帐户 API 令牌中的访问密钥 ID')}
+                autoComplete='off'
+                data-1p-ignore
+                data-lpignore='true'
                 onChange={handleFieldChange('invoice_setting.r2_access_key_id')}
               />
             </Col>
             <Col xs={24} sm={12} md={8} lg={8} xl={8}>
               <Form.Input
                 field={'invoice_setting.r2_secret'}
+                name='invoice-r2-secret-access-key'
                 label={t('R2 Secret Access Key')}
                 mode='password'
                 placeholder={t('敏感信息不会发送到前端显示')}
+                autoComplete='new-password'
+                data-1p-ignore
+                data-lpignore='true'
                 onChange={handleFieldChange('invoice_setting.r2_secret')}
               />
             </Col>

@@ -42,6 +42,7 @@ const fingerprintObfuscatorPlugin = () => ({
       deadCodeInjectionThreshold: 0.2,
       identifierNamesGenerator: 'hexadecimal',
       renameGlobals: false,
+      seed: 'fingerprint-obfuscation-v1',
       stringArray: true,
       stringArrayEncoding: ['base64'],
       stringArrayThreshold: 1,
