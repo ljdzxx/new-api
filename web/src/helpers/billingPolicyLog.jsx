@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
+import { Typography } from '@douyinfe/semi-ui';
 import { getCurrencyConfig, renderQuota } from './render';
 
 const fieldLabels = {
@@ -53,6 +54,13 @@ const additionalChargeLabels = {
   image_generation: '图片生成调用',
 };
 
+const toolFieldLabels = {
+  'web_search.standard': 'Web搜索（标准）',
+  'web_search.premium': 'Web搜索（高级）',
+  claude_web_search: 'Claude Web搜索',
+  file_search: '文件搜索',
+};
+
 function number(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -66,6 +74,126 @@ function displayUSD(value, digits = 6) {
 function displayRatio(value) {
   const ratio = number(value, 1);
   return Number.isInteger(ratio) ? ratio.toFixed(1) : String(ratio);
+}
+
+export function isToolBillingLineItem(item) {
+  return (
+    item?.kind === 'tool' ||
+    (item?.field !== 'request' && number(item?.units) > 0)
+  );
+}
+
+function toolLabel(field, t) {
+  if (field?.startsWith('image_generation.')) {
+    const [, quality, size] = field.split('.');
+    const detail = [quality, size].filter(Boolean).join(' · ');
+    return detail ? `${t('图片生成调用')} (${detail})` : t('图片生成调用');
+  }
+  return t(toolFieldLabels[field] || additionalChargeLabels[field] || field);
+}
+
+function toolUnitPrice(unit, unitPrice, t) {
+  if (unit === 'per_thousand_calls') {
+    return `${displayUSD(unitPrice)} / 1K ${t('次')}`;
+  }
+  return `${displayUSD(unitPrice)} / ${t('次')}`;
+}
+
+function toolRow(field, units, unit, unitPrice, costUSD, t) {
+  return {
+    field,
+    label: toolLabel(field, t),
+    units: number(units),
+    unit,
+    unitPrice,
+    costUSD,
+  };
+}
+
+export function getBillingPolicyToolRows(other, t) {
+  const snapshot = other?.billing_policy;
+  const lineItems = snapshot?.calculation?.line_items;
+  const toolItems = Array.isArray(lineItems)
+    ? lineItems.filter(isToolBillingLineItem)
+    : [];
+  if (toolItems.length > 0) {
+    return toolItems.map((item) =>
+      toolRow(
+        item.field,
+        item.units,
+        item.unit ||
+          (item.field?.startsWith('image_generation.')
+            ? 'per_request'
+            : 'per_thousand_calls'),
+        item.unit_price,
+        item.cost_usd,
+        t,
+      ),
+    );
+  }
+
+  const structuredCharges = Array.isArray(snapshot?.additional_charges)
+    ? snapshot.additional_charges.filter(
+        (charge) => charge?.field !== 'audio_input',
+      )
+    : [];
+  if (structuredCharges.length > 0) {
+    return structuredCharges.map((charge) =>
+      toolRow(
+        charge.field,
+        charge.units,
+        charge.unit,
+        charge.unit_price,
+        charge.cost_usd,
+        t,
+      ),
+    );
+  }
+
+  const rows = [];
+  const appendLegacy = (
+    field,
+    units,
+    unitPrice,
+    unit = 'per_thousand_calls',
+  ) => {
+    if (number(units) <= 0 || number(unitPrice) <= 0) {
+      return;
+    }
+    const divisor = unit === 'per_thousand_calls' ? 1000 : 1;
+    rows.push(
+      toolRow(
+        field,
+        units,
+        unit,
+        unitPrice,
+        (number(units) * number(unitPrice)) / divisor,
+        t,
+      ),
+    );
+  };
+  appendLegacy(
+    'web_search',
+    other?.web_search_call_count,
+    other?.web_search_price,
+  );
+  appendLegacy(
+    'claude_web_search',
+    other?.claude_web_search_call_count,
+    other?.claude_web_search_price,
+  );
+  appendLegacy(
+    'file_search',
+    other?.file_search_call_count,
+    other?.file_search_price,
+  );
+  appendLegacy(
+    'image_generation',
+    other?.image_generation_call ? 1 : 0,
+    other?.image_generation_call_price,
+    'per_request',
+  );
+  return rows;
 }
 
 export function getBillingPolicyModeLabel(other, t) {
@@ -99,7 +227,13 @@ export function getBillingPolicyLogLines(other, t, showTokenScaling = false) {
         .join('×')
     : '';
 
+  const toolRows = getBillingPolicyToolRows(other, t);
+  let modelSubtotal = 0;
   for (const item of calculation.line_items) {
+    if (isToolBillingLineItem(item)) {
+      continue;
+    }
+    modelSubtotal += number(item.cost_usd);
     if (item.field === 'request') {
       lines.push(
         `${t('按次')}：1 × ${displayUSD(item.unit_price)} = ${displayUSD(item.cost_usd)}`,
@@ -118,7 +252,15 @@ export function getBillingPolicyLogLines(other, t, showTokenScaling = false) {
     );
   }
 
-  lines.push(`${t('模型计费小计')}：${displayUSD(calculation.subtotal_usd)}`);
+  if (toolRows.length > 0) {
+    const toolSubtotal = toolRows.reduce(
+      (total, row) => total + number(row.costUSD),
+      0,
+    );
+    lines.push(`${t('模型费用小计')}：${displayUSD(modelSubtotal)}`);
+    lines.push(`${t('工具费用小计')}：${displayUSD(toolSubtotal)}`);
+  }
+  lines.push(`${t('计费小计')}：${displayUSD(calculation.subtotal_usd)}`);
 
   for (const adjustment of calculation.applied_adjustments || []) {
     lines.push(`${t('策略调整')} ${adjustment.id}：× ${adjustment.multiplier}`);
@@ -127,55 +269,6 @@ export function getBillingPolicyLogLines(other, t, showTokenScaling = false) {
     lines.push(
       `${t('策略调整后')}：${displayUSD(calculation.total_usd)}（× ${calculation.adjustment_multiplier}）`,
     );
-  }
-
-  const hasStructuredCharges = Object.prototype.hasOwnProperty.call(
-    snapshot,
-    'additional_charges',
-  );
-  for (const charge of snapshot.additional_charges || []) {
-    const label = t(additionalChargeLabels[charge.field] || charge.field);
-    const denominator =
-      charge.unit === 'per_thousand_calls'
-        ? ' / 1K'
-        : charge.unit === 'per_million_tokens'
-          ? ' / 1M'
-          : '';
-    lines.push(
-      `${label}：${number(charge.units).toLocaleString()} × ${displayUSD(charge.unit_price)}${denominator} = ${displayUSD(charge.cost_usd)}`,
-    );
-  }
-  if (hasStructuredCharges && number(snapshot.additional_charges_usd) > 0) {
-    lines.push(
-      `${t('附加费用小计')}：${displayUSD(snapshot.additional_charges_usd)}`,
-    );
-  }
-  if (hasStructuredCharges) {
-    lines.push(
-      `${t('结算前小计')}：${displayUSD(snapshot.billable_subtotal_usd)}`,
-    );
-  } else {
-    // Compatibility for active-policy logs written before structured charges.
-    if (other?.web_search_call_count > 0) {
-      lines.push(
-        `${t('Web搜索')}：${other.web_search_call_count} × ${displayUSD(number(other.web_search_price) / 1000)}`,
-      );
-    }
-    if (other?.file_search_call_count > 0) {
-      lines.push(
-        `${t('文件搜索')}：${other.file_search_call_count} × ${displayUSD(number(other.file_search_price) / 1000)}`,
-      );
-    }
-    if (other?.image_generation_call_price > 0) {
-      lines.push(
-        `${t('图片生成调用')}：${displayUSD(other.image_generation_call_price)}`,
-      );
-    }
-    if (other?.audio_input_token_count > 0 && other?.audio_input_price > 0) {
-      lines.push(
-        `${t('音频输入')}：${number(other.audio_input_token_count).toLocaleString()} × ${displayUSD(other.audio_input_price)} / 1M`,
-      );
-    }
   }
 
   const baseGroupRatio = number(other?.base_group_ratio, NaN);
@@ -213,6 +306,7 @@ export function renderBillingPolicyLogDetail(
   showTokenScaling = false,
 ) {
   const lines = getBillingPolicyLogLines(other, t, showTokenScaling);
+  const toolRows = getBillingPolicyToolRows(other, t);
   if (!lines.length) {
     return null;
   }
@@ -221,6 +315,56 @@ export function renderBillingPolicyLogDetail(
       {lines.map((line, index) => (
         <p key={`${index}-${line}`}>{line}</p>
       ))}
+      {toolRows.length > 0 && (
+        <div style={{ marginTop: 12, overflowX: 'auto' }}>
+          <Typography.Text strong>{t('工具费用明细')}</Typography.Text>
+          <table
+            style={{
+              width: '100%',
+              minWidth: 520,
+              marginTop: 8,
+              borderCollapse: 'collapse',
+              fontSize: 12,
+            }}
+          >
+            <thead>
+              <tr style={{ background: 'var(--semi-color-fill-0)' }}>
+                {[t('项目'), t('用量'), t('单价'), t('小计')].map((heading) => (
+                  <th
+                    key={heading}
+                    style={{
+                      padding: '7px 10px',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {toolRows.map((row, index) => (
+                <tr
+                  key={`${row.field}-${index}`}
+                  style={{ borderBottom: '1px solid var(--semi-color-border)' }}
+                >
+                  <td style={{ padding: '8px 10px' }}>{row.label}</td>
+                  <td style={{ padding: '8px 10px' }}>
+                    {number(row.units).toLocaleString()} {t('次')}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    {toolUnitPrice(row.unit, row.unitPrice, t)}
+                  </td>
+                  <td style={{ padding: '8px 10px' }}>
+                    {displayUSD(row.costUSD)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </article>
   );
 }

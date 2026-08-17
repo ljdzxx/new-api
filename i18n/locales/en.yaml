@@ -255,6 +255,7 @@ distributor.no_available_channel: "No available channel for model {{.Model}} und
 distributor.invalid_midjourney_request: "Invalid Midjourney request: {{.Error}}"
 distributor.invalid_request_parse_model: "Invalid request, unable to parse model"
 distributor.image_model_requires_image_endpoint: "Image generation model {{.Model}} must be called through /v1/images/generations or /v1/images/edits"
+distributor.compact_model_requires_compact_endpoint: "Compact virtual model {{.Model}} cannot be requested directly; call /v1/responses/compact with the base model name"
 
 # Custom OAuth provider messages
 custom_oauth.not_found: "Custom OAuth provider not found"

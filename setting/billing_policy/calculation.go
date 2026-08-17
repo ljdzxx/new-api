@@ -29,12 +29,20 @@ type BillingUsage struct {
 
 type BillingLineItem struct {
 	Field           string `json:"field"`
+	Kind            string `json:"kind,omitempty"`
+	Unit            string `json:"unit,omitempty"`
 	Tokens          int64  `json:"tokens,omitempty"`
 	Units           int64  `json:"units,omitempty"`
 	PricePerMillion string `json:"price_per_million,omitempty"`
 	UnitPrice       string `json:"unit_price,omitempty"`
 	CostUSD         string `json:"cost_usd"`
 }
+
+const (
+	BillingLineItemKindToken   = "token"
+	BillingLineItemKindRequest = "request"
+	BillingLineItemKindTool    = "tool"
+)
 
 type BillingCalculation struct {
 	Mode                 string              `json:"mode"`
@@ -96,7 +104,8 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 		}
 		subtotal = price
 		result.LineItems = append(result.LineItems, BillingLineItem{
-			Field: "request", Units: 1, UnitPrice: price.String(), CostUSD: price.String(),
+			Field: "request", Kind: BillingLineItemKindRequest, Unit: "per_request",
+			Units: 1, UnitPrice: price.String(), CostUSD: price.String(),
 		})
 	} else {
 		tierInputTotal := usage.TierInputTotalTokens
@@ -155,7 +164,8 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 			cost := decimal.NewFromInt(field.tokens).Mul(price).Div(million)
 			subtotal = subtotal.Add(cost)
 			result.LineItems = append(result.LineItems, BillingLineItem{
-				Field: field.name, Tokens: field.tokens, PricePerMillion: price.String(), CostUSD: cost.String(),
+				Field: field.name, Kind: BillingLineItemKindToken, Unit: "per_million_tokens",
+				Tokens: field.tokens, PricePerMillion: price.String(), CostUSD: cost.String(),
 			})
 		}
 	}
@@ -177,7 +187,8 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 		}
 		subtotal = subtotal.Add(cost)
 		result.LineItems = append(result.LineItems, BillingLineItem{
-			Field: name, Units: units, UnitPrice: price.String(), CostUSD: cost.String(),
+			Field: name, Kind: BillingLineItemKindTool, Unit: tool.Unit,
+			Units: units, UnitPrice: price.String(), CostUSD: cost.String(),
 		})
 	}
 

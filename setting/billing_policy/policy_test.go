@@ -32,6 +32,40 @@ func TestResolvePrefersExactThenMostSpecificWildcard(t *testing.T) {
 	assert.Equal(t, "2", policy.Prices.Input)
 }
 
+func TestResolveCompactPolicyFallbackOrder(t *testing.T) {
+	policies := map[string]Policy{
+		"*":                            testTokenPolicy("9"),
+		"gpt-5.4":                      testTokenPolicy("1"),
+		"*-openai-compact":             testTokenPolicy("2"),
+		"gpt-5.4-openai-compact":       testTokenPolicy("3"),
+		"gpt-5.3-*":                    testTokenPolicy("4"),
+		"gpt-5.3-codex-openai-compact": testTokenPolicy("5"),
+	}
+
+	policy, ok := resolvePolicy(policies, "gpt-5.4-openai-compact")
+	require.True(t, ok)
+	assert.Equal(t, "3", policy.Prices.Input)
+
+	delete(policies, "gpt-5.4-openai-compact")
+	policy, ok = resolvePolicy(policies, "gpt-5.4-openai-compact")
+	require.True(t, ok)
+	assert.Equal(t, "2", policy.Prices.Input)
+
+	delete(policies, "*-openai-compact")
+	policy, ok = resolvePolicy(policies, "gpt-5.4-openai-compact")
+	require.True(t, ok)
+	assert.Equal(t, "1", policy.Prices.Input)
+
+	policy, ok = resolvePolicy(policies, "gpt-5.3-codex-openai-compact")
+	require.True(t, ok)
+	assert.Equal(t, "5", policy.Prices.Input)
+
+	delete(policies, "gpt-5.3-codex-openai-compact")
+	policy, ok = resolvePolicy(policies, "gpt-5.3-codex-openai-compact")
+	require.True(t, ok)
+	assert.Equal(t, "4", policy.Prices.Input)
+}
+
 func TestSourceChecksumIsOrderIndependent(t *testing.T) {
 	a := SourceChecksum(map[string]string{"a": "1", "b": "2"})
 	b := SourceChecksum(map[string]string{"b": "2", "a": "1"})

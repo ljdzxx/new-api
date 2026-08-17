@@ -361,7 +361,7 @@ export const useLogsData = () => {
     }
     setParamOverrideTarget({
       lines,
-      modelName: log?.model_name || '',
+      modelName: other?.client_model || log?.model_name || '',
       requestId: log?.request_id || '',
       requestPath: other?.request_path || '',
     });
@@ -498,11 +498,24 @@ export const useLogsData = () => {
           other?.is_model_mapped &&
           other?.upstream_model_name &&
           other?.upstream_model_name !== '';
-        if (isRootUser && modelMapped) {
+        if (other?.client_model) {
           expandDataLocal.push({
-            key: t('请求并计费模型'),
-            value: logs[i].model_name,
+            key: t('客户端模型'),
+            value: other.client_model,
           });
+        }
+        const routingModel = other?.admin_info?.routing_model;
+        if (
+          isRootUser &&
+          routingModel &&
+          routingModel !== other?.client_model
+        ) {
+          expandDataLocal.push({
+            key: t('路由/计费模型'),
+            value: routingModel,
+          });
+        }
+        if (isRootUser && modelMapped) {
           expandDataLocal.push({
             key: t('实际模型'),
             value: other.upstream_model_name,

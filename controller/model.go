@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -201,6 +202,7 @@ func ListModels(c *gin.Context, modelType int) {
 			}
 		}
 	}
+	userOpenAiModels = filterCompactVirtualModels(userOpenAiModels)
 
 	switch modelType {
 	case constant.ChannelTypeAnthropic:
@@ -213,11 +215,17 @@ func ListModels(c *gin.Context, modelType int) {
 				Type:        "model",
 			}
 		}
+		firstID := ""
+		lastID := ""
+		if len(useranthropicModels) > 0 {
+			firstID = useranthropicModels[0].ID
+			lastID = useranthropicModels[len(useranthropicModels)-1].ID
+		}
 		c.JSON(200, gin.H{
 			"data":     useranthropicModels,
-			"first_id": useranthropicModels[0].ID,
+			"first_id": firstID,
 			"has_more": false,
-			"last_id":  useranthropicModels[len(useranthropicModels)-1].ID,
+			"last_id":  lastID,
 		})
 	case constant.ChannelTypeGemini:
 		userGeminiModels := make([]dto.GeminiModel, len(userOpenAiModels))
@@ -263,6 +271,10 @@ func EnabledListModels(c *gin.Context) {
 
 func RetrieveModel(c *gin.Context, modelType int) {
 	modelId := c.Param("model")
+	if isCompactVirtualModel(modelId) {
+		respondModelNotFound(c, modelId)
+		return
+	}
 	if aiModel, ok := openAIModelsMap[modelId]; ok {
 		switch modelType {
 		case constant.ChannelTypeAnthropic:
@@ -276,14 +288,28 @@ func RetrieveModel(c *gin.Context, modelType int) {
 			c.JSON(200, aiModel)
 		}
 	} else {
-		openAIError := types.OpenAIError{
-			Message: fmt.Sprintf("The model '%s' does not exist", modelId),
-			Type:    "invalid_request_error",
-			Param:   "model",
-			Code:    "model_not_found",
-		}
-		c.JSON(200, gin.H{
-			"error": openAIError,
-		})
+		respondModelNotFound(c, modelId)
 	}
+}
+
+func filterCompactVirtualModels(models []dto.OpenAIModels) []dto.OpenAIModels {
+	return lo.Filter(models, func(item dto.OpenAIModels, _ int) bool {
+		return !isCompactVirtualModel(item.Id)
+	})
+}
+
+func isCompactVirtualModel(modelName string) bool {
+	return strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix)
+}
+
+func respondModelNotFound(c *gin.Context, modelId string) {
+	openAIError := types.OpenAIError{
+		Message: fmt.Sprintf("The model '%s' does not exist", modelId),
+		Type:    "invalid_request_error",
+		Param:   "model",
+		Code:    "model_not_found",
+	}
+	c.JSON(200, gin.H{
+		"error": openAIError,
+	})
 }

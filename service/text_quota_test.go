@@ -766,3 +766,97 @@ func TestCalculateTextQuotaSummaryUsesGlobalModelRatio(t *testing.T) {
 	require.Equal(t, 112, summary.CompletionTokens)
 	require.Equal(t, 56064, summary.CacheTokens)
 }
+
+func TestCalculateTextQuotaSummaryGlobalModelRatiosDoNotScaleToolCharges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	policy := fullTextBillingPolicy()
+	policy.Prices = billing_policy.Prices{Input: "1"}
+	policy.Tools = map[string]billing_policy.ToolPrice{
+		billing_policy.ToolWebSearchStandard: {Unit: "per_thousand_calls", Price: "10"},
+	}
+	installActiveBillingPolicyForTest(t, "gpt-5-tool-ratio", policy)
+
+	calculate := func(systemRatio, channelRatio, userRatio float64) textQuotaSummary {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		ctx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+		globalRatio := systemRatio * channelRatio * userRatio
+		relayInfo := &relaycommon.RelayInfo{
+			OriginModelName: "gpt-5-tool-ratio",
+			PriceData: types.PriceData{
+				SystemGlobalModelRatio:    systemRatio,
+				ChannelModelRatio:         channelRatio,
+				UserGlobalModelRatio:      userRatio,
+				GlobalModelRatio:          globalRatio,
+				GlobalRatioConfigSnapshot: true,
+				GroupRatioInfo:            types.GroupRatioInfo{GroupRatio: 1},
+			},
+			ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+				dto.BuildInToolWebSearchPreview: {CallCount: 2},
+			}},
+			StartTime: time.Now(),
+		}
+		return calculateTextQuotaSummary(ctx, relayInfo, &dto.Usage{
+			PromptTokens: 1_000_000,
+			TotalTokens:  1_000_000,
+		})
+	}
+
+	findLineItem := func(summary textQuotaSummary, field string) billing_policy.BillingLineItem {
+		require.NotNil(t, summary.PolicyCalculation)
+		for _, item := range summary.PolicyCalculation.LineItems {
+			if item.Field == field {
+				return item
+			}
+		}
+		return billing_policy.BillingLineItem{}
+	}
+
+	base := calculate(1, 1, 1)
+	baseTool := findLineItem(base, billing_policy.ToolWebSearchStandard)
+	require.Equal(t, int64(2), baseTool.Units)
+	require.Equal(t, int64(1_000_000), findLineItem(base, "input").Tokens)
+	require.Equal(t, 510000, base.Quota)
+
+	tests := []struct {
+		name                                 string
+		systemRatio, channelRatio, userRatio float64
+		expectedTokens                       int64
+		expectedQuota                        int
+	}{
+		{name: "system", systemRatio: 2, channelRatio: 1, userRatio: 1, expectedTokens: 2_000_000, expectedQuota: 1_010_000},
+		{name: "channel", systemRatio: 1, channelRatio: 3, userRatio: 1, expectedTokens: 3_000_000, expectedQuota: 1_510_000},
+		{name: "user", systemRatio: 1, channelRatio: 1, userRatio: 4, expectedTokens: 4_000_000, expectedQuota: 2_010_000},
+		{name: "combined", systemRatio: 2, channelRatio: 3, userRatio: 4, expectedTokens: 24_000_000, expectedQuota: 12_010_000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scaled := calculate(tt.systemRatio, tt.channelRatio, tt.userRatio)
+			require.Equal(t, baseTool, findLineItem(scaled, billing_policy.ToolWebSearchStandard))
+			require.Equal(t, "0.02", findLineItem(scaled, billing_policy.ToolWebSearchStandard).CostUSD)
+			require.Equal(t, tt.expectedTokens, findLineItem(scaled, "input").Tokens)
+			require.Equal(t, tt.expectedQuota, scaled.Quota)
+		})
+	}
+}
+
+func TestGenerateTextOtherInfoRecordsCompactClientIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/responses/compact", nil)
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-5.4-openai-compact",
+		ClientModelName: "gpt-5.4",
+		ChannelMeta:     &relaycommon.ChannelMeta{},
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+	}
+
+	other := GenerateTextOtherInfo(ctx, relayInfo, 1, 1, 1, 0, 1, 0, -1)
+
+	require.Equal(t, "gpt-5.4", other["client_model"])
+	require.Equal(t, "/v1/responses/compact", other["request_path"])
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "gpt-5.4-openai-compact", adminInfo["routing_model"])
+}

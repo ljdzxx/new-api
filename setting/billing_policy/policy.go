@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/shopspring/decimal"
 )
 
@@ -167,10 +168,26 @@ func resolvePolicy(policies map[string]Policy, modelName string) (Policy, bool) 
 	if policy, ok := policies[modelName]; ok {
 		return clonePolicy(policy), true
 	}
+	if strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix) {
+		if policy, ok := resolveWildcardPolicy(policies, modelName, true); ok {
+			return policy, true
+		}
+		baseModelName := strings.TrimSuffix(modelName, ratio_setting.CompactModelSuffix)
+		if policy, ok := resolvePolicy(policies, baseModelName); ok {
+			return policy, true
+		}
+	}
+	return resolveWildcardPolicy(policies, modelName, false)
+}
+
+func resolveWildcardPolicy(policies map[string]Policy, modelName string, compactOnly bool) (Policy, bool) {
 	bestKey := ""
 	var best Policy
 	for key, policy := range policies {
 		if !strings.Contains(key, "*") || !wildcardMatch(key, modelName) {
+			continue
+		}
+		if compactOnly && !strings.HasSuffix(key, ratio_setting.CompactModelSuffix) {
 			continue
 		}
 		specificity := len(strings.ReplaceAll(key, "*", ""))

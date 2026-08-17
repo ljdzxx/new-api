@@ -16,6 +16,12 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type unexpectedEOFReader struct{}
+
+func (unexpectedEOFReader) Read([]byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
 func TestSendResponsesKeepAliveWritesIgnoredResponsesEvent(t *testing.T) {
 	t.Parallel()
 
@@ -31,6 +37,31 @@ func TestSendResponsesKeepAliveWritesIgnoredResponsesEvent(t *testing.T) {
 	assert.Contains(t, body, "event: response.keepalive\n")
 	assert.Contains(t, body, `data: {"type":"response.keepalive"}`)
 	assert.True(t, strings.HasSuffix(body, "\n\n"), "SSE event must end with a blank line")
+}
+
+func TestOaiResponsesCompactionHandlerMapsTruncatedUpstreamBodyToBadGateway(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body: io.NopCloser(io.MultiReader(
+			strings.NewReader(`{"id":"cmp_`),
+			unexpectedEOFReader{},
+		)),
+	}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}
+
+	usage, apiErr := OaiResponsesCompactionHandler(c, resp, info)
+
+	require.Nil(t, usage)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+	assert.Equal(t, types.ErrorCodeReadResponseBodyFailed, apiErr.GetErrorCode())
 }
 
 func TestOaiResponsesHandlerScalesClientUsageWithoutMutatingBillingUsage(t *testing.T) {

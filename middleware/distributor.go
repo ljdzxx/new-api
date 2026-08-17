@@ -131,6 +131,19 @@ func Distribute() func(c *gin.Context) {
 			)
 			return
 		}
+		clientModel := common.GetContextKeyString(c, constant.ContextKeyClientModel)
+		if clientModel == "" {
+			clientModel = modelRequest.Model
+		}
+		if shouldRejectClientCompactModel(c.Request.URL.Path, clientModel) {
+			abortWithOpenAiMessage(
+				c,
+				http.StatusBadRequest,
+				i18n.T(c, i18n.MsgDistributorCompactModelRequiresCompactEndpoint, map[string]any{"Model": clientModel}),
+				types.ErrorCodeInvalidRequest,
+			)
+			return
+		}
 		if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
@@ -297,6 +310,13 @@ func shouldRejectImageGenerationModel(path string, modelName string) bool {
 	}
 	relayMode := relayconstant.Path2RelayMode(path)
 	return relayMode != relayconstant.RelayModeImagesGenerations && relayMode != relayconstant.RelayModeImagesEdits
+}
+
+func shouldRejectClientCompactModel(path string, modelName string) bool {
+	if !strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix) {
+		return false
+	}
+	return path == "/v1/responses" || path == "/v1/chat/completions" || path == "/v1/responses/compact"
 }
 
 // getModelFromRequest 从请求中读取模型信息
@@ -472,6 +492,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	}
 
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {
+		common.SetContextKey(c, constant.ContextKeyClientModel, modelRequest.Model)
 		modelRequest.Model = ratio_setting.WithCompactModelSuffix(modelRequest.Model)
 	}
 	return &modelRequest, shouldSelectChannel, nil

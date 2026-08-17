@@ -126,3 +126,74 @@ func TestImageModelEndpointRestriction(t *testing.T) {
 	common.DisableImageGenerationOnNonImageEndpoints = false
 	require.False(t, shouldRejectImageGenerationModel("/v1/chat/completions", "gpt-image-2"))
 }
+
+func TestDistributeRejectsCompactVirtualModelOnNormalEndpoints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+
+	for _, path := range []string{"/v1/chat/completions", "/v1/responses"} {
+		t.Run(path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			nextCalled := false
+			router := gin.New()
+			router.POST(path, Distribute(), func(c *gin.Context) {
+				nextCalled = true
+			})
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(`{"model":"gpt-5.4-openai-compact"}`))
+			req.Header.Set("Content-Type", "application/json")
+
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Equal(t, "false", w.Header().Get("x-should-retry"))
+			require.Contains(t, w.Body.String(), "gpt-5.4-openai-compact")
+			require.False(t, nextCalled)
+		})
+	}
+}
+
+func TestCompactVirtualModelEndpointRestriction(t *testing.T) {
+	require.True(t, shouldRejectClientCompactModel("/v1/chat/completions", "gpt-5.4-openai-compact"))
+	require.True(t, shouldRejectClientCompactModel("/v1/responses", "gpt-5.4-openai-compact"))
+	require.True(t, shouldRejectClientCompactModel("/v1/responses/compact", "gpt-5.4-openai-compact"))
+	require.False(t, shouldRejectClientCompactModel("/v1/responses", "gpt-5.4"))
+	require.False(t, shouldRejectClientCompactModel("/v1/responses/compact", "gpt-5.4"))
+}
+
+func TestGetModelRequestCapturesCompactClientModelBeforeRoutingSuffix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewBufferString(`{"model":"gpt-5.4"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	request, _, err := getModelRequest(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.4", common.GetContextKeyString(ctx, constant.ContextKeyClientModel))
+	require.Equal(t, "gpt-5.4-openai-compact", request.Model)
+	require.False(t, shouldRejectClientCompactModel(
+		ctx.Request.URL.Path,
+		common.GetContextKeyString(ctx, constant.ContextKeyClientModel),
+	))
+}
+
+func TestDistributeRejectsCompactVirtualModelOnCompactEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	require.NoError(t, i18n.Init())
+	w := httptest.NewRecorder()
+	nextCalled := false
+	router := gin.New()
+	router.POST("/v1/responses/compact", Distribute(), func(c *gin.Context) {
+		nextCalled = true
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewBufferString(`{"model":"gpt-5.4-openai-compact"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Equal(t, "false", w.Header().Get("x-should-retry"))
+	require.Contains(t, w.Body.String(), "gpt-5.4-openai-compact")
+	require.False(t, nextCalled)
+}

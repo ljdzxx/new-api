@@ -188,6 +188,47 @@ func TestCalculateBillingIncludesPolicyToolPricesAndFrozenAdjustment(t *testing.
 	assert.Equal(t, "0.031", calculation.SubtotalUSD)
 	assert.Equal(t, "0.062", calculation.TotalUSD)
 	assert.Equal(t, []AppliedAdjustment{{ID: "frozen-rule", Multiplier: "2"}}, calculation.AppliedAdjustments)
+	lineItems := make(map[string]BillingLineItem, len(calculation.LineItems))
+	for _, item := range calculation.LineItems {
+		lineItems[item.Field] = item
+	}
+	assert.Equal(t, BillingLineItemKindTool, lineItems[ToolWebSearchStandard].Kind)
+	assert.Equal(t, "per_thousand_calls", lineItems[ToolWebSearchStandard].Unit)
+	assert.Equal(t, BillingLineItemKindTool, lineItems[ToolImagePrefix+"low.1024x1024"].Kind)
+	assert.Equal(t, "per_request", lineItems[ToolImagePrefix+"low.1024x1024"].Unit)
+}
+
+func TestCalculateBillingModelTokenScalingDoesNotScaleToolCharges(t *testing.T) {
+	policy := testTokenPolicy("1")
+	policy.Tools = map[string]ToolPrice{
+		ToolWebSearchStandard: {Unit: "per_thousand_calls", Price: "10"},
+	}
+
+	base, err := CalculateBilling(policy, BillingUsage{
+		InputTokens: 1_000_000,
+		ToolUsage:   map[string]int64{ToolWebSearchStandard: 2},
+	}, RequestContext{})
+	require.NoError(t, err)
+	scaled, err := CalculateBilling(policy, BillingUsage{
+		InputTokens: 6_000_000,
+		ToolUsage:   map[string]int64{ToolWebSearchStandard: 2},
+	}, RequestContext{})
+	require.NoError(t, err)
+
+	findTool := func(items []BillingLineItem) BillingLineItem {
+		for _, item := range items {
+			if item.Field == ToolWebSearchStandard {
+				return item
+			}
+		}
+		return BillingLineItem{}
+	}
+	baseTool, scaledTool := findTool(base.LineItems), findTool(scaled.LineItems)
+	assert.Equal(t, int64(2), baseTool.Units)
+	assert.Equal(t, baseTool, scaledTool)
+	assert.Equal(t, "0.02", scaledTool.CostUSD)
+	assert.Equal(t, "1.02", base.SubtotalUSD)
+	assert.Equal(t, "6.02", scaled.SubtotalUSD)
 }
 
 func TestCalculateBillingCacheWrite1hFallsBackTo5mPrice(t *testing.T) {

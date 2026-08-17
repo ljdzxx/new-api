@@ -13,8 +13,10 @@ import (
 // log views, since formatUserLogs strips the whole admin_info object.
 func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	other := common.MapToJsonStr(map[string]interface{}{
-		"model_price": 0.004,
+		"model_price":  0.004,
+		"client_model": "gpt-5.4",
 		"admin_info": map[string]interface{}{
+			"routing_model": "gpt-5.4-openai-compact",
 			"quota_saturation": map[string]interface{}{
 				"op":      "QuotaFromDecimal",
 				"kind":    "overflow",
@@ -32,4 +34,5 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	require.False(t, hasAdminInfo, "admin_info (and nested quota_saturation) must be stripped for non-admin views")
 	// Non-admin billing fields remain visible.
 	require.Contains(t, parsed, "model_price")
+	require.Equal(t, "gpt-5.4", parsed["client_model"])
 }

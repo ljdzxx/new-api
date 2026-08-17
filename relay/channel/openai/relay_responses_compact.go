@@ -1,11 +1,13 @@
 package openai
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
@@ -19,7 +21,17 @@ func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response, info *re
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
+		logger.LogError(c, fmt.Sprintf(
+			"responses compact upstream body read failed: channel_id=%d channel_type=%d api_type=%d model=%q status_code=%d bytes_read=%d err=%v",
+			info.ChannelId,
+			info.ChannelType,
+			info.ApiType,
+			info.UpstreamModelName,
+			resp.StatusCode,
+			len(responseBody),
+			err,
+		))
+		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusBadGateway)
 	}
 
 	var compactResp dto.OpenAIResponsesCompactionResponse

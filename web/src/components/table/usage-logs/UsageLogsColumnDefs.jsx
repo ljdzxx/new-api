@@ -34,6 +34,8 @@ import {
   renderModelTag,
   renderModelPriceSimple,
   getCurrencyConfig,
+  isToolBillingLineItem,
+  getBillingPolicyToolRows,
 } from '../../../helpers';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { Route, Sparkles } from 'lucide-react';
@@ -230,66 +232,94 @@ function renderBillingTag(record, t) {
 }
 
 function renderModelName(record, copyText, t, isRootUser = false) {
-  let other = getLogOther(record.other);
-  let modelMapped =
+  const other = getLogOther(record.other);
+  const clientModel = other?.client_model || record.model_name;
+  const routingModel = other?.admin_info?.routing_model || record.model_name;
+  const requestPath = other?.request_path || '';
+  const isCompactRequest = requestPath === '/v1/responses/compact';
+  const modelMapped =
     other?.is_model_mapped &&
     other?.upstream_model_name &&
     other?.upstream_model_name !== '';
-  if (!modelMapped || !isRootUser) {
-    return renderModelTag(record.model_name, {
+  const showAuditModels =
+    isRootUser && (modelMapped || routingModel !== clientModel);
+  const renderClientModelTag = (withRoute = false) =>
+    renderModelTag(clientModel, {
       onClick: (event) => {
-        copyText(event, record.model_name).then((r) => {});
+        copyText(event, clientModel).then((r) => {});
       },
+      suffixIcon: withRoute ? (
+        <Route style={{ width: '0.9em', height: '0.9em', opacity: 0.75 }} />
+      ) : undefined,
     });
-  } else {
-    return (
-      <>
-        <Space vertical align={'start'}>
-          <Popover
-            content={
-              <div style={{ padding: 10 }}>
-                <Space vertical align={'start'}>
-                  <div className='flex items-center'>
-                    <Typography.Text strong style={{ marginRight: 8 }}>
-                      {t('请求并计费模型')}:
-                    </Typography.Text>
-                    {renderModelTag(record.model_name, {
-                      onClick: (event) => {
-                        copyText(event, record.model_name).then((r) => {});
-                      },
-                    })}
-                  </div>
-                  <div className='flex items-center'>
-                    <Typography.Text strong style={{ marginRight: 8 }}>
-                      {t('实际模型')}:
-                    </Typography.Text>
-                    {renderModelTag(other.upstream_model_name, {
-                      onClick: (event) => {
-                        copyText(event, other.upstream_model_name).then(
-                          (r) => {},
-                        );
-                      },
-                    })}
-                  </div>
-                </Space>
+  const modelTag = showAuditModels ? (
+    <Popover
+      content={
+        <div style={{ padding: 10 }}>
+          <Space vertical align='start'>
+            <div className='flex items-center'>
+              <Typography.Text strong style={{ marginRight: 8 }}>
+                {t('客户端模型')}:
+              </Typography.Text>
+              {renderClientModelTag()}
+            </div>
+            {routingModel !== clientModel && (
+              <div className='flex items-center'>
+                <Typography.Text strong style={{ marginRight: 8 }}>
+                  {t('路由/计费模型')}:
+                </Typography.Text>
+                {renderModelTag(routingModel, {
+                  onClick: (event) => {
+                    copyText(event, routingModel).then((r) => {});
+                  },
+                })}
               </div>
-            }
-          >
-            {renderModelTag(record.model_name, {
-              onClick: (event) => {
-                copyText(event, record.model_name).then((r) => {});
-              },
-              suffixIcon: (
-                <Route
-                  style={{ width: '0.9em', height: '0.9em', opacity: 0.75 }}
-                />
-              ),
-            })}
-          </Popover>
-        </Space>
-      </>
-    );
+            )}
+            {modelMapped && (
+              <div className='flex items-center'>
+                <Typography.Text strong style={{ marginRight: 8 }}>
+                  {t('实际模型')}:
+                </Typography.Text>
+                {renderModelTag(other.upstream_model_name, {
+                  onClick: (event) => {
+                    copyText(event, other.upstream_model_name).then((r) => {});
+                  },
+                })}
+              </div>
+            )}
+          </Space>
+        </div>
+      }
+    >
+      {renderClientModelTag(true)}
+    </Popover>
+  ) : (
+    renderClientModelTag()
+  );
+
+  if (!isCompactRequest) {
+    return modelTag;
   }
+
+  return (
+    <Space vertical align='start' spacing={2}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Tooltip content={t('远程压缩')}>
+          <Tag color='green' shape='circle'>
+            压
+          </Tag>
+        </Tooltip>
+        {modelTag}
+      </div>
+      <Typography.Text
+        type='tertiary'
+        size='small'
+        style={{ maxWidth: 220, wordBreak: 'break-all' }}
+      >
+        {requestPath}
+      </Typography.Text>
+    </Space>
+  );
 }
 
 function toTokenNumber(value) {
@@ -584,6 +614,9 @@ function getBillingPolicySegments(other, t) {
   ];
 
   for (const item of lineItems) {
+    if (isToolBillingLineItem(item)) {
+      continue;
+    }
     if (item.field === 'request') {
       segments.push({
         text: t('模型价格 {{price}}', {
@@ -603,6 +636,25 @@ function getBillingPolicySegments(other, t) {
         price: formatCompactPrice(item.price_per_million),
       }),
       tone: 'secondary',
+    });
+  }
+
+  const toolRows = getBillingPolicyToolRows(other, t);
+  if (toolRows.length > 0) {
+    const toolUnits = toolRows.reduce(
+      (total, row) => total + toFiniteNumber(row.units),
+      0,
+    );
+    const toolCost = toolRows.reduce(
+      (total, row) => total + toFiniteNumber(row.costUSD),
+      0,
+    );
+    segments.push({
+      text: t('工具费 {{usage}} 次 · {{price}}', {
+        usage: toolUnits.toLocaleString(),
+        price: formatCompactPrice(toolCost),
+      }),
+      tone: 'warning',
     });
   }
 
@@ -628,7 +680,7 @@ function renderCompactDetailSummary(summarySegments) {
         <Tooltip key={`${segment.text}-${index}`} content={segment.text}>
           <Typography.Text
             type={segment.tone === 'secondary' ? 'tertiary' : undefined}
-            size={segment.tone === 'secondary' ? 'small' : undefined}
+            size={segment.tone === 'primary' ? undefined : 'small'}
             style={{
               display: 'block',
               maxWidth: '100%',
@@ -637,6 +689,10 @@ function renderCompactDetailSummary(summarySegments) {
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              color:
+                segment.tone === 'warning'
+                  ? 'var(--semi-color-warning)'
+                  : undefined,
             }}
           >
             {segment.text}
