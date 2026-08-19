@@ -10,6 +10,10 @@ export default {
       return Response.redirect(incomingUrl.toString(), 301)
     }
 
+    if (shouldServeForbidden(request, pathname)) {
+      return serveForbidden(request, env)
+    }
+
     if (shouldProxyToBackend(pathname)) {
       return proxyToBackend(request, env)
     }
@@ -34,6 +38,37 @@ async function serveStatic(request, env) {
 
   // SPA fallback：非静态资源路径（无扩展名）回退到 index.html
   return fetchFromStaticOrigin(request, staticOrigin, "/index.html")
+}
+
+async function serveForbidden(request, env) {
+  const staticOrigin = getStaticOrigin(env)
+  if (!staticOrigin) {
+    return new Response("Missing STATIC_ORIGIN", { status: 500 })
+  }
+
+  // Always fetch the static page with a body-safe method, including when the
+  // original request used POST or another non-idempotent method.
+  const pageRequest = new Request(request.url, {
+    method: request.method === "HEAD" ? "HEAD" : "GET",
+  })
+  const response = await fetchFromStaticOrigin(
+    pageRequest,
+    staticOrigin,
+    "/forbidden.html",
+  )
+
+  if (!response.ok) {
+    return new Response("Forbidden page not found", { status: 500 })
+  }
+
+  const headers = new Headers(response.headers)
+  headers.set("Content-Type", "text/html; charset=utf-8")
+  headers.set("Cache-Control", "private, no-store")
+
+  return new Response(response.body, {
+    status: 451,
+    headers,
+  })
 }
 
 async function fetchFromStaticOrigin(request, staticOrigin, pathname) {
@@ -109,6 +144,19 @@ async function proxyToBackend(request, env) {
     statusText: resp.statusText,
     headers: outHeaders,
   })
+}
+
+function shouldServeForbidden(request, pathname) {
+  return request.cf?.country === "CN" && !isPublicApiPath(pathname)
+}
+
+function isPublicApiPath(pathname) {
+  return (
+    pathname === "/api" ||
+    pathname.startsWith("/api/") ||
+    pathname === "/v1" ||
+    pathname.startsWith("/v1/")
+  )
 }
 
 function shouldProxyToBackend(pathname) {

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/mail"
@@ -21,16 +22,11 @@ import (
 
 // 可开票充值记录的开票状态
 const (
-	InvoiceTopUpStatusInsufficient = "insufficient" // 金额不足
-	InvoiceTopUpStatusAvailable    = "available"    // 可申请
-	InvoiceTopUpStatusApplied      = "applied"      // 已申请
-	InvoiceTopUpStatusIssued       = "issued"       // 已开具
+	InvoiceTopUpStatusAvailable = "available" // 可申请
+	InvoiceTopUpStatusApplied   = "applied"   // 已申请
+	InvoiceTopUpStatusIssued    = "issued"    // 已开具
+	InvoiceTopUpStatusRejected  = "rejected"  // 已拒绝，不可再次申请
 )
-
-// invoiceAmountMeetsMinimum 判断单笔实付金额是否达到开票阈值（含等于）。
-func invoiceAmountMeetsMinimum(amount, minAmount float64) bool {
-	return amount >= minAmount
-}
 
 const invoiceFileMaxSize = 20 << 20 // 20MB
 
@@ -92,15 +88,15 @@ func GetUserInvoiceTopUps(c *gin.Context) {
 	for _, topup := range topups {
 		status := InvoiceTopUpStatusAvailable
 		var invoiceId int
-		if invoice, ok := invoiceMap[topup.Id]; ok && invoice.Status != model.InvoiceStatusRejected {
+		if invoice, ok := invoiceMap[topup.Id]; ok {
 			invoiceId = invoice.Id
 			if invoice.Status == model.InvoiceStatusIssued {
 				status = InvoiceTopUpStatusIssued
+			} else if invoice.Status == model.InvoiceStatusRejected {
+				status = InvoiceTopUpStatusRejected
 			} else {
 				status = InvoiceTopUpStatusApplied
 			}
-		} else if !invoiceAmountMeetsMinimum(topup.Money, setting.MinAmount) {
-			status = InvoiceTopUpStatusInsufficient
 		}
 		items = append(items, gin.H{
 			"id":             topup.Id,
@@ -119,10 +115,11 @@ func GetUserInvoiceTopUps(c *gin.Context) {
 }
 
 type InvoiceApplyRequest struct {
-	TopUpId int    `json:"top_up_id"`
-	Title   string `json:"title"`
-	TaxNo   string `json:"tax_no"`
-	Emails  string `json:"emails"`
+	TopUpId  int    `json:"top_up_id"`
+	TopUpIds []int  `json:"top_up_ids"`
+	Title    string `json:"title"`
+	TaxNo    string `json:"tax_no"`
+	Emails   string `json:"emails"`
 }
 
 // parseInvoiceEmails 解析收票邮箱：支持英文逗号、分号、空格分隔多个邮箱
@@ -165,9 +162,32 @@ func ApplyInvoice(c *gin.Context) {
 	}
 	req.Title = strings.TrimSpace(req.Title)
 	req.TaxNo = strings.TrimSpace(req.TaxNo)
-	if req.TopUpId <= 0 || req.Title == "" {
+	if len(req.TopUpIds) == 0 && req.TopUpId > 0 {
+		req.TopUpIds = []int{req.TopUpId}
+	}
+	if len(req.TopUpIds) == 0 {
+		common.ApiErrorMsg(c, "请选择充值订单")
+		return
+	}
+	if len(req.TopUpIds) > 100 {
+		common.ApiErrorMsg(c, "单次最多可合并 100 笔充值订单")
+		return
+	}
+	if req.Title == "" {
 		common.ApiErrorMsg(c, "请填写完整的公司抬头")
 		return
+	}
+	seen := make(map[int]struct{}, len(req.TopUpIds))
+	for _, id := range req.TopUpIds {
+		if id <= 0 {
+			common.ApiErrorMsg(c, "无效的充值订单")
+			return
+		}
+		if _, ok := seen[id]; ok {
+			common.ApiErrorMsg(c, "充值订单不能重复选择")
+			return
+		}
+		seen[id] = struct{}{}
 	}
 	if len([]rune(req.Title)) > 100 {
 		common.ApiErrorMsg(c, "公司抬头过长")
@@ -180,73 +200,20 @@ func ApplyInvoice(c *gin.Context) {
 	}
 
 	setting := operation_setting.GetInvoiceSetting()
-	topUp := model.GetTopUpById(req.TopUpId)
-	if topUp == nil || topUp.UserId != userId {
-		common.ApiErrorMsg(c, "充值订单不存在")
-		return
-	}
-	// 开票条件校验：支付成功 + 上线时间之后 + EPay 或兑换码（实付金额大于 0）+ 金额阈值
-	if topUp.Status != common.TopUpStatusSuccess {
-		common.ApiErrorMsg(c, "该订单未支付成功，无法申请开票")
-		return
-	}
-	if topUp.CompleteTime < setting.OnlineTimestamp() {
-		common.ApiErrorMsg(c, "该订单完成时间早于开票上线时间，无法申请开票")
-		return
-	}
-	isEpay := topUp.PaymentProvider == model.PaymentProviderEpay
-	isRedemption := topUp.PaymentMethod == model.PaymentMethodRedemption && topUp.Money > 0
-	if !isEpay && !isRedemption {
-		common.ApiErrorMsg(c, "该订单的支付方式不支持申请开票")
-		return
-	}
-	if !invoiceAmountMeetsMinimum(topUp.Money, setting.MinAmount) {
-		common.ApiErrorMsg(c, fmt.Sprintf("单笔充值金额达到 %v 才可申请开票", setting.MinAmount))
-		return
-	}
-
-	existing, err := model.GetInvoiceByTopUpId(topUp.Id)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if existing != nil && existing.Status != model.InvoiceStatusRejected {
-		common.ApiErrorMsg(c, "该订单已提交过开票申请")
-		return
-	}
-
 	now := common.GetTimestamp()
-	if existing != nil {
-		// 被拒绝的申请允许修改后重新提交
-		existing.Title = req.Title
-		existing.TaxNo = req.TaxNo
-		existing.Emails = strings.Join(emails, ";")
-		existing.Money = topUp.Money
-		existing.Status = model.InvoiceStatusPending
-		existing.Remark = ""
-		existing.HandledTime = 0
-		existing.UpdatedTime = now
-		if err = existing.Update(); err != nil {
+	err = model.ApplyInvoice(userId, req.TopUpIds, req.Title, req.TaxNo, strings.Join(emails, ";"), setting.OnlineTimestamp(), setting.MinAmount, now)
+	if err != nil {
+		switch {
+		case errors.Is(err, model.ErrInvoiceBelowMinimum):
+			common.ApiErrorMsg(c, fmt.Sprintf("合计充值金额达到 %v 才可申请开票", setting.MinAmount))
+		case errors.Is(err, model.ErrInvoiceTopUpClaimed):
+			common.ApiErrorMsg(c, "所选订单已提交过开票申请，拒绝后也不可再次申请")
+		case errors.Is(err, model.ErrInvoiceInvalidTopUps):
+			common.ApiErrorMsg(c, "所选充值订单不符合开票条件")
+		default:
 			common.ApiError(c, err)
-			return
 		}
-	} else {
-		invoice := &model.Invoice{
-			UserId:      userId,
-			TopUpId:     topUp.Id,
-			TradeNo:     topUp.TradeNo,
-			Money:       topUp.Money,
-			Title:       req.Title,
-			TaxNo:       req.TaxNo,
-			Emails:      strings.Join(emails, ";"),
-			Status:      model.InvoiceStatusPending,
-			CreatedTime: now,
-			UpdatedTime: now,
-		}
-		if err = invoice.Insert(); err != nil {
-			common.ApiError(c, err)
-			return
-		}
+		return
 	}
 	common.ApiSuccess(c, nil)
 }
@@ -502,6 +469,14 @@ func sendInvoiceIssuedEmail(invoice *model.Invoice) error {
 	if expireHours <= 0 {
 		expireHours = 24
 	}
+	orders := invoice.TradeNo
+	if len(invoice.Items) > 0 {
+		tradeNos := make([]string, 0, len(invoice.Items))
+		for _, item := range invoice.Items {
+			tradeNos = append(tradeNos, item.TradeNo)
+		}
+		orders = strings.Join(tradeNos, "、")
+	}
 	subject := fmt.Sprintf("%s发票开具通知", common.SystemName)
 	content := fmt.Sprintf(
 		"<p>您好，您申请的发票已开具。</p>"+
@@ -511,7 +486,7 @@ func sendInvoiceIssuedEmail(invoice *model.Invoice) error {
 			"<p>请点击以下链接下载发票文件（链接 %d 小时内有效）：</p>"+
 			"<p><a href=\"%s\">下载发票</a></p>"+
 			"<p>如链接已过期，请登录<a href=\"%s\">%s</a>，在「自助发票」页面的申请记录中重新获取下载链接。</p>",
-		invoice.TradeNo, invoice.Money, invoice.Title, expireHours, downloadURL,
+		orders, invoice.Money, invoice.Title, expireHours, downloadURL,
 		system_setting.ServerAddress, common.SystemName)
 	if err = common.SendEmail(subject, invoice.Emails, content); err != nil {
 		return fmt.Errorf("发送发票邮件失败: %w", err)

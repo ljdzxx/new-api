@@ -124,8 +124,10 @@ const RechargeCard = ({
   const [resetTargetSubscription, setResetTargetSubscription] = useState(null);
   const [resetRedemptionCode, setResetRedemptionCode] = useState('');
   const [resetSubmitting, setResetSubmitting] = useState(false);
+  const hasSubscriptionPlans = subscriptionPlans.length > 0;
   const shouldShowSubscription =
-    !subscriptionLoading && subscriptionPlans.length > 0;
+    !subscriptionLoading &&
+    (hasSubscriptionPlans || activeSubscriptions.length > 0);
 
   const hasPresetAmounts =
     Array.isArray(presetAmounts) && presetAmounts.length > 0;
@@ -431,6 +433,7 @@ const RechargeCard = ({
           const percent =
             total > 0 ? Math.max(0, Math.min(100, (used / total) * 100)) : 0;
           const planTitle =
+            item?.plan_title ||
             planTitleMap.get(subscription.plan_id) ||
             `${t('订阅')} #${subscription.id || index + 1}`;
 
@@ -846,7 +849,7 @@ const RechargeCard = ({
             />
           </div>
 
-          {shouldShowSubscription && (
+          {hasSubscriptionPlans && (
             <>
               <div
                 style={{ height: 1, background: 'var(--semi-color-border)' }}

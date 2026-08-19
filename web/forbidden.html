@@ -1,0 +1,46 @@
+
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>访问受限 · 451</title>
+<style>
+:root{--gold:#c9a86a;--gold-soft:rgba(201,168,106,.55);--bg:#0a0b0f;--card:#12141b;--line:#252a36;--txt:#e9ebf0;--muted:#a2aab9;--dim:#606877}
+*{box-sizing:border-box}
+::selection{background:rgba(201,168,106,.28)}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;background:var(--bg);color:var(--txt);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;background:radial-gradient(56% 44% at 50% 0%,rgba(201,168,106,.08),transparent 70%),radial-gradient(40% 34% at 88% 100%,rgba(201,168,106,.04),transparent 70%);pointer-events:none}
+.card{position:relative;overflow:hidden;max-width:660px;margin:24px;padding:52px 48px 40px;background:linear-gradient(180deg,#14161e,#111319);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.04);animation:in .55s cubic-bezier(.2,.7,.3,1)}
+.card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold) 28%,var(--gold) 72%,transparent)}
+.card::after{content:"451";position:absolute;top:-14px;right:10px;font-size:132px;font-weight:800;letter-spacing:-.04em;color:var(--gold);opacity:.045;pointer-events:none;user-select:none}
+@keyframes in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.badge{display:inline-flex;align-items:center;gap:8px;padding:6px 15px;border:1px solid rgba(201,168,106,.35);border-radius:999px;color:var(--gold);font-size:12px;letter-spacing:.1em;margin-bottom:28px;background:rgba(201,168,106,.05)}
+.badge svg{width:14px;height:14px;flex:none}
+h1{font-size:23px;margin:0 0 18px;font-weight:600;letter-spacing:.02em}
+h1::after{content:"";display:block;width:44px;height:2px;margin-top:16px;background:linear-gradient(90deg,var(--gold),transparent);border-radius:2px}
+p{margin:0 0 14px;font-size:15px;line-height:2;color:var(--muted);text-align:justify}
+.law{display:flex;gap:14px;align-items:flex-start;margin:24px 0;padding:18px 20px;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:10px;background:rgba(201,168,106,.045)}
+.law svg{width:20px;height:20px;flex:none;margin-top:3px;color:var(--gold-soft)}
+.law b{display:block;font-size:12px;color:var(--dim);font-weight:500;margin-bottom:7px;letter-spacing:.14em}
+.law a{color:var(--gold);text-decoration:none;font-size:15px;line-height:1.85;border-bottom:1px solid rgba(201,168,106,.3);transition:border-color .2s}
+.law a:hover{border-bottom-color:var(--gold)}
+.en{font-size:13px;color:var(--dim);line-height:1.85;margin:26px 0 0;padding-top:22px;border-top:1px solid var(--line);text-align:left}
+.meta{display:flex;justify-content:space-between;gap:12px;margin-top:26px;font-size:11px;letter-spacing:.12em;color:#4a5160;text-transform:uppercase}
+@media (max-width:520px){.card{padding:38px 26px 32px;margin:14px}h1{font-size:20px}.card::after{font-size:96px}.meta{flex-direction:column;gap:6px}}
+</style>
+</head>
+<body>
+<main class="card">
+<span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg>HTTP 451 · 依法限制访问</span>
+<h1>本站点不向中国大陆地区提供服务</h1>
+<p>本站点遵循中华人民共和国《生成式人工智能服务管理暂行办法》及相关法律法规的要求，不面向中国大陆境内公众提供生成式人工智能服务，并已对来自中国大陆地区的网络访问予以限制。</p>
+<div class="law"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg><div><b>法规依据 · 官方发布</b><a href="https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm">《生成式人工智能服务管理暂行办法》（国家互联网信息办公室等七部门联合发布）</a></div></div>
+<p>由此给您带来的不便，敬请谅解。</p>
+<p class="en">In accordance with the Interim Measures for the Administration of Generative Artificial Intelligence Services and related laws and regulations, this service is not available to users in mainland China.</p>
+<div class="meta"><span>Error 451 · Unavailable For Legal Reasons</span><span>Access Restricted</span></div>
+</main>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"9d69f721878344cd82ed7c2c1221ac7d","r":1}' crossorigin="anonymous"></script>
+</body>
+</html>

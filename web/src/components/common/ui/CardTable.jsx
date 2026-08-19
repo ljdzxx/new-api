@@ -26,6 +26,7 @@ import {
   Pagination,
   Empty,
   Button,
+  Checkbox,
   Collapsible,
 } from '@douyinfe/semi-ui';
 import { IconChevronDown, IconChevronUp } from '@douyinfe/semi-icons';
@@ -140,6 +141,36 @@ const CardTable = ({
 
     return (
       <Card key={rowKeyVal} className='!rounded-2xl shadow-sm'>
+        {tableProps.rowSelection && (
+          <div
+            className='mb-2 border-b border-dashed pb-2'
+            style={{ borderColor: 'var(--semi-color-border)' }}
+          >
+            <Checkbox
+              checked={(tableProps.rowSelection.selectedRowKeys || []).includes(
+                rowKeyVal,
+              )}
+              disabled={
+                tableProps.rowSelection.getCheckboxProps?.(record)?.disabled
+              }
+              onChange={(event) => {
+                const selected = new Set(
+                  tableProps.rowSelection.selectedRowKeys || [],
+                );
+                event.target.checked
+                  ? selected.add(rowKeyVal)
+                  : selected.delete(rowKeyVal);
+                const keys = Array.from(selected);
+                const rows = dataSource.filter((item, itemIndex) =>
+                  keys.includes(getRowKey(item, itemIndex)),
+                );
+                tableProps.rowSelection.onChange?.(keys, rows);
+              }}
+            >
+              {t('选择此充值订单')}
+            </Checkbox>
+          </div>
+        )}
         {columns.map((col, colIdx) => {
           if (
             tableProps?.visibleColumns &&

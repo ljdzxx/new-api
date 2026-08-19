@@ -52,10 +52,10 @@ import CardTable from '../../components/common/ui/CardTable';
 const { Text, Title } = Typography;
 
 const TOPUP_STATUS_CONFIG = {
-  insufficient: { color: 'grey', key: '金额不足' },
   available: { color: 'blue', key: '可申请' },
   applied: { color: 'green', key: '已申请' },
   issued: { color: 'teal', key: '已开具' },
+  rejected: { color: 'red', key: '已拒绝' },
 };
 
 const INVOICE_STATUS_CONFIG = {
@@ -87,6 +87,8 @@ const InvoicePage = () => {
   const [topupsPage, setTopupsPage] = useState(1);
   const [topupsPageSize, setTopupsPageSize] = useState(20);
   const [topupsLoading, setTopupsLoading] = useState(false);
+  const [selectedTopUpKeys, setSelectedTopUpKeys] = useState([]);
+  const [selectedTopUps, setSelectedTopUps] = useState([]);
 
   // 申请记录
   const [invoices, setInvoices] = useState([]);
@@ -163,6 +165,8 @@ const InvoicePage = () => {
   }, []);
 
   useEffect(() => {
+    setSelectedTopUpKeys([]);
+    setSelectedTopUps([]);
     loadTopups(topupsPage, topupsPageSize);
   }, [topupsPage, topupsPageSize]);
 
@@ -170,8 +174,15 @@ const InvoicePage = () => {
     loadInvoices(invoicesPage, invoicesPageSize);
   }, [invoicesPage, invoicesPageSize]);
 
-  const openApplyModal = (record) => {
-    setApplyTarget(record);
+  const selectedTotal = useMemo(
+    () =>
+      selectedTopUps.reduce((sum, item) => sum + Number(item.money || 0), 0),
+    [selectedTopUps],
+  );
+
+  const openApplyModal = () => {
+    if (!selectedTopUps.length) return;
+    setApplyTarget(selectedTopUps);
     setApplyTitle(lastInvoiceProfile?.title || '');
     setApplyTaxNo(lastInvoiceProfile?.tax_no || '');
     setApplyEmails(lastInvoiceProfile?.emails || '');
@@ -189,7 +200,7 @@ const InvoicePage = () => {
     setApplyLoading(true);
     try {
       const res = await API.post('/api/user/invoice/apply', {
-        top_up_id: applyTarget.id,
+        top_up_ids: applyTarget.map((item) => item.id),
         title: applyTitle.trim(),
         tax_no: applyTaxNo.trim(),
         emails: applyEmails.trim(),
@@ -203,6 +214,8 @@ const InvoicePage = () => {
           emails: applyEmails.trim(),
         });
         setApplyTarget(null);
+        setSelectedTopUpKeys([]);
+        setSelectedTopUps([]);
         loadTopups();
         setInvoicesPage(1);
         loadInvoices(1, invoicesPageSize);
@@ -234,13 +247,9 @@ const InvoicePage = () => {
     const status = record.invoice_status;
     if (status === 'available') {
       return (
-        <Button
-          size='small'
-          type='primary'
-          onClick={() => openApplyModal(record)}
-        >
-          {t('申请开票')}
-        </Button>
+        <Tag color='blue' shape='circle' size='small'>
+          {t('可选择')}
+        </Tag>
       );
     }
     const cfg = TOPUP_STATUS_CONFIG[status] || {
@@ -249,9 +258,7 @@ const InvoicePage = () => {
     };
     return (
       <Tag color={cfg.color} shape='circle' size='small'>
-        {status === 'insufficient'
-          ? `${t(cfg.key)} ${config.min_amount}`
-          : t(cfg.key)}
+        {t(cfg.key)}
       </Tag>
     );
   };
@@ -301,9 +308,29 @@ const InvoicePage = () => {
     () => [
       {
         title: t('充值订单'),
-        dataIndex: 'top_up_id',
-        key: 'top_up_id',
-        render: (id) => <Text strong>#{id}</Text>,
+        dataIndex: 'items',
+        key: 'items',
+        render: (items, record) => (
+          <Text
+            strong
+            ellipsis={{ showTooltip: true }}
+            style={{ maxWidth: 240 }}
+          >
+            {(items?.length ? items : [{ top_up_id: record.top_up_id }])
+              .map((item) => `#${item.top_up_id}`)
+              .join(', ')}
+          </Text>
+        ),
+      },
+      {
+        title: t('合计金额'),
+        dataIndex: 'money',
+        key: 'money',
+        render: (money, record) => (
+          <Text>
+            {formatMoney(money)} ({record.top_up_count || 1} {t('笔')})
+          </Text>
+        ),
       },
       {
         title: t('公司抬头'),
@@ -418,27 +445,53 @@ const InvoicePage = () => {
         className='!rounded-2xl mb-4'
         bodyStyle={{ padding: '20px 24px' }}
         title={
-          <div className='flex items-center justify-between w-full'>
-            <div className='flex items-center gap-2'>
+          <div className='flex flex-wrap items-center justify-between gap-3 w-full'>
+            <div className='flex flex-wrap items-center justify-end gap-2'>
               <Wallet size={16} className='text-blue-500' />
-              <div>
+              <div className='min-w-0'>
                 <Text strong>{t('可申请充值')}</Text>
                 <Text type='tertiary' size='small' className='block'>
-                  {t('单笔充值金额达到')}
+                  {t('所选充值合计达到')}
                   <Text type='success' size='normal' strong className='mx-1'>
                     {config.min_amount}
                   </Text>
-                  {t('才可申请开票')}
+                  {t('即可合并申请开票')}
                 </Text>
               </div>
             </div>
-            <Button
-              theme='outline'
-              type='tertiary'
-              icon={<RefreshCw size={15} />}
-              loading={topupsLoading}
-              onClick={() => loadTopups()}
-            />
+            <div className='flex items-center gap-2'>
+              <Text
+                type={
+                  selectedTotal >= config.min_amount ? 'success' : 'tertiary'
+                }
+                size='small'
+              >
+                {t('已选 {{count}} 笔，合计 {{amount}}', {
+                  count: selectedTopUps.length,
+                  amount: formatMoney(selectedTotal),
+                })}
+              </Text>
+              <Button
+                type='primary'
+                disabled={
+                  !selectedTopUps.length || selectedTotal < config.min_amount
+                }
+                onClick={openApplyModal}
+              >
+                {t('合并申请')}
+              </Button>
+              <Button
+                theme='outline'
+                type='tertiary'
+                icon={<RefreshCw size={15} />}
+                loading={topupsLoading}
+                onClick={() => {
+                  setSelectedTopUpKeys([]);
+                  setSelectedTopUps([]);
+                  loadTopups();
+                }}
+              />
+            </div>
           </div>
         }
       >
@@ -447,6 +500,16 @@ const InvoicePage = () => {
           dataSource={topups}
           loading={topupsLoading}
           rowKey='id'
+          rowSelection={{
+            selectedRowKeys: selectedTopUpKeys,
+            getCheckboxProps: (record) => ({
+              disabled: record.invoice_status !== 'available',
+            }),
+            onChange: (keys, rows) => {
+              setSelectedTopUpKeys(keys);
+              setSelectedTopUps(rows);
+            },
+          }}
           size='small'
           className='rounded-xl overflow-hidden'
           pagination={{
@@ -534,11 +597,13 @@ const InvoicePage = () => {
         <div className='space-y-2 mb-4'>
           <div className='flex justify-between'>
             <Text type='secondary'>{t('充值订单')}</Text>
-            <Text strong>#{applyTarget?.id}</Text>
+            <Text strong>
+              {applyTarget?.map((item) => `#${item.id}`).join(', ')}
+            </Text>
           </div>
           <div className='flex justify-between'>
             <Text type='secondary'>{t('充值金额')}</Text>
-            <Text strong>{formatMoney(applyTarget?.money)}</Text>
+            <Text strong>{formatMoney(selectedTotal)}</Text>
           </div>
         </div>
 

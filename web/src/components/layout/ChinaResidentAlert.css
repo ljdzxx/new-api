@@ -1,0 +1,95 @@
+.china-resident-alert .semi-modal {
+  max-width: calc(100vw - 24px);
+}
+
+.china-resident-alert .semi-modal-content {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  background: #202733;
+  padding: 0;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42);
+}
+
+.china-resident-alert .semi-modal-body-wrapper {
+  margin: 0;
+}
+
+.china-resident-alert .semi-modal-body {
+  margin: 0;
+  padding: 40px 24px 28px;
+}
+
+.china-resident-alert-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.china-resident-alert-icon {
+  display: flex;
+  width: 72px;
+  height: 72px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fbbc04;
+  color: #ffffff;
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.china-resident-alert-message {
+  width: 100%;
+  margin: 26px 0 24px;
+  color: #929bab;
+  font-size: 15px;
+  line-height: 1.75;
+  text-align: center;
+}
+
+.china-resident-alert-actions {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.china-resident-alert-confirm.semi-button {
+  width: 100%;
+  height: 40px;
+  border-color: #ffd633;
+  background: #ffd633;
+  color: #1a1f28;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.china-resident-alert-confirm.semi-button:hover,
+.china-resident-alert-confirm.semi-button:active {
+  border-color: #f5c914;
+  background: #f5c914;
+  color: #1a1f28;
+}
+
+.china-resident-alert-cancel.semi-button {
+  align-self: center;
+  color: #fbbc04;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.china-resident-alert-cancel.semi-button:hover,
+.china-resident-alert-cancel.semi-button:active {
+  background: transparent;
+  color: #ffd633;
+}
+
+@media (max-width: 420px) {
+  .china-resident-alert .semi-modal-body {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}

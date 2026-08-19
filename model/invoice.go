@@ -1,9 +1,14 @@
 package model
 
 import (
+	"errors"
+	"fmt"
+	"math"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // 发票申请状态
@@ -15,22 +20,35 @@ const (
 
 // Invoice 用户开票申请
 type Invoice struct {
+	Id            int            `json:"id"`
+	UserId        int            `json:"user_id" gorm:"index"`
+	Username      string         `json:"username" gorm:"-"`
+	PaymentMethod string         `json:"payment_method" gorm:"-"`
+	TopUpId       int            `json:"top_up_id" gorm:"uniqueIndex"`
+	TradeNo       string         `json:"trade_no" gorm:"type:varchar(255);index"`
+	Money         float64        `json:"money"`
+	Title         string         `json:"title" gorm:"type:varchar(255)"`
+	TaxNo         string         `json:"tax_no" gorm:"type:varchar(64)"`
+	Emails        string         `json:"emails" gorm:"type:text"`
+	Status        int            `json:"status" gorm:"index"`
+	FileKey       string         `json:"file_key" gorm:"type:varchar(512)"`
+	Remark        string         `json:"remark" gorm:"type:text"`
+	HandledTime   int64          `json:"handled_time"`
+	CreatedTime   int64          `json:"created_time"`
+	UpdatedTime   int64          `json:"updated_time"`
+	TopUpCount    int            `json:"top_up_count" gorm:"-"`
+	Items         []*InvoiceItem `json:"items,omitempty" gorm:"-"`
+}
+
+// InvoiceItem is an immutable snapshot of a recharge included in an invoice.
+// top_up_id is unique so a recharge can never be invoiced twice, including after rejection.
+type InvoiceItem struct {
 	Id            int     `json:"id"`
-	UserId        int     `json:"user_id" gorm:"index"`
-	Username      string  `json:"username" gorm:"-"`
-	PaymentMethod string  `json:"payment_method" gorm:"-"`
+	InvoiceId     int     `json:"invoice_id" gorm:"index"`
 	TopUpId       int     `json:"top_up_id" gorm:"uniqueIndex"`
 	TradeNo       string  `json:"trade_no" gorm:"type:varchar(255);index"`
 	Money         float64 `json:"money"`
-	Title         string  `json:"title" gorm:"type:varchar(255)"`
-	TaxNo         string  `json:"tax_no" gorm:"type:varchar(64)"`
-	Emails        string  `json:"emails" gorm:"type:text"`
-	Status        int     `json:"status" gorm:"index"`
-	FileKey       string  `json:"file_key" gorm:"type:varchar(512)"`
-	Remark        string  `json:"remark" gorm:"type:text"`
-	HandledTime   int64   `json:"handled_time"`
-	CreatedTime   int64   `json:"created_time"`
-	UpdatedTime   int64   `json:"updated_time"`
+	PaymentMethod string  `json:"payment_method" gorm:"type:varchar(50)"`
 }
 
 func (invoice *Invoice) Insert() error {
@@ -46,14 +64,23 @@ func GetInvoiceById(id int) (*Invoice, error) {
 	if err := DB.Where("id = ?", id).First(&invoice).Error; err != nil {
 		return nil, err
 	}
+	fillInvoiceItems([]*Invoice{&invoice})
 	return &invoice, nil
 }
 
 // GetInvoiceByTopUpId 查询某充值订单的开票申请，不存在时返回 nil, nil
 func GetInvoiceByTopUpId(topUpId int) (*Invoice, error) {
+	var item InvoiceItem
+	if err := DB.Where("top_up_id = ?", topUpId).First(&item).Error; err == nil {
+		return GetInvoiceById(item.InvoiceId)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
 	var invoice Invoice
-	if err := DB.Where("top_up_id = ?", topUpId).First(&invoice).Error; err != nil {
+	if err := DB.Where("top_up_id = ?", topUpId).First(&invoice).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
+	} else if err != nil {
+		return nil, err
 	}
 	return &invoice, nil
 }
@@ -64,12 +91,38 @@ func GetInvoicesByTopUpIds(topUpIds []int) (map[int]*Invoice, error) {
 	if len(topUpIds) == 0 {
 		return result, nil
 	}
-	var invoices []*Invoice
-	if err := DB.Where("top_up_id IN ?", topUpIds).Find(&invoices).Error; err != nil {
+	var items []*InvoiceItem
+	if err := DB.Where("top_up_id IN ?", topUpIds).Find(&items).Error; err != nil {
 		return nil, err
 	}
+	invoiceIDs := make([]int, 0, len(items))
+	for _, item := range items {
+		invoiceIDs = append(invoiceIDs, item.InvoiceId)
+	}
+	var invoices []*Invoice
+	if len(invoiceIDs) > 0 {
+		if err := DB.Where("id IN ?", invoiceIDs).Find(&invoices).Error; err != nil {
+			return nil, err
+		}
+	}
+	byID := make(map[int]*Invoice, len(invoices))
 	for _, invoice := range invoices {
-		result[invoice.TopUpId] = invoice
+		byID[invoice.Id] = invoice
+	}
+	for _, item := range items {
+		if invoice := byID[item.InvoiceId]; invoice != nil {
+			result[item.TopUpId] = invoice
+		}
+	}
+	// Legacy rows are backfilled on migration, but retain this fallback for partially migrated databases.
+	var legacy []*Invoice
+	if err := DB.Where("top_up_id IN ?", topUpIds).Find(&legacy).Error; err != nil {
+		return nil, err
+	}
+	for _, invoice := range legacy {
+		if _, ok := result[invoice.TopUpId]; !ok {
+			result[invoice.TopUpId] = invoice
+		}
 	}
 	return result, nil
 }
@@ -81,7 +134,7 @@ func GetUserInvoiceableTopUps(userId int, onlineTs int64, minAmount float64, pag
 		Where("user_id = ? AND status = ?", userId, common.TopUpStatusSuccess).
 		Where("complete_time >= ?", onlineTs).
 		Where("(payment_provider = ? OR payment_method = ?)", PaymentProviderEpay, PaymentMethodRedemption).
-		Where("money >= ?", minAmount)
+		Where("money > ?", 0)
 
 	if err = query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -92,6 +145,66 @@ func GetUserInvoiceableTopUps(userId int, onlineTs int64, minAmount float64, pag
 		return nil, 0, err
 	}
 	return topups, total, nil
+}
+
+var (
+	ErrInvoiceInvalidTopUps = errors.New("所选充值订单不可申请开票")
+	ErrInvoiceTopUpClaimed  = errors.New("所选充值订单已申请过开票")
+	ErrInvoiceBelowMinimum  = errors.New("合计充值金额未达到开票门槛")
+)
+
+// ApplyInvoice atomically validates and claims all selected top-ups.
+func ApplyInvoice(userID int, topUpIDs []int, title, taxNo, emails string, onlineTs int64, minAmount float64, now int64) error {
+	if len(topUpIDs) == 0 || math.IsNaN(minAmount) || math.IsInf(minAmount, 0) {
+		return ErrInvoiceInvalidTopUps
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var topups []*TopUp
+		query := lockForUpdate(tx).Where("id IN ? AND user_id = ?", topUpIDs, userID)
+		if err := query.Find(&topups).Error; err != nil {
+			return err
+		}
+		if len(topups) != len(topUpIDs) {
+			return ErrInvoiceInvalidTopUps
+		}
+		byID := make(map[int]*TopUp, len(topups))
+		for _, topup := range topups {
+			byID[topup.Id] = topup
+		}
+		orderedTopUps := make([]*TopUp, 0, len(topUpIDs))
+		total := decimal.Zero
+		for _, topUpID := range topUpIDs {
+			topup, ok := byID[topUpID]
+			if !ok {
+				return ErrInvoiceInvalidTopUps
+			}
+			orderedTopUps = append(orderedTopUps, topup)
+			isSupported := topup.PaymentProvider == PaymentProviderEpay || (topup.PaymentMethod == PaymentMethodRedemption && topup.Money > 0)
+			if topup.Status != common.TopUpStatusSuccess || topup.CompleteTime < onlineTs || !isSupported || topup.Money <= 0 || math.IsNaN(topup.Money) || math.IsInf(topup.Money, 0) {
+				return ErrInvoiceInvalidTopUps
+			}
+			total = total.Add(decimal.NewFromFloat(topup.Money))
+		}
+		if total.LessThan(decimal.NewFromFloat(minAmount)) {
+			return ErrInvoiceBelowMinimum
+		}
+		var claimed []*InvoiceItem
+		if err := tx.Where("top_up_id IN ?", topUpIDs).Find(&claimed).Error; err != nil {
+			return err
+		}
+		if len(claimed) > 0 {
+			return ErrInvoiceTopUpClaimed
+		}
+		invoice := &Invoice{UserId: userID, TopUpId: topUpIDs[0], TradeNo: orderedTopUps[0].TradeNo, Money: total.Round(2).InexactFloat64(), Title: title, TaxNo: taxNo, Emails: emails, Status: InvoiceStatusPending, CreatedTime: now, UpdatedTime: now}
+		if err := tx.Create(invoice).Error; err != nil {
+			return err
+		}
+		items := make([]InvoiceItem, 0, len(orderedTopUps))
+		for _, topup := range orderedTopUps {
+			items = append(items, InvoiceItem{InvoiceId: invoice.Id, TopUpId: topup.Id, TradeNo: topup.TradeNo, Money: topup.Money, PaymentMethod: topup.PaymentMethod})
+		}
+		return tx.Create(&items).Error
+	})
 }
 
 // GetUserInvoices 用户自己的开票申请记录
@@ -105,6 +218,7 @@ func GetUserInvoices(userId int, pageInfo *common.PageInfo) (invoices []*Invoice
 		Find(&invoices).Error; err != nil {
 		return nil, 0, err
 	}
+	fillInvoiceItems(invoices)
 	return invoices, total, nil
 }
 
@@ -137,7 +251,8 @@ func SearchInvoicesWithFilter(filter InvoiceFilter, pageInfo *common.PageInfo) (
 	query := DB.Model(&Invoice{})
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		like := "%%" + keyword + "%%"
-		query = query.Where("trade_no LIKE ? OR title LIKE ?", like, like)
+		itemQuery := DB.Model(&InvoiceItem{}).Select("invoice_id").Where("trade_no LIKE ?", like)
+		query = query.Where("trade_no LIKE ? OR title LIKE ? OR id IN (?)", like, like, itemQuery)
 	}
 	if username := strings.TrimSpace(filter.Username); username != "" {
 		like := "%%" + username + "%%"
@@ -156,6 +271,7 @@ func SearchInvoicesWithFilter(filter InvoiceFilter, pageInfo *common.PageInfo) (
 		Find(&invoices).Error; err != nil {
 		return nil, 0, err
 	}
+	fillInvoiceItems(invoices)
 	if err = fillInvoicePaymentMethods(invoices); err != nil {
 		return nil, 0, err
 	}
@@ -163,9 +279,66 @@ func SearchInvoicesWithFilter(filter InvoiceFilter, pageInfo *common.PageInfo) (
 	return invoices, total, nil
 }
 
+func fillInvoiceItems(invoices []*Invoice) {
+	if len(invoices) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(invoices))
+	for _, invoice := range invoices {
+		ids = append(ids, invoice.Id)
+	}
+	var items []*InvoiceItem
+	if DB.Where("invoice_id IN ?", ids).Order("id asc").Find(&items).Error != nil {
+		return
+	}
+	byID := make(map[int][]*InvoiceItem)
+	for _, item := range items {
+		byID[item.InvoiceId] = append(byID[item.InvoiceId], item)
+	}
+	for _, invoice := range invoices {
+		invoice.Items = byID[invoice.Id]
+		invoice.TopUpCount = len(invoice.Items)
+		if invoice.TopUpCount == 0 && invoice.TopUpId > 0 {
+			invoice.TopUpCount = 1
+		}
+	}
+}
+
+// BackfillInvoiceItems creates a snapshot item for historical single-top-up invoices.
+func BackfillInvoiceItems() error {
+	var invoices []*Invoice
+	if err := DB.Where("top_up_id > 0").Find(&invoices).Error; err != nil {
+		return err
+	}
+	for _, invoice := range invoices {
+		var count int64
+		if err := DB.Model(&InvoiceItem{}).Where("invoice_id = ?", invoice.Id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+		topup := GetTopUpById(invoice.TopUpId)
+		item := &InvoiceItem{InvoiceId: invoice.Id, TopUpId: invoice.TopUpId, TradeNo: invoice.TradeNo, Money: invoice.Money}
+		if topup != nil {
+			item.TradeNo, item.Money, item.PaymentMethod = topup.TradeNo, topup.Money, topup.PaymentMethod
+		}
+		if err := DB.Create(item).Error; err != nil {
+			return fmt.Errorf("backfill invoice item %d: %w", invoice.Id, err)
+		}
+	}
+	return nil
+}
+
 func fillInvoicePaymentMethods(invoices []*Invoice) error {
 	if len(invoices) == 0 {
 		return nil
+	}
+	fillInvoiceItems(invoices)
+	for _, invoice := range invoices {
+		if invoice != nil && len(invoice.Items) > 0 {
+			invoice.PaymentMethod = invoice.Items[0].PaymentMethod
+		}
 	}
 	topUpIds := make([]int, 0, len(invoices))
 	for _, invoice := range invoices {

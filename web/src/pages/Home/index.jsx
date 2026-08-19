@@ -35,9 +35,26 @@ import { marked } from 'marked';
 import { useTranslation } from 'react-i18next';
 
 import NoticeModal from '../../components/layout/NoticeModal';
+import ChinaResidentAlert from '../../components/layout/ChinaResidentAlert';
 import { API_ENDPOINTS } from '../../constants/common.constant';
 import { StatusContext } from '../../context/Status';
 import { useActualTheme } from '../../context/Theme';
+
+const CHINA_RESIDENT_ALERT_COOKIE = 'china_resident_alert_confirmed';
+const CHINA_RESIDENT_ALERT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
+const hasConfirmedChinaResidentAlert = () =>
+  document.cookie
+    .split(';')
+    .some(
+      (cookie) =>
+        cookie.trim() === `${CHINA_RESIDENT_ALERT_COOKIE}=true`,
+    );
+
+const confirmChinaResidentAlert = () => {
+  const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${CHINA_RESIDENT_ALERT_COOKIE}=true; Max-Age=${CHINA_RESIDENT_ALERT_COOKIE_MAX_AGE}; Path=/; SameSite=Lax${secure}`;
+};
 import { UserContext } from '../../context/User';
 import { useIsMobile } from '../../hooks/common/useIsMobile';
 import { API } from '../../helpers/api';
@@ -585,6 +602,8 @@ const Home = () => {
   const [homePageContentLoaded, setHomePageContentLoaded] = useState(false);
   const [homePageContent, setHomePageContent] = useState('');
   const [noticeVisible, setNoticeVisible] = useState(false);
+  const [chinaResidentAlertVisible, setChinaResidentAlertVisible] =
+    useState(false);
   const isMobile = useIsMobile();
   const docsLink = statusState?.status?.docs_link || '';
   const serverAddress =
@@ -635,6 +654,19 @@ const Home = () => {
   };
 
   useEffect(() => {
+    try {
+      if (hasConfirmedChinaResidentAlert()) {
+        return;
+      }
+
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      setChinaResidentAlertVisible(timeZone.includes('Asia/Shanghai'));
+    } catch (error) {
+      console.error('获取浏览器时区失败:', error);
+    }
+  }, []);
+
+  useEffect(() => {
     const checkNoticeAndShow = async () => {
       const lastCloseDate = localStorage.getItem('notice_close_date');
       const today = new Date().toDateString();
@@ -667,8 +699,16 @@ const Home = () => {
 
   return (
     <div className='w-full overflow-x-hidden'>
+      <ChinaResidentAlert
+        visible={chinaResidentAlertVisible}
+        onConfirm={() => {
+          confirmChinaResidentAlert();
+          setChinaResidentAlertVisible(false);
+        }}
+        onCancel={() => setChinaResidentAlertVisible(false)}
+      />
       <NoticeModal
-        visible={noticeVisible}
+        visible={noticeVisible && !chinaResidentAlertVisible}
         onClose={() => setNoticeVisible(false)}
         isMobile={isMobile}
       />

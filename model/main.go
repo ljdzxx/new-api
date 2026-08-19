@@ -290,6 +290,7 @@ func migrateDB() error {
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&Invoice{}, "Invoice"},
+		{&InvoiceItem{}, "InvoiceItem"},
 		{&PaymentReconcileJob{}, "PaymentReconcileJob"},
 		{&PaymentReconcileItem{}, "PaymentReconcileItem"},
 		{&QuotaData{}, "QuotaData"},
@@ -331,6 +332,9 @@ func migrateDB() error {
 	if err := backfillTopUpReconcileStatus(); err != nil {
 		return err
 	}
+	if err := BackfillInvoiceItems(); err != nil {
+		return err
+	}
 	if err := ensureUserSubscriptionResetCountColumn(); err != nil {
 		return err
 	}
@@ -365,6 +369,7 @@ func migrateDBFast() error {
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&Invoice{}, "Invoice"},
+		{&InvoiceItem{}, "InvoiceItem"},
 		{&PaymentReconcileJob{}, "PaymentReconcileJob"},
 		{&PaymentReconcileItem{}, "PaymentReconcileItem"},
 		{&QuotaData{}, "QuotaData"},
@@ -424,6 +429,9 @@ func migrateDBFast() error {
 		return err
 	}
 	if err := backfillTopUpReconcileStatus(); err != nil {
+		return err
+	}
+	if err := BackfillInvoiceItems(); err != nil {
 		return err
 	}
 	if err := ensureUserSubscriptionResetCountColumn(); err != nil {

@@ -113,6 +113,10 @@ export default defineConfig({
     // 默认 500KB 阈值对当前后台应用过低，避免每次构建产生误导性告警。
     chunkSizeWarningLimit: 5000,
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        forbidden: path.resolve(__dirname, 'forbidden.html'),
+      },
       output: {
         entryFileNames: 'assets/[name]-[hash].min.js',
         chunkFileNames: 'assets/[name]-[hash].min.js',

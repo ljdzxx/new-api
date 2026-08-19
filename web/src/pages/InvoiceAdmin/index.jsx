@@ -219,21 +219,27 @@ const InvoiceAdminPage = () => {
       },
       {
         title: t('充值订单'),
-        dataIndex: 'trade_no',
-        key: 'trade_no',
+        dataIndex: 'items',
+        key: 'items',
         width: 220,
-        render: (text, record) => (
+        render: (items, record) => (
           <Text
-            copyable={{ content: text }}
+            copyable={{
+              content:
+                (items || []).map((item) => item.trade_no).join('\n') ||
+                record.trade_no,
+            }}
             ellipsis={{ showTooltip: true }}
             style={{ maxWidth: 200 }}
           >
-            #{record.top_up_id} {text}
+            {(items?.length ? items : [{ top_up_id: record.top_up_id }])
+              .map((item) => `#${item.top_up_id}`)
+              .join(', ')}
           </Text>
         ),
       },
       {
-        title: t('充值金额'),
+        title: t('合计金额'),
         dataIndex: 'money',
         key: 'money',
         width: 110,
@@ -246,10 +252,24 @@ const InvoiceAdminPage = () => {
         dataIndex: 'payment_method',
         key: 'payment_method',
         width: 110,
-        render: (paymentMethod) => {
-          const displayName = PAYMENT_METHOD_MAP[paymentMethod];
+        render: (paymentMethod, record) => {
+          const methods = [
+            ...new Set(
+              (record.items || [])
+                .map((item) => item.payment_method)
+                .filter(Boolean),
+            ),
+          ];
+          const value = methods.length === 1 ? methods[0] : paymentMethod;
+          const displayName = PAYMENT_METHOD_MAP[value];
           return (
-            <Text>{displayName ? t(displayName) : paymentMethod || '-'}</Text>
+            <Text>
+              {methods.length > 1
+                ? t('多种支付方式')
+                : displayName
+                  ? t(displayName)
+                  : value || '-'}
+            </Text>
           );
         },
       },
@@ -373,6 +393,42 @@ const InvoiceAdminPage = () => {
     [resendingInvoiceId, t],
   );
 
+  const renderInvoiceItems = (record) => {
+    const items = record.items?.length
+      ? record.items
+      : [
+          {
+            top_up_id: record.top_up_id,
+            trade_no: record.trade_no,
+            money: record.money,
+            payment_method: record.payment_method,
+          },
+        ];
+    return (
+      <div className='px-3 py-2 space-y-2'>
+        {items.map((item) => {
+          const paymentName = PAYMENT_METHOD_MAP[item.payment_method];
+          return (
+            <div
+              key={item.top_up_id}
+              className='grid grid-cols-1 md:grid-cols-[100px_minmax(220px,1fr)_120px_100px] gap-2 border-b border-dashed pb-2 last:border-b-0'
+              style={{ borderColor: 'var(--semi-color-border)' }}
+            >
+              <Text strong>#{item.top_up_id}</Text>
+              <Text copyable={{ content: item.trade_no }}>
+                {item.trade_no || '-'}
+              </Text>
+              <Text>CNY {Number(item.money || 0).toFixed(2)}</Text>
+              <Text>
+                {paymentName ? t(paymentName) : item.payment_method || '-'}
+              </Text>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className='mt-[60px] px-2 pb-24'>
       <Card
@@ -445,6 +501,10 @@ const InvoiceAdminPage = () => {
           size='small'
           className='rounded-xl overflow-hidden'
           scroll={{ x: 'max-content' }}
+          expandedRowRender={renderInvoiceItems}
+          rowExpandable={(record) =>
+            (record.items?.length || record.top_up_id) > 0
+          }
           pagination={{
             currentPage: page,
             pageSize: pageSize,
@@ -487,11 +547,21 @@ const InvoiceAdminPage = () => {
           <div className='flex justify-between'>
             <Text type='secondary'>{t('充值订单')}</Text>
             <Text strong>
-              #{issueTarget?.top_up_id} {issueTarget?.trade_no}
+              {(issueTarget?.items?.length
+                ? issueTarget.items
+                : [
+                    {
+                      top_up_id: issueTarget?.top_up_id,
+                      trade_no: issueTarget?.trade_no,
+                    },
+                  ]
+              )
+                .map((item) => `#${item.top_up_id} ${item.trade_no || ''}`)
+                .join('，')}
             </Text>
           </div>
           <div className='flex justify-between'>
-            <Text type='secondary'>{t('充值金额')}</Text>
+            <Text type='secondary'>{t('合计金额')}</Text>
             <Text strong>CNY {Number(issueTarget?.money || 0).toFixed(2)}</Text>
           </div>
           <div className='flex justify-between'>
@@ -558,7 +628,9 @@ const InvoiceAdminPage = () => {
         width={isMobile ? '100vw' : 480}
       >
         <Text type='warning' className='block mb-3'>
-          {t('拒绝后用户可修改信息重新提交申请，请填写拒绝原因。')}
+          {t(
+            '拒绝后，本申请关联的充值订单将永久不可再次申请开票，请谨慎操作。',
+          )}
         </Text>
         <TextArea
           value={rejectRemark}

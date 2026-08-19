@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -17,7 +18,8 @@ func setupInvoiceTest(t *testing.T) {
 	} else {
 		require.NoError(t, DB.AutoMigrate(&User{}))
 	}
-	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Invoice{}))
+	require.NoError(t, DB.AutoMigrate(&TopUp{}, &Invoice{}, &InvoiceItem{}))
+	require.NoError(t, DB.Exec("DELETE FROM invoice_items").Error)
 	require.NoError(t, DB.Exec("DELETE FROM invoices").Error)
 	require.NoError(t, DB.Exec("DELETE FROM top_ups").Error)
 	require.NoError(t, DB.Exec("DELETE FROM users").Error)
@@ -55,7 +57,7 @@ func TestGetUserInvoiceableTopUpsFiltering(t *testing.T) {
 	eligibleEpayEqual := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, minAmount, after)
 	eligibleEpayAbove := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "wxpay", common.TopUpStatusSuccess, minAmount+0.01, after)
 	eligibleRedemptionEqual := insertInvoiceTopUp(t, user.Id, PaymentProviderMall, PaymentMethodRedemption, common.TopUpStatusSuccess, minAmount, after)
-	// 不符合：金额小于阈值
+	// 单笔低于阈值仍可参与合单
 	ineligibleBelowAmount := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, minAmount-0.01, after)
 
 	// 不符合：未支付成功
@@ -72,7 +74,7 @@ func TestGetUserInvoiceableTopUpsFiltering(t *testing.T) {
 	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
 	topups, total, err := GetUserInvoiceableTopUps(user.Id, onlineTs, minAmount, pageInfo)
 	require.NoError(t, err)
-	assert.Equal(t, int64(3), total)
+	assert.Equal(t, int64(4), total)
 
 	ids := make(map[int]bool)
 	for _, topup := range topups {
@@ -81,10 +83,10 @@ func TestGetUserInvoiceableTopUpsFiltering(t *testing.T) {
 	assert.True(t, ids[eligibleEpayEqual.Id])
 	assert.True(t, ids[eligibleEpayAbove.Id])
 	assert.True(t, ids[eligibleRedemptionEqual.Id])
-	assert.False(t, ids[ineligibleBelowAmount.Id])
+	assert.True(t, ids[ineligibleBelowAmount.Id])
 }
 
-func TestInvoiceUniqueTopUpAndReapply(t *testing.T) {
+func TestInvoiceUniqueTopUpAndRejectedCannotReapply(t *testing.T) {
 	setupInvoiceTest(t)
 	user := createRegisteredUser(t, "invoice_reapply")
 
@@ -115,21 +117,46 @@ func TestInvoiceUniqueTopUpAndReapply(t *testing.T) {
 	}
 	assert.Error(t, dup.Insert())
 
-	// 拒绝后可通过更新原记录重新申请
+	// 拒绝后明细仍占用订单，不允许重新申请
 	existing, err := GetInvoiceByTopUpId(topup.Id)
 	require.NoError(t, err)
 	require.NotNil(t, existing)
 	existing.Status = InvoiceStatusRejected
 	require.NoError(t, existing.Update())
+	require.NoError(t, DB.Create(&InvoiceItem{InvoiceId: existing.Id, TopUpId: topup.Id, TradeNo: topup.TradeNo, Money: topup.Money}).Error)
+	err = ApplyInvoice(user.Id, []int{topup.Id}, "重新提交的公司", "", "a@example.com", onlineTs, 300, now+1)
+	assert.ErrorIs(t, err, ErrInvoiceTopUpClaimed)
+}
 
-	existing.Status = InvoiceStatusPending
-	existing.Title = "重新提交的公司"
-	require.NoError(t, existing.Update())
+func TestApplyInvoiceCombinesBelowMinimumTopUps(t *testing.T) {
+	setupInvoiceTest(t)
+	user := createRegisteredUser(t, "invoice_combine")
+	onlineTs := time.Date(2026, 8, 1, 0, 0, 0, 0, time.Local).Unix()
+	first := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 100, onlineTs+1)
+	second := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "wxpay", common.TopUpStatusSuccess, 200, onlineTs+2)
 
-	reloaded, err := GetInvoiceByTopUpId(topup.Id)
+	require.NoError(t, ApplyInvoice(user.Id, []int{first.Id, second.Id}, "合单公司", "TAX", "a@example.com", onlineTs, 300, common.GetTimestamp()))
+	invoices, total, err := GetUserInvoices(user.Id, &common.PageInfo{Page: 1, PageSize: 10})
 	require.NoError(t, err)
-	assert.Equal(t, InvoiceStatusPending, reloaded.Status)
-	assert.Equal(t, "重新提交的公司", reloaded.Title)
+	require.Equal(t, int64(1), total)
+	require.Len(t, invoices, 1)
+	assert.Equal(t, 300.0, invoices[0].Money)
+	assert.Equal(t, 2, invoices[0].TopUpCount)
+	require.Len(t, invoices[0].Items, 2)
+}
+
+func TestApplyInvoiceRejectsCombinedAmountBelowMinimum(t *testing.T) {
+	setupInvoiceTest(t)
+	user := createRegisteredUser(t, "invoice_below_minimum")
+	onlineTs := time.Date(2026, 8, 1, 0, 0, 0, 0, time.Local).Unix()
+	topup := insertInvoiceTopUp(t, user.Id, PaymentProviderEpay, "alipay", common.TopUpStatusSuccess, 299.99, onlineTs+1)
+	err := ApplyInvoice(user.Id, []int{topup.Id}, "测试公司", "", "a@example.com", onlineTs, 300, common.GetTimestamp())
+	assert.ErrorIs(t, err, ErrInvoiceBelowMinimum)
+}
+
+func TestApplyInvoiceRejectsInvalidMinimum(t *testing.T) {
+	err := ApplyInvoice(1, []int{1}, "测试公司", "", "a@example.com", 0, math.NaN(), common.GetTimestamp())
+	assert.ErrorIs(t, err, ErrInvoiceInvalidTopUps)
 }
 
 func TestGetLatestUserInvoiceProfile(t *testing.T) {

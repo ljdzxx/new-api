@@ -292,6 +292,7 @@ func (s *UserSubscription) BeforeUpdate(tx *gorm.DB) error {
 
 type SubscriptionSummary struct {
 	Subscription           *UserSubscription `json:"subscription"`
+	PlanTitle              string            `json:"plan_title"`
 	ResetRedemptionEnabled bool              `json:"reset_redemption_enabled"`
 }
 
@@ -1228,18 +1229,21 @@ func buildSubscriptionSummaries(subs []UserSubscription) ([]SubscriptionSummary,
 		planIds = append(planIds, sub.PlanId)
 	}
 	var plans []SubscriptionPlan
-	if err := DB.Select("id", "quota_reset_period").Where("id IN ?", planIds).Find(&plans).Error; err != nil {
+	if err := DB.Select("id", "title", "quota_reset_period").Where("id IN ?", planIds).Find(&plans).Error; err != nil {
 		return nil, err
 	}
 	dailyResetPlans := make(map[int]bool, len(plans))
+	planTitles := make(map[int]string, len(plans))
 	for _, plan := range plans {
 		dailyResetPlans[plan.Id] = NormalizeResetPeriod(plan.QuotaResetPeriod) == SubscriptionResetDaily
+		planTitles[plan.Id] = plan.Title
 	}
 	result := make([]SubscriptionSummary, 0, len(subs))
 	for _, sub := range subs {
 		subCopy := sub
 		result = append(result, SubscriptionSummary{
 			Subscription:           &subCopy,
+			PlanTitle:              planTitles[sub.PlanId],
 			ResetRedemptionEnabled: dailyResetPlans[sub.PlanId],
 		})
 	}
