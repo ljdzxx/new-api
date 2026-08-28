@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -121,4 +122,43 @@ func TestModelMappedHelperConditionalMappingConflict(t *testing.T) {
 	require.Equal(t, "model_mapping_contains_conditional_conflict", err.Error())
 	require.Equal(t, "gpt-5.4", info.UpstreamModelName)
 	require.Equal(t, "gpt-5.4", request.model)
+}
+
+func TestModelMappedHelperReasoningEffortPriorityAndOverride(t *testing.T) {
+	c := newModelMappedTestContext(`{"gpt-5.4-mini,xhigh":"gpt-5.6-luna,max","gpt-5.4-mini":"fallback-model"}`)
+	info := newModelMappedTestInfo("gpt-5.4-mini")
+	request := &dto.GeneralOpenAIRequest{Model: "gpt-5.4-mini", ReasoningEffort: "xhigh"}
+	err := ModelMappedHelper(c, info, request)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.6-luna", info.UpstreamModelName)
+	require.Equal(t, "max", request.ReasoningEffort)
+}
+
+func TestModelMappedHelperReasoningFallbackAndImageCondition(t *testing.T) {
+	c := newModelMappedTestContext(`{"gpt-5.4-mini":"fallback-model"}`)
+	info := newModelMappedTestInfo("gpt-5.4-mini")
+	request := &dto.GeneralOpenAIRequest{Model: "gpt-5.4-mini", ReasoningEffort: "low"}
+	err := ModelMappedHelper(c, info, request)
+	require.NoError(t, err)
+	require.Equal(t, "fallback-model", info.UpstreamModelName)
+
+	c = newModelMappedTestContext(`{"!gpt-5.4-mini":"image-model"}`)
+	info = newModelMappedTestInfo("gpt-5.4-mini")
+	imageRequest := &modelMappedTestRequest{model: "gpt-5.4-mini", meta: imageInputMeta()}
+	require.NoError(t, ModelMappedHelper(c, info, imageRequest))
+	require.Equal(t, "gpt-5.4-mini", info.UpstreamModelName)
+}
+
+func TestModelMappedHelperInputTokenThreshold(t *testing.T) {
+	c := newModelMappedTestContext(`{"gpt-5.4":"mapped-model"}`)
+	info := newModelMappedTestInfo("gpt-5.4")
+	info.ModelMappingInputTokenThresholdEnabled = true
+	info.ModelMappingInputTokenThreshold = 100
+	info.SetEstimatePromptTokens(99)
+	request := &modelMappedTestRequest{model: "gpt-5.4", meta: &types.TokenCountMeta{}}
+	require.NoError(t, ModelMappedHelper(c, info, request))
+	require.Equal(t, "gpt-5.4", info.UpstreamModelName)
+	info.SetEstimatePromptTokens(100)
+	require.NoError(t, ModelMappedHelper(c, info, request))
+	require.Equal(t, "mapped-model", info.UpstreamModelName)
 }

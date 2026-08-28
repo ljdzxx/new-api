@@ -78,6 +78,21 @@ export default function ModelRatioNotSetEditor({ onBillingPolicyChanged }) {
 
   const savePolicy = async (policy) => {
     if (!editingModel) return;
+    // The backend deliberately rejects policy writes until the migration has
+    // been activated.  Guard here as well so this page does not issue a
+    // request that can only result in a 409 on fresh/legacy installations.
+    const canBootstrap =
+      config?.state === 'legacy' &&
+      config?.migration?.version === 0 &&
+      Object.keys(config?.policies || {}).length === 0;
+    if (config?.state !== 'active' && !canBootstrap) {
+      showError(
+        t('当前计费策略状态为 {{state}}，请先完成迁移并激活后再设置价格', {
+          state: config?.state || 'legacy',
+        }),
+      );
+      return;
+    }
     setSaving(true);
     try {
       const response = await API.put('/api/option/billing_policy/policy', {

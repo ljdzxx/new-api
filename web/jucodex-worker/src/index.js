@@ -10,7 +10,7 @@ export default {
       return Response.redirect(incomingUrl.toString(), 301)
     }
 
-    if (shouldServeForbidden(request, pathname)) {
+    if (shouldServeForbidden(request, pathname, incomingUrl.hostname)) {
       return serveForbidden(request, env)
     }
 
@@ -146,8 +146,8 @@ async function proxyToBackend(request, env) {
   })
 }
 
-function shouldServeForbidden(request, pathname) {
-  return request.cf?.country === "CN" && !isPublicApiPath(pathname)
+function shouldServeForbidden(request, pathname, hostname) {
+  return hostname.endsWith(CANONICAL_HOST) && request.cf?.country === "CN" && !isPublicApiPath(pathname)
 }
 
 function isPublicApiPath(pathname) {

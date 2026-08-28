@@ -139,8 +139,8 @@ func normalizeChannelModelMapping(channel *model.Channel) map[string]string {
 	}
 	normalized := make(map[string]string, len(parsed))
 	for source, target := range parsed {
-		normalizedSource := strings.TrimSpace(source)
-		normalizedTarget := strings.TrimSpace(target)
+		normalizedSource := strings.TrimSpace(strings.TrimPrefix(strings.SplitN(strings.TrimSpace(source), ",", 2)[0], "!"))
+		normalizedTarget := strings.TrimSpace(strings.SplitN(strings.TrimSpace(target), ",", 2)[0])
 		if normalizedSource == "" || normalizedTarget == "" {
 			continue
 		}

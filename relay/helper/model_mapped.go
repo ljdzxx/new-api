@@ -27,6 +27,9 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	if isResponsesCompact && strings.HasSuffix(originModelName, ratio_setting.CompactModelSuffix) {
 		mappingModelName = strings.TrimSuffix(originModelName, ratio_setting.CompactModelSuffix)
 	}
+	// 渠道可能在重试时发生变化，映射状态必须按当前渠道重新计算。
+	info.IsModelMapped = false
+	info.UpstreamModelName = mappingModelName
 
 	// map model name
 	modelMapping := c.GetString("model_mapping")
@@ -41,12 +44,16 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 		}
 
 		// 模型重定向只执行单跳，命中后不再继续判断目标模型是否还有映射规则。
-		requestNeedsImageInput := requestRequiresImageInput(request)
-		mappedModel, conditional, exists := getMappedModel(modelMap, mappingModelName)
-		if exists && mappedModel != "" && mappedModel != mappingModelName {
-			if !(conditional && requestNeedsImageInput) {
-				info.IsModelMapped = true
-				info.UpstreamModelName = mappedModel
+		if modelMappingThresholdSatisfied(info) {
+			requestNeedsImageInput := requestRequiresImageInput(request)
+			requestEffort := requestReasoningEffort(request)
+			mappedModel, mappedEffort, exists := getMappedModel(modelMap, mappingModelName, requestEffort, requestNeedsImageInput)
+			if exists && mappedModel != "" {
+				if mappedModel != mappingModelName || mappedEffort != "" && mappedEffort != requestEffort {
+					info.IsModelMapped = true
+					info.UpstreamModelName = mappedModel
+					setRequestReasoningEffort(request, info, mappedEffort)
+				}
 			}
 		}
 	}
@@ -65,33 +72,144 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	return nil
 }
 
+type modelMappingRule struct {
+	model, effort string
+	conditional   bool
+	targetModel   string
+	targetEffort  string
+}
+
+func parseModelMappingRule(key, value string) (modelMappingRule, error) {
+	rule := modelMappingRule{}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(key, conditionalModelMappingPrefix) {
+		rule.conditional = true
+		key = strings.TrimSpace(strings.TrimPrefix(key, conditionalModelMappingPrefix))
+	}
+	keyParts := strings.Split(key, ",")
+	valueParts := strings.Split(value, ",")
+	if len(keyParts) > 2 || len(valueParts) > 2 || strings.TrimSpace(keyParts[0]) == "" || strings.TrimSpace(valueParts[0]) == "" {
+		return rule, errors.New("model_mapping_invalid_entry")
+	}
+	rule.model = strings.TrimSpace(keyParts[0])
+	if len(keyParts) == 2 {
+		rule.effort = strings.TrimSpace(keyParts[1])
+	}
+	rule.targetModel = strings.TrimSpace(valueParts[0])
+	if len(valueParts) == 2 {
+		rule.targetEffort = strings.TrimSpace(valueParts[1])
+	}
+	return rule, nil
+}
+
 func validateConditionalModelMappingConflicts(modelMap map[string]string) error {
-	for model := range modelMap {
-		if !strings.HasPrefix(model, conditionalModelMappingPrefix) {
-			if _, exists := modelMap[conditionalModelMappingPrefix+model]; exists {
+	plain := make(map[string]bool)
+	conditional := make(map[string]bool)
+	for key, value := range modelMap {
+		rule, err := parseModelMappingRule(key, value)
+		if err != nil {
+			return err
+		}
+		conflictKey := rule.model + "\x00" + rule.effort
+		if rule.conditional {
+			if plain[conflictKey] {
 				return errors.New("model_mapping_contains_conditional_conflict")
 			}
-			continue
-		}
-		plainModel := strings.TrimPrefix(model, conditionalModelMappingPrefix)
-		if plainModel == "" {
-			continue
-		}
-		if _, exists := modelMap[plainModel]; exists {
-			return errors.New("model_mapping_contains_conditional_conflict")
+			conditional[conflictKey] = true
+		} else {
+			if conditional[conflictKey] {
+				return errors.New("model_mapping_contains_conditional_conflict")
+			}
+			plain[conflictKey] = true
 		}
 	}
 	return nil
 }
 
-func getMappedModel(modelMap map[string]string, model string) (mappedModel string, conditional bool, exists bool) {
-	if mappedModel, exists = modelMap[model]; exists {
-		return mappedModel, false, true
+func getMappedModel(modelMap map[string]string, model, effort string, requestNeedsImageInput bool) (mappedModel, mappedEffort string, exists bool) {
+	var fallback *modelMappingRule
+	for key, value := range modelMap {
+		rule, err := parseModelMappingRule(key, value)
+		if err != nil || rule.model != model || rule.conditional && requestNeedsImageInput {
+			continue
+		}
+		if rule.effort == effort && effort != "" {
+			return rule.targetModel, rule.targetEffort, true
+		}
+		if rule.effort == "" {
+			candidate := rule
+			fallback = &candidate
+		}
 	}
-	if mappedModel, exists = modelMap[conditionalModelMappingPrefix+model]; exists {
-		return mappedModel, true, true
+	if fallback != nil {
+		return fallback.targetModel, fallback.targetEffort, true
 	}
-	return "", false, false
+	return "", "", false
+}
+
+func modelMappingThresholdSatisfied(info *common.RelayInfo) bool {
+	if info == nil || info.ChannelMeta == nil || !info.ModelMappingInputTokenThresholdEnabled {
+		return true
+	}
+	threshold := info.ModelMappingInputTokenThreshold
+	return threshold <= 0 || int64(info.GetEstimatePromptTokens()) >= threshold
+}
+
+func requestReasoningEffort(request dto.Request) string {
+	switch req := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		if req.ReasoningEffort != "" {
+			return req.ReasoningEffort
+		}
+		var reasoning struct {
+			Effort string `json:"effort"`
+		}
+		if len(req.Reasoning) > 0 && appcommon.Unmarshal(req.Reasoning, &reasoning) == nil {
+			return reasoning.Effort
+		}
+	case *dto.OpenAIResponsesRequest:
+		if req.Reasoning != nil {
+			return req.Reasoning.Effort
+		}
+	case *dto.OpenAIResponsesCompactionRequest:
+		if req.Reasoning != nil {
+			return req.Reasoning.Effort
+		}
+	}
+	return ""
+}
+
+func setRequestReasoningEffort(request dto.Request, info *common.RelayInfo, effort string) {
+	if effort == "" {
+		return
+	}
+	if info != nil {
+		info.ReasoningEffort = effort
+	}
+	switch req := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		req.ReasoningEffort = effort
+		if len(req.Reasoning) > 0 {
+			var reasoning map[string]any
+			if appcommon.Unmarshal(req.Reasoning, &reasoning) == nil {
+				reasoning["effort"] = effort
+				if data, err := appcommon.Marshal(reasoning); err == nil {
+					req.Reasoning = data
+				}
+			}
+		}
+	case *dto.OpenAIResponsesRequest:
+		if req.Reasoning == nil {
+			req.Reasoning = &dto.Reasoning{}
+		}
+		req.Reasoning.Effort = effort
+	case *dto.OpenAIResponsesCompactionRequest:
+		if req.Reasoning == nil {
+			req.Reasoning = &dto.Reasoning{}
+		}
+		req.Reasoning.Effort = effort
+	}
 }
 
 func requestRequiresImageInput(request dto.Request) bool {

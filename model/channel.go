@@ -39,8 +39,10 @@ type Channel struct {
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	TodayUsedQuota     int64   `json:"today_used_quota" gorm:"-"`
 	// 当日"额度不足"标记信息，仅用于控制台展示，不落库
-	QuotaInsufficientMark *QuotaInsufficientMarkInfo `json:"quota_insufficient_mark,omitempty" gorm:"-"`
-	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
+	QuotaInsufficientMark                  *QuotaInsufficientMarkInfo `json:"quota_insufficient_mark,omitempty" gorm:"-"`
+	ModelMapping                           *string                    `json:"model_mapping" gorm:"type:text"`
+	ModelMappingInputTokenThresholdEnabled *bool                      `json:"model_mapping_input_token_threshold_enabled" gorm:"default:false;column:model_mapping_input_token_threshold_enabled"`
+	ModelMappingInputTokenThreshold        *int64                     `json:"model_mapping_input_token_threshold" gorm:"type:bigint;default:0;column:model_mapping_input_token_threshold"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string  `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
 	Priority          *int64   `json:"priority" gorm:"bigint;default:0"`
@@ -212,6 +214,14 @@ func (channel *Channel) NormalizeBillingSettings() {
 		threshold := int64(0)
 		channel.RatioThreshold = &threshold
 	}
+	if channel.ModelMappingInputTokenThresholdEnabled == nil {
+		enabled := false
+		channel.ModelMappingInputTokenThresholdEnabled = &enabled
+	}
+	if channel.ModelMappingInputTokenThreshold == nil {
+		threshold := int64(0)
+		channel.ModelMappingInputTokenThreshold = &threshold
+	}
 	if channel.AllowSubscription == nil {
 		allow := true
 		channel.AllowSubscription = &allow
@@ -220,6 +230,17 @@ func (channel *Channel) NormalizeBillingSettings() {
 		allow := true
 		channel.AllowWallet = &allow
 	}
+}
+
+func (channel *Channel) IsModelMappingInputTokenThresholdEnabled() bool {
+	return channel != nil && channel.ModelMappingInputTokenThresholdEnabled != nil && *channel.ModelMappingInputTokenThresholdEnabled
+}
+
+func (channel *Channel) GetModelMappingInputTokenThreshold() int64 {
+	if channel == nil || channel.ModelMappingInputTokenThreshold == nil {
+		return 0
+	}
+	return *channel.ModelMappingInputTokenThreshold
 }
 
 func (channel *Channel) GetModelRatioInputTokenThreshold() int64 {

@@ -100,6 +100,8 @@ func ResolveOriginTask(c *gin.Context, info *relaycommon.RelayInfo) *dto.TaskErr
 		common.SetContextKey(c, constant.ContextKeyChannelId, originTask.ChannelId)
 		common.SetContextKey(c, constant.ContextKeyChannelModelRatio, ch.GetModelRatio())
 		common.SetContextKey(c, constant.ContextKeyChannelRatioThreshold, ch.GetModelRatioInputTokenThreshold())
+		common.SetContextKey(c, constant.ContextKeyChannelModelMappingThresholdEnabled, ch.IsModelMappingInputTokenThresholdEnabled())
+		common.SetContextKey(c, constant.ContextKeyChannelModelMappingThreshold, ch.GetModelMappingInputTokenThreshold())
 		common.SetContextKey(c, constant.ContextKeyChannelAllowSubscription, ch.IsSubscriptionAllowed())
 		common.SetContextKey(c, constant.ContextKeyChannelAllowWallet, ch.IsWalletAllowed())
 

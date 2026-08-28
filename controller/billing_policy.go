@@ -70,6 +70,15 @@ func UpsertBillingPolicyModelPolicy(c *gin.Context) {
 		return
 	}
 	current := billing_policy.GetConfig()
+	// A brand-new installation has no migrated policies or migration metadata.
+	// Let its first policy write bootstrap the new engine directly; requiring a
+	// shadow migration here makes the initial pricing setup impossible without
+	// an unrelated migration workflow. Existing legacy configurations still
+	// remain protected and must go through the migration process.
+	if current.State == billing_policy.StateLegacy &&
+		current.Migration.Version == 0 && len(current.Policies) == 0 {
+		current.State = billing_policy.StateActive
+	}
 	if current.State != billing_policy.StateActive {
 		c.JSON(http.StatusConflict, gin.H{"success": false, "message": "billing policy editing is available only after activation"})
 		return

@@ -326,6 +326,9 @@ func migrateDB() error {
 	if err := ensureChannelModelRatioInputTokenThresholdSQLite(); err != nil {
 		return err
 	}
+	if err := ensureChannelModelMappingInputTokenThresholdSQLite(); err != nil {
+		return err
+	}
 	if err := backfillPaymentProviders(); err != nil {
 		return err
 	}
@@ -423,6 +426,9 @@ func migrateDBFast() error {
 		}
 	}
 	if err := ensureChannelModelRatioInputTokenThresholdSQLite(); err != nil {
+		return err
+	}
+	if err := ensureChannelModelMappingInputTokenThresholdSQLite(); err != nil {
 		return err
 	}
 	if err := backfillPaymentProviders(); err != nil {
@@ -552,6 +558,23 @@ func ensureChannelModelRatioInputTokenThresholdSQLite() error {
 		return nil
 	}
 	return DB.Exec("ALTER TABLE `channels` ADD COLUMN `model_ratio_input_token_threshold` bigint DEFAULT 0").Error
+}
+
+func ensureChannelModelMappingInputTokenThresholdSQLite() error {
+	if !common.UsingSQLite || !DB.Migrator().HasTable(&Channel{}) {
+		return nil
+	}
+	if !DB.Migrator().HasColumn(&Channel{}, "model_mapping_input_token_threshold_enabled") {
+		if err := DB.Exec("ALTER TABLE `channels` ADD COLUMN `model_mapping_input_token_threshold_enabled` boolean DEFAULT 0").Error; err != nil {
+			return err
+		}
+	}
+	if !DB.Migrator().HasColumn(&Channel{}, "model_mapping_input_token_threshold") {
+		if err := DB.Exec("ALTER TABLE `channels` ADD COLUMN `model_mapping_input_token_threshold` bigint DEFAULT 0").Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureUsersTableSQLite() error {

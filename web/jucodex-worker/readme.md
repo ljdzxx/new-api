@@ -1,5 +1,5 @@
 # 登录cloudflare指令
-wrangler login
+npx wrangler login
 
 # worker部署指令
-wrangler deploy
+npx wrangler deploy

@@ -524,6 +524,8 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
 	common.SetContextKey(c, constant.ContextKeyChannelModelRatio, channel.GetModelRatio())
 	common.SetContextKey(c, constant.ContextKeyChannelRatioThreshold, channel.GetModelRatioInputTokenThreshold())
+	common.SetContextKey(c, constant.ContextKeyChannelModelMappingThresholdEnabled, channel.IsModelMappingInputTokenThresholdEnabled())
+	common.SetContextKey(c, constant.ContextKeyChannelModelMappingThreshold, channel.GetModelMappingInputTokenThreshold())
 	common.SetContextKey(c, constant.ContextKeyChannelAllowSubscription, channel.IsSubscriptionAllowed())
 	common.SetContextKey(c, constant.ContextKeyChannelAllowWallet, channel.IsWalletAllowed())
 

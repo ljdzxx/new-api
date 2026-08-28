@@ -59,27 +59,29 @@ type ResponsesUsageInfo struct {
 }
 
 type ChannelMeta struct {
-	ChannelType          int
-	ChannelId            int
-	ChannelIsMultiKey    bool
-	ChannelMultiKeyIndex int
-	ChannelBaseUrl       string
-	ApiType              int
-	ApiVersion           string
-	ApiKey               string
-	Organization         string
-	ChannelCreateTime    int64
-	ParamOverride        map[string]interface{}
-	HeadersOverride      map[string]interface{}
-	ChannelSetting       dto.ChannelSettings
-	ChannelOtherSettings dto.ChannelOtherSettings
-	ChannelModelRatio    float64
-	RatioThreshold       int64
-	AllowSubscription    bool
-	AllowWallet          bool
-	UpstreamModelName    string
-	IsModelMapped        bool
-	SupportStreamOptions bool // 是否支持流式选项
+	ChannelType                            int
+	ChannelId                              int
+	ChannelIsMultiKey                      bool
+	ChannelMultiKeyIndex                   int
+	ChannelBaseUrl                         string
+	ApiType                                int
+	ApiVersion                             string
+	ApiKey                                 string
+	Organization                           string
+	ChannelCreateTime                      int64
+	ParamOverride                          map[string]interface{}
+	HeadersOverride                        map[string]interface{}
+	ChannelSetting                         dto.ChannelSettings
+	ChannelOtherSettings                   dto.ChannelOtherSettings
+	ChannelModelRatio                      float64
+	RatioThreshold                         int64
+	ModelMappingInputTokenThresholdEnabled bool
+	ModelMappingInputTokenThreshold        int64
+	AllowSubscription                      bool
+	AllowWallet                            bool
+	UpstreamModelName                      string
+	IsModelMapped                          bool
+	SupportStreamOptions                   bool // 是否支持流式选项
 }
 
 type TokenCountMeta struct {
@@ -229,6 +231,12 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	}
 	if channelThreshold, ok := common.GetContextKeyType[int64](c, constant.ContextKeyChannelRatioThreshold); ok {
 		channelMeta.RatioThreshold = channelThreshold
+	}
+	if enabled, ok := common.GetContextKeyType[bool](c, constant.ContextKeyChannelModelMappingThresholdEnabled); ok {
+		channelMeta.ModelMappingInputTokenThresholdEnabled = enabled
+	}
+	if threshold, ok := common.GetContextKeyType[int64](c, constant.ContextKeyChannelModelMappingThreshold); ok {
+		channelMeta.ModelMappingInputTokenThreshold = threshold
 	}
 	if _, ok := common.GetContextKey(c, constant.ContextKeyChannelAllowSubscription); !ok {
 		channelMeta.AllowSubscription = true

@@ -90,13 +90,18 @@ import {
 const { Text, Title } = Typography;
 
 const MODEL_MAPPING_EXAMPLE = {
-  'gpt-3.5-turbo': 'gpt-3.5-turbo-0125',
-  '!gpt-4o': 'gpt-4o-mini',
+	'gpt-5.4-mini,xhigh': 'gpt-5.6-luna,max',
+	'gpt-5.4-mini': 'gpt-5.6-luna',
+	'!gpt-5.5,xhigh': 'gpt-5.3-codex-spark,high',
+	'gpt-5.6-sol,max': 'gpt-5.6-terra',
 };
 
 const normalizeModelMappingSourceModel = (model) => {
   const normalized = String(model || '').trim();
-  return normalized.startsWith('!') ? normalized.slice(1).trim() : normalized;
+  const withoutCondition = normalized.startsWith('!')
+    ? normalized.slice(1).trim()
+    : normalized;
+  return withoutCondition.split(',', 1)[0].trim();
 };
 
 const STATUS_CODE_MAPPING_EXAMPLE = {
@@ -285,6 +290,8 @@ const EditChannelModal = (props) => {
     weight: 0,
     model_ratio: 1,
     model_ratio_input_token_threshold: 0,
+	model_mapping_input_token_threshold_enabled: false,
+	model_mapping_input_token_threshold: 0,
     allow_subscription: true,
     allow_wallet: true,
     tag: '',
@@ -954,6 +961,13 @@ const EditChannelModal = (props) => {
         data.model_ratio_input_token_threshold === null
           ? 0
           : Number(data.model_ratio_input_token_threshold);
+	  data.model_mapping_input_token_threshold_enabled =
+		data.model_mapping_input_token_threshold_enabled === true;
+	  data.model_mapping_input_token_threshold =
+		data.model_mapping_input_token_threshold === undefined ||
+		data.model_mapping_input_token_threshold === null
+		  ? 0
+		  : Number(data.model_mapping_input_token_threshold);
       data.allow_subscription = data.allow_subscription !== false;
       data.allow_wallet = data.allow_wallet !== false;
       if (data.model_mapping !== '') {
@@ -1299,7 +1313,7 @@ const EditChannelModal = (props) => {
         modelsToUse.map((model) => String(model ?? '').trim()).filter(Boolean),
       ),
     );
-    const currentValue = String(value ?? '').trim();
+    const currentValue = String(value ?? '').trim().split(',', 1)[0].trim();
 
     setModelMappingValueModalModels(normalizedModelsToUse);
     setModelMappingValueKey(mappingKey);
@@ -1843,6 +1857,20 @@ const EditChannelModal = (props) => {
     }
     localInputs.model_ratio_input_token_threshold =
       channelModelRatioInputTokenThreshold;
+	localInputs.model_mapping_input_token_threshold_enabled =
+	  localInputs.model_mapping_input_token_threshold_enabled === true;
+	const modelMappingInputTokenThreshold = Number(
+	  localInputs.model_mapping_input_token_threshold,
+	);
+	if (
+	  !Number.isSafeInteger(modelMappingInputTokenThreshold) ||
+	  modelMappingInputTokenThreshold < 0
+	) {
+	  showInfo(t('模型映射总输入 Tokens 阈值必须是大于等于 0 的整数'));
+	  return;
+	}
+	localInputs.model_mapping_input_token_threshold =
+	  modelMappingInputTokenThreshold;
     localInputs.allow_subscription = localInputs.allow_subscription !== false;
     localInputs.allow_wallet = localInputs.allow_wallet !== false;
     if (!localInputs.allow_subscription && !localInputs.allow_wallet) {
@@ -3715,10 +3743,41 @@ const EditChannelModal = (props) => {
                           </Tooltip>
                         );
                       }}
-                      extraText={t(
-                        '键为请求中的模型名称(首字母"!"表示忽略带图请求)，值为要替换的模型名称',
-                      )}
+					  extraText={t(
+						'键和值均可使用“模型,推理强度”；带推理强度的键优先精确匹配，不带推理强度的键作为兜底；键首字母“!”表示忽略带图请求',
+					  )}
                     />
+					<Row gutter={16} className='mt-3'>
+					  <Col span={12}>
+						<Form.Switch
+						  field='model_mapping_input_token_threshold_enabled'
+						  label={t('启用模型映射总输入 Tokens 前置条件')}
+						  checkedText={t('开')}
+						  uncheckedText={t('关')}
+						  onChange={(value) =>
+							handleInputChange(
+							  'model_mapping_input_token_threshold_enabled',
+							  value,
+							)
+						  }
+						/>
+					  </Col>
+					  <Col span={12}>
+						<Form.InputNumber
+						  field='model_mapping_input_token_threshold'
+						  label={t('模型映射生效的总输入 Tokens 阈值')}
+						  placeholder='0'
+						  min={0}
+						  step={1000}
+						  precision={0}
+						  disabled={!inputs.model_mapping_input_token_threshold_enabled}
+						  onNumberChange={(value) =>
+							handleInputChange('model_mapping_input_token_threshold', value)
+						  }
+						  extraText={t('开启后，仅当总输入 Tokens 大于等于该值时执行模型映射')}
+						/>
+					  </Col>
+					</Row>
                   </Card>
                 </div>
 
@@ -4725,7 +4784,11 @@ const EditChannelModal = (props) => {
             parsed = {};
           }
 
-          parsed[mappingKey] = modelName;
+		  const oldValue = String(parsed[mappingKey] ?? '').trim();
+		  const effortSuffix = oldValue.includes(',')
+			? `,${oldValue.split(',').slice(1).join(',').trim()}`
+			: '';
+		  parsed[mappingKey] = `${modelName}${effortSuffix}`;
           const nextMapping = JSON.stringify(parsed, null, 2);
           handleInputChange('model_mapping', nextMapping);
           if (formApiRef.current) {
