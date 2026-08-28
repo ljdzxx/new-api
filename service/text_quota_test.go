@@ -860,3 +860,33 @@ func TestGenerateTextOtherInfoRecordsCompactClientIdentity(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "gpt-5.4-openai-compact", adminInfo["routing_model"])
 }
+
+func TestGenerateTextOtherInfoSeparatesClientAndUpstreamReasoningEffort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName:       "gpt-5.6-sol",
+		ClientReasoningEffort: "xhigh",
+		ReasoningEffort:       "max",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "gpt-5.6-terra",
+			IsModelMapped:     true,
+		},
+		PriceData: types.PriceData{
+			GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		},
+	}
+
+	other := GenerateTextOtherInfo(ctx, relayInfo, 1, 1, 1, 0, 1, 0, -1)
+	require.Equal(t, "xhigh", other["reasoning_effort"])
+	require.NotContains(t, other, "is_model_mapped")
+	require.NotContains(t, other, "upstream_model")
+	require.NotContains(t, other, "upstream_model_name")
+	require.NotContains(t, other, "model_mapping")
+
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "gpt-5.6-terra", adminInfo["upstream_model_name"])
+	require.Equal(t, "max", adminInfo["upstream_reasoning_effort"])
+}

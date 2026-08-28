@@ -1809,3 +1809,102 @@ Xiaomi hosted/server tools：
   - `bunx vite build --outDir ../.vite-topup-usd-check --emptyOutDir=true`
 - 构建通过，仅保留项目已有的 chunk size / circular chunk 警告。
 - 临时目录 `.vite-topup-usd-check` 已清理。
+
+---
+
+# 2026-08-28 渠道模型重定向多重语义与 Tokens 前置条件
+
+目标：
+
+- 将渠道“模型重定向”从单纯的模型一对一映射扩展为“模型 + 推理强度”组合映射。
+- 为模型映射增加可选的总输入 Tokens 阈值，只有满足前置条件时才执行映射。
+- 保持原有 `!` 非带图请求规则和单跳映射语义。
+
+模型映射语义：
+
+- key 和 value 均支持 `模型,推理强度` 格式，模型与推理强度以英文逗号分隔。
+- 带推理强度的 key 按“模型和请求推理强度”精确匹配，优先级高于不带推理强度的规则。
+- 不带推理强度的 key 是模型级兜底规则，仅在没有精确规则命中时生效。
+- value 带推理强度时覆盖上游请求的推理强度；不带推理强度时保留客户端原有推理强度。
+- key 以 `!` 开头时仅匹配非带图请求，原有图片保护语义保持不变。
+- 映射继续只执行单跳，命中后不会再用目标模型进行二次映射。
+- 同一模型、同一推理强度下的普通规则和 `!` 规则仍被视为冲突，并返回 `model_mapping_contains_conditional_conflict`。
+
+示例：
+
+```json
+{
+  "gpt-5.4-mini,xhigh": "gpt-5.6-luna,max",
+  "gpt-5.4-mini": "gpt-5.6-luna",
+  "gpt-5.4": "gpt-5.6-luna,max",
+  "!gpt-5.5,xhigh": "gpt-5.3-codex-spark,high",
+  "!gpt-5.5": "gpt-5.3-codex-spark",
+  "gpt-5.6-sol,max": "gpt-5.6-terra"
+}
+```
+
+后端改动：
+
+- `relay/helper/model_mapped.go`
+  - 增加映射 key/value 解析、推理强度精确匹配和模型级兜底选择。
+  - 支持读取和更新 Chat Completions 的 `reasoning_effort` / `reasoning.effort`。
+  - 支持读取和更新 Responses、Responses Compact 的 `reasoning.effort`。
+  - 目标 value 未指定推理强度时不改变原请求强度。
+  - 每次渠道重试前重置映射状态，避免上一次选中渠道的映射结果泄漏到下一次重试。
+- `model/channel.go`
+  - 新增 `model_mapping_input_token_threshold_enabled`。
+  - 新增 `model_mapping_input_token_threshold`。
+  - 增加默认值和安全 getter。
+- `constant/context_key.go`、`middleware/distributor.go`、`relay/common/relay_info.go`
+  - 将当前渠道的模型映射阈值配置写入请求上下文和 `ChannelMeta`。
+  - 映射时使用已经完成的原始输入 Tokens 估算值进行阈值判断。
+- `controller/channel.go`
+  - 校验阈值必须大于等于 `0`。
+  - PATCH 更新未传新字段时保留原渠道配置。
+- `model/main.go`
+  - 为 SQLite 增加兼容的 `ALTER TABLE ... ADD COLUMN` 迁移。
+  - MySQL、PostgreSQL 继续通过 GORM 模型迁移创建相同字段。
+- `relay/relay_task.go`
+  - 任务渠道恢复场景同步注入模型映射阈值配置。
+- `controller/channel_upstream_update.go`
+  - 上游模型同步比较时去除 key 的 `!` 和推理强度，并去除 value 的推理强度，只使用真实模型名。
+
+前端改动：
+
+- `web/src/components/table/channels/modals/EditChannelModal.jsx`
+  - 更新模型映射模板和说明，展示精确规则、兜底规则及 `!` 规则。
+  - 新增“启用模型映射总输入 Tokens 前置条件”开关。
+  - 新增“模型映射生效的总输入 Tokens 阈值”整数输入框。
+  - 模型列表缺失检查会去除 key 中的 `!` 和推理强度。
+  - 使用上游模型选择器替换目标模型时保留 value 中已有的推理强度。
+- `web/src/i18n/locales/zh-CN.json`
+  - 增加新增配置项的简体中文文案。
+
+测试：
+
+- `relay/helper/model_mapped_test.go`
+  - 覆盖推理强度精确匹配优先于兜底规则。
+  - 覆盖目标推理强度覆盖。
+  - 覆盖不带推理强度的模型级兜底。
+  - 覆盖 `!` 规则跳过带图请求。
+  - 覆盖总输入 Tokens 低于阈值不映射、达到阈值后映射。
+- 定向测试通过：
+
+```bash
+go test ./relay/helper
+```
+
+- 完整 Go 测试通过：
+
+```bash
+go test ./...
+```
+
+- 测试时显式使用可写缓存目录，避免 Windows 用户目录权限影响：
+
+```powershell
+$env:GOCACHE = 'C:\go-cache'
+$env:GOTMPDIR = 'C:\go-tmp'
+$env:GOTELEMETRY = 'off'
+go test ./...
+```

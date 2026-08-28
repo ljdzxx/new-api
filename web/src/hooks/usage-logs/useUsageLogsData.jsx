@@ -494,10 +494,6 @@ export const useLogsData = () => {
         }
       }
       if (logs[i].type === 2) {
-        let modelMapped =
-          other?.is_model_mapped &&
-          other?.upstream_model_name &&
-          other?.upstream_model_name !== '';
         if (other?.client_model) {
           expandDataLocal.push({
             key: t('客户端模型'),
@@ -515,13 +511,6 @@ export const useLogsData = () => {
             value: routingModel,
           });
         }
-        if (isRootUser && modelMapped) {
-          expandDataLocal.push({
-            key: t('实际模型'),
-            value: other.upstream_model_name,
-          });
-        }
-
         const isViolationFeeLog =
           other?.violation_fee === true ||
           Boolean(other?.violation_fee_code) ||
@@ -609,12 +598,6 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('计费过程'),
             value: content,
-          });
-        }
-        if (other?.reasoning_effort) {
-          expandDataLocal.push({
-            key: t('Reasoning Effort'),
-            value: other.reasoning_effort,
           });
         }
       }

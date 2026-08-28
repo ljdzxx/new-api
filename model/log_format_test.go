@@ -36,3 +36,23 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	require.Contains(t, parsed, "model_price")
 	require.Equal(t, "gpt-5.4", parsed["client_model"])
 }
+
+func TestFormatUserLogsPreservesClientEffortAndStripsUpstreamEffort(t *testing.T) {
+	logs := []*Log{{Other: common.MapToJsonStr(map[string]interface{}{
+			"reasoning_effort": "xhigh",
+			"is_model_mapped": true,
+			"upstream_model_name": "gpt-5.6-terra",
+			"admin_info": map[string]interface{}{
+			"upstream_reasoning_effort": "max",
+			"upstream_model_name":       "gpt-5.6-terra",
+		},
+	})}}
+
+	formatUserLogs(logs, 0)
+	parsed, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	require.Equal(t, "xhigh", parsed["reasoning_effort"])
+	require.NotContains(t, parsed, "admin_info")
+	require.NotContains(t, parsed, "is_model_mapped")
+	require.NotContains(t, parsed, "upstream_model_name")
+}

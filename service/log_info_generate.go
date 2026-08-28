@@ -124,13 +124,17 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	if adjustments, exists := ctx.Get("billing_policy_adjustments"); exists {
 		other["billing_policy_adjustments"] = adjustments
 	}
-	if relayInfo.ReasoningEffort != "" {
-		other["reasoning_effort"] = relayInfo.ReasoningEffort
+	clientReasoningEffort := relayInfo.ClientReasoningEffort
+	if clientReasoningEffort == "" {
+		// Backward-compatible fallback for relay paths that do not use mapping.
+		clientReasoningEffort = relayInfo.ReasoningEffort
 	}
-	if relayInfo.IsModelMapped {
-		other["is_model_mapped"] = true
-		other["upstream_model_name"] = relayInfo.UpstreamModelName
+	if clientReasoningEffort != "" {
+		// This field is visible to users and must describe their request, not
+		// the mapped upstream request.
+		other["reasoning_effort"] = clientReasoningEffort
 	}
+	other["billing_model"] = relayInfo.OriginModelName
 	if relayInfo.ClientModelName != "" {
 		other["client_model"] = relayInfo.ClientModelName
 	}
@@ -141,6 +145,26 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	adminInfo := make(map[string]interface{})
+	// Routing details are admin-only. User log formatting removes the entire
+	// admin_info object, so mapped model/effort values cannot leak.
+	adminInfo["upstream_model"] = relayInfo.UpstreamModelName
+	adminInfo["upstream_model_name"] = relayInfo.UpstreamModelName
+	adminInfo["client_reasoning_effort"] = clientReasoningEffort
+	adminInfo["upstream_reasoning_effort"] = relayInfo.ReasoningEffort
+	adminInfo["is_model_mapped"] = relayInfo.IsModelMapped
+	adminInfo["model_mapping"] = map[string]interface{}{
+		"enabled":             relayInfo.ModelMappingThresholdEnabled,
+		"threshold":           relayInfo.ModelMappingThreshold,
+		"estimate_tokens":     relayInfo.ModelMappingInputTokenEstimate,
+		"actual_input_tokens": relayInfo.ModelMappingActualInputTokens,
+		"threshold_satisfied": relayInfo.ModelMappingThresholdSatisfied,
+		"candidate_model":     relayInfo.ModelMappingCandidateModel,
+		"candidate_effort":    relayInfo.ModelMappingCandidateEffort,
+		"applied":             relayInfo.IsModelMapped,
+		"upstream_model":      relayInfo.UpstreamModelName,
+		"upstream_effort":     relayInfo.ReasoningEffort,
+		"skipped_reason":      relayInfo.ModelMappingSkippedReason,
+	}
 	adminInfo["use_channel"] = ctx.GetStringSlice("use_channel")
 	if relayInfo.ClientModelName != "" && relayInfo.ClientModelName != relayInfo.OriginModelName {
 		adminInfo["routing_model"] = relayInfo.OriginModelName

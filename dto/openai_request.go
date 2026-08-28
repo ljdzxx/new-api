@@ -877,6 +877,12 @@ func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	var texts = make([]string, 0)
 
 	if r.Input != nil {
+		// Count the complete Responses input JSON, not only input_text leaves.
+		// History items, tool calls/results, reasoning and encrypted_content all
+		// contribute to the upstream prompt but are otherwise easy to lose while
+		// normalizing the heterogeneous input union. ParseInput is still used
+		// below for media metadata.
+		texts = append(texts, string(r.Input))
 		inputs := r.ParseInput()
 		for _, input := range inputs {
 			if input.Type == "input_image" {
@@ -894,8 +900,6 @@ func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {
 						Source:   types.NewFileSourceFromData(input.FileUrl, ""),
 					})
 				}
-			} else {
-				texts = append(texts, input.Text)
 			}
 		}
 	}

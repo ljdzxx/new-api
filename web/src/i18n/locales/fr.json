@@ -1479,6 +1479,8 @@
     "可在设置页面设置关于内容，支持 HTML & Markdown": "Le contenu \"À propos\" peut être défini sur la page des paramètres, prenant en charge HTML & Markdown",
     "可在设置页面设置可用性内容，支持 HTML & Markdown": "Le contenu de disponibilité peut être défini dans les paramètres, avec prise en charge de HTML et Markdown",
     "客户端模型": "Modèle client",
+    "客户端推理强度": "Effort de raisonnement client",
+    "实际推理强度": "Effort de raisonnement réel",
     "空": "Vide",
     "控制 token auth、raw request、Xiaomi Claude trace、渠道转发预检等详细日志": "",
     "控制顶栏模块显示状态，全局生效": "Contrôler l'état d'affichage du module d'en-tête, effet global",

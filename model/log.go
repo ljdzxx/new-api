@@ -59,6 +59,12 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			// Remove admin-only debug fields.
 			delete(otherMap, "admin_info")
 			delete(otherMap, "reject_reason")
+			// These fields were historically written at the top level. Keep
+			// legacy user-log responses from exposing mapped upstream details.
+			delete(otherMap, "upstream_model")
+			delete(otherMap, "upstream_model_name")
+			delete(otherMap, "model_mapping")
+			delete(otherMap, "is_model_mapped")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 		logs[i].Id = startIdx + i + 1

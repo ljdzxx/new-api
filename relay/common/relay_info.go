@@ -120,13 +120,27 @@ type RelayInfo struct {
 	IsFirstRequest         bool
 	AudioUsage             bool
 	ReasoningEffort        string
-	UserSetting            dto.UserSetting
-	UserEmail              string
-	UserQuota              int
-	RelayFormat            types.RelayFormat
-	SendResponseCount      int
-	ReceivedResponseCount  int
-	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// ClientReasoningEffort preserves the effort requested by the caller.
+	// ReasoningEffort may be rewritten by model mapping for the upstream call.
+	ClientReasoningEffort string
+	// Model mapping diagnostics are retained on the relay so the consume log
+	// can explain both a hit and a threshold/parse miss without inspecting
+	// process-local state.
+	ModelMappingInputTokenEstimate int
+	ModelMappingActualInputTokens  int
+	ModelMappingThreshold          int64
+	ModelMappingThresholdEnabled   bool
+	ModelMappingThresholdSatisfied bool
+	ModelMappingCandidateModel     string
+	ModelMappingCandidateEffort    string
+	ModelMappingSkippedReason      string
+	UserSetting                    dto.UserSetting
+	UserEmail                      string
+	UserQuota                      int
+	RelayFormat                    types.RelayFormat
+	SendResponseCount              int
+	ReceivedResponseCount          int
+	FinalPreConsumedQuota          int // 最终预消耗的配额
 	// WssConsumedQuota tracks the quota already deducted incrementally for a
 	// realtime request, so final settlement can correct thresholded ratios and
 	// per-chunk rounding against the complete upstream usage.

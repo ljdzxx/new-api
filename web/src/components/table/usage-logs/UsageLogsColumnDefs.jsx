@@ -231,18 +231,54 @@ function renderBillingTag(record, t) {
   return null;
 }
 
-function renderModelName(record, copyText, t, isRootUser = false) {
+const reasoningEffortColors = {
+  low: 'green',
+  medium: 'blue',
+  high: 'orange',
+  xhigh: 'red',
+  max: 'purple',
+  ultra: 'violet',
+};
+
+function renderReasoningEffortTag(effort, copyText, suffixIcon) {
+  if (!effort) return null;
+  const normalized = String(effort).toLowerCase();
+  return (
+    <Tag
+      color={reasoningEffortColors[normalized] || 'grey'}
+      shape='circle'
+      suffixIcon={suffixIcon}
+      onClick={(event) => copyText(event, effort).then(() => {})}
+    >
+      {effort}
+    </Tag>
+  );
+}
+
+function renderModelName(record, copyText, t, isAdminUser = false) {
   const other = getLogOther(record.other);
   const clientModel = other?.client_model || record.model_name;
   const routingModel = other?.admin_info?.routing_model || record.model_name;
   const requestPath = other?.request_path || '';
   const isCompactRequest = requestPath === '/v1/responses/compact';
   const modelMapped =
-    other?.is_model_mapped &&
-    other?.upstream_model_name &&
-    other?.upstream_model_name !== '';
+    (other?.admin_info?.is_model_mapped || other?.is_model_mapped) &&
+    (other?.admin_info?.upstream_model_name || other?.upstream_model_name) &&
+    (other?.admin_info?.upstream_model_name || other?.upstream_model_name) !==
+      '';
+  const upstreamModel =
+    other?.admin_info?.upstream_model_name || other?.upstream_model_name;
+  const clientEffort = other?.reasoning_effort || '';
+  const upstreamEffort =
+    other?.admin_info?.upstream_reasoning_effort || clientEffort;
+  const effortMapped =
+    isAdminUser &&
+    other?.admin_info?.is_model_mapped &&
+    clientEffort &&
+    upstreamEffort &&
+    clientEffort !== upstreamEffort;
   const showAuditModels =
-    isRootUser && (modelMapped || routingModel !== clientModel);
+    isAdminUser && (modelMapped || routingModel !== clientModel);
   const renderClientModelTag = (withRoute = false) =>
     renderModelTag(clientModel, {
       onClick: (event) => {
@@ -280,9 +316,9 @@ function renderModelName(record, copyText, t, isRootUser = false) {
                 <Typography.Text strong style={{ marginRight: 8 }}>
                   {t('实际模型')}:
                 </Typography.Text>
-                {renderModelTag(other.upstream_model_name, {
+                {renderModelTag(upstreamModel, {
                   onClick: (event) => {
-                    copyText(event, other.upstream_model_name).then((r) => {});
+                    copyText(event, upstreamModel).then((r) => {});
                   },
                 })}
               </div>
@@ -291,25 +327,69 @@ function renderModelName(record, copyText, t, isRootUser = false) {
         </div>
       }
     >
-      {renderClientModelTag(true)}
+      <span style={{ display: 'inline-flex' }}>
+        {renderClientModelTag(true)}
+      </span>
     </Popover>
   ) : (
     renderClientModelTag()
   );
 
+  const effortTag = effortMapped ? (
+    <Popover
+      content={
+        <div style={{ padding: 10 }}>
+          <Space vertical align='start'>
+            <div className='flex items-center'>
+              <Typography.Text strong style={{ marginRight: 8 }}>
+                {t('客户端推理强度')}:
+              </Typography.Text>
+              {renderReasoningEffortTag(clientEffort, copyText)}
+            </div>
+            <div className='flex items-center'>
+              <Typography.Text strong style={{ marginRight: 8 }}>
+                {t('实际推理强度')}:
+              </Typography.Text>
+              {renderReasoningEffortTag(upstreamEffort, copyText)}
+            </div>
+          </Space>
+        </div>
+      }
+    >
+      <span style={{ display: 'inline-flex' }}>
+        {renderReasoningEffortTag(
+          clientEffort,
+          copyText,
+          <Route style={{ width: '0.9em', height: '0.9em', opacity: 0.75 }} />,
+        )}
+      </span>
+    </Popover>
+  ) : (
+    renderReasoningEffortTag(clientEffort, copyText)
+  );
+
+  const modelAndEffort = (
+    <Space spacing={4} wrap>
+      {modelTag}
+      {effortTag}
+    </Space>
+  );
+
   if (!isCompactRequest) {
-    return modelTag;
+    return modelAndEffort;
   }
 
   return (
     <Space vertical align='start' spacing={2}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <Tooltip content={t('远程压缩')}>
-          <Tag color='green' shape='circle'>
-            压
-          </Tag>
+          <span style={{ display: 'inline-flex' }}>
+            <Tag color='green' shape='circle'>
+              压
+            </Tag>
+          </span>
         </Tooltip>
-        {modelTag}
+        {modelAndEffort}
       </div>
       <Typography.Text
         type='tertiary'
@@ -809,7 +889,6 @@ export const getLogsColumns = ({
   showUserInfoFunc,
   openChannelAffinityUsageCacheModal,
   isAdminUser,
-  isRootUser,
   billingDisplayMode = 'price',
 }) => {
   return [
@@ -1017,7 +1096,7 @@ export const getLogsColumns = ({
           record.type === 2 ||
           record.type === 5 ||
           record.type === 6 ? (
-          <>{renderModelName(record, copyText, t, isRootUser)}</>
+          <>{renderModelName(record, copyText, t, isAdminUser)}</>
         ) : (
           <></>
         );

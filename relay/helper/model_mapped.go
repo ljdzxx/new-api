@@ -30,6 +30,24 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	// 渠道可能在重试时发生变化，映射状态必须按当前渠道重新计算。
 	info.IsModelMapped = false
 	info.UpstreamModelName = mappingModelName
+	clientReasoningEffort := requestReasoningEffort(request)
+	if info.ClientReasoningEffort == "" {
+		info.ClientReasoningEffort = clientReasoningEffort
+	}
+	// Keep the client value available even when no mapping/adaptor runs later.
+	if info.ReasoningEffort == "" {
+		info.ReasoningEffort = info.ClientReasoningEffort
+	}
+	info.ModelMappingInputTokenEstimate = info.GetEstimatePromptTokens()
+	info.ModelMappingThresholdEnabled = info.ChannelMeta.ModelMappingInputTokenThresholdEnabled
+	info.ModelMappingThreshold = info.ChannelMeta.ModelMappingInputTokenThreshold
+	info.ModelMappingThresholdSatisfied = modelMappingThresholdSatisfied(info)
+	info.ModelMappingCandidateModel = mappingModelName
+	info.ModelMappingCandidateEffort = info.ClientReasoningEffort
+	info.ModelMappingSkippedReason = ""
+	if info.ModelMappingThresholdEnabled && !info.ModelMappingThresholdSatisfied {
+		info.ModelMappingSkippedReason = "input_tokens_below_threshold"
+	}
 
 	// map model name
 	modelMapping := c.GetString("model_mapping")
@@ -37,35 +55,38 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 		modelMap := make(map[string]string)
 		err := appcommon.UnmarshalJsonStr(modelMapping, &modelMap)
 		if err != nil {
+			info.ModelMappingSkippedReason = "invalid_mapping_json"
 			return fmt.Errorf("unmarshal_model_mapping_failed")
 		}
 		if err := validateConditionalModelMappingConflicts(modelMap); err != nil {
+			info.ModelMappingSkippedReason = "mapping_conflict"
 			return err
 		}
 
 		// 模型重定向只执行单跳，命中后不再继续判断目标模型是否还有映射规则。
-		if modelMappingThresholdSatisfied(info) {
+		if info.ModelMappingThresholdSatisfied {
 			requestNeedsImageInput := requestRequiresImageInput(request)
-			requestEffort := requestReasoningEffort(request)
+			requestEffort := info.ClientReasoningEffort
 			mappedModel, mappedEffort, exists := getMappedModel(modelMap, mappingModelName, requestEffort, requestNeedsImageInput)
 			if exists && mappedModel != "" {
 				if mappedModel != mappingModelName || mappedEffort != "" && mappedEffort != requestEffort {
 					info.IsModelMapped = true
 					info.UpstreamModelName = mappedModel
 					setRequestReasoningEffort(request, info, mappedEffort)
+				} else {
+					info.ModelMappingSkippedReason = "identity_mapping"
 				}
+			} else {
+				info.ModelMappingSkippedReason = "no_matching_rule"
 			}
 		}
+	} else {
+		info.ModelMappingSkippedReason = "empty_model_mapping"
 	}
 
-	if isResponsesCompact {
-		finalUpstreamModelName := mappingModelName
-		if info.IsModelMapped && info.UpstreamModelName != "" {
-			finalUpstreamModelName = info.UpstreamModelName
-		}
-		info.UpstreamModelName = finalUpstreamModelName
-		info.OriginModelName = ratio_setting.WithCompactModelSuffix(finalUpstreamModelName)
-	}
+	// OriginModelName is the client/rating identity and must remain unchanged.
+	// Only UpstreamModelName is redirected; otherwise mapping would silently
+	// change pre-consume and settlement pricing to the target model.
 	if request != nil {
 		request.SetModelName(info.UpstreamModelName)
 	}

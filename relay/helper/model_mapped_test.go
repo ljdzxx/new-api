@@ -162,3 +162,42 @@ func TestModelMappedHelperInputTokenThreshold(t *testing.T) {
 	require.NoError(t, ModelMappedHelper(c, info, request))
 	require.Equal(t, "mapped-model", info.UpstreamModelName)
 }
+
+func TestProductionModelMappingConfigSolXHigh(t *testing.T) {
+	c := newModelMappedTestContext(`{
+  "gpt-5.4-mini": "gpt-5.6-luna",
+  "gpt-5.4,low": "gpt-5.6-luna,medium",
+  "gpt-5.4,medium": "gpt-5.6-luna,max",
+  "gpt-5.4,high": "gpt-5.6-luna,max",
+  "gpt-5.4,xhigh": "gpt-5.6-luna,max",
+  "gpt-5.4,max": "gpt-5.6-luna,max",
+  "gpt-5.4": "gpt-5.6-luna",
+  "gpt-5.5": "gpt-5.6-terra",
+  "gpt-5.6-terra,low": "gpt-5.6-luna,medium",
+  "gpt-5.6-terra,medium": "gpt-5.6-luna,max",
+  "gpt-5.6-terra,high": "gpt-5.6-luna,max",
+  "gpt-5.6-terra,xhigh": "gpt-5.6-luna,max",
+  "gpt-5.6-terra,max": "gpt-5.6-luna,max",
+  "gpt-5.6-terra": "gpt-5.6-luna,max",
+  "gpt-5.6-sol,low": "gpt-5.6-terra,medium",
+  "gpt-5.6-sol,medium": "gpt-5.6-terra,high",
+  "gpt-5.6-sol,high": "gpt-5.6-terra,xhigh",
+  "gpt-5.6-sol,xhigh": "gpt-5.6-terra,max",
+  "gpt-5.6-sol,max": "gpt-5.6-terra,max",
+  "gpt-5.6-sol": "gpt-5.6-terra"
+}`)
+	info := newModelMappedTestInfo("gpt-5.6-sol")
+	info.ModelMappingInputTokenThresholdEnabled = true
+	info.ModelMappingInputTokenThreshold = 25000
+	info.SetEstimatePromptTokens(156426)
+	request := &dto.OpenAIResponsesRequest{
+		Model:     "gpt-5.6-sol",
+		Reasoning: &dto.Reasoning{Effort: "xhigh"},
+	}
+
+	require.NoError(t, ModelMappedHelper(c, info, request))
+	require.True(t, info.IsModelMapped)
+	require.Equal(t, "gpt-5.6-terra", info.UpstreamModelName)
+	require.Equal(t, "xhigh", info.ClientReasoningEffort)
+	require.Equal(t, "max", request.Reasoning.Effort)
+}

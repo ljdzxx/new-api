@@ -87,6 +87,13 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
 	}
+	// The compaction endpoint does not forward reasoning to the upstream API,
+	// but the client-provided effort is still needed for conditional model
+	// mapping (for example, "model,xhigh"). Keep it through mapping and strip
+	// it before conversion so the upstream compaction payload remains whitelisted.
+	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
+		request.Reasoning = nil
+	}
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
@@ -298,6 +305,13 @@ func openAIResponsesRequestFromCompaction(req *dto.OpenAIResponsesCompactionRequ
 	// Only fields supported by POST /v1/responses/compact are forwarded.
 	// Codex-parity fields such as tools, reasoning, and text remain accepted by
 	// the client DTO for compatibility, but are intentionally not sent upstream.
+	var reasoning *dto.Reasoning
+	if req.Reasoning != nil {
+		// Do not alias the client request: model mapping may override the effort
+		// on this internal copy before the field is stripped for upstream.
+		reasoningValue := *req.Reasoning
+		reasoning = &reasoningValue
+	}
 	return &dto.OpenAIResponsesRequest{
 		Model:                req.Model,
 		Input:                req.Input,
@@ -308,6 +322,7 @@ func openAIResponsesRequestFromCompaction(req *dto.OpenAIResponsesCompactionRequ
 		PromptCacheKey:       req.PromptCacheKey,
 		PromptCacheOptions:   req.PromptCacheOptions,
 		PromptCacheRetention: req.PromptCacheRetention,
+		Reasoning:            reasoning,
 	}
 }
 

@@ -1594,6 +1594,8 @@
     "可在设置页面设置关于内容，支持 HTML & Markdown": "Nội dung Giới thiệu có thể được đặt trên trang cài đặt, hỗ trợ HTML & Markdown",
     "可在设置页面设置可用性内容，支持 HTML & Markdown": "Có thể đặt nội dung tính khả dụng trong trang cài đặt, hỗ trợ HTML & Markdown",
     "客户端模型": "Mô hình phía máy khách",
+    "客户端推理强度": "Mức độ suy luận của máy khách",
+    "实际推理强度": "Mức độ suy luận thực tế",
     "空": "Trống",
     "控制 token auth、raw request、Xiaomi Claude trace、渠道转发预检等详细日志": "",
     "控制顶栏模块显示状态，全局生效": "Kiểm soát trạng thái hiển thị mô-đun tiêu đề, hiệu ứng toàn cầu",
