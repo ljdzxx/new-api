@@ -181,6 +181,12 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 		if err != nil {
 			return nil, errors.Wrap(err, "get request body bytes fail")
 		}
+		// AWS model identity is carried in ModelId (and removed below), while
+		// Claude reasoning settings remain part of the JSON payload.
+		body, err = helper.ApplyModelMappingToPassthroughBody(body, info, &dto.ClaudeRequest{})
+		if err != nil {
+			return nil, errors.Wrap(err, "apply model mapping to pass-through body fail")
+		}
 		var data map[string]interface{}
 		if err := common.Unmarshal(body, &data); err != nil {
 			return nil, errors.Wrap(err, "pass-through unmarshal request body fail")

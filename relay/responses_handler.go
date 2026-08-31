@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -111,6 +112,12 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 		}
+		mappedBody, mapErr := helper.ApplyModelMappingToPassthroughBody(outboundRequestBody, info, request)
+		if mapErr != nil {
+			return types.NewError(mapErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		bodyChanged := !bytes.Equal(mappedBody, outboundRequestBody)
+		outboundRequestBody = mappedBody
 		removedImageTools := 0
 		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
 			outboundRequestBody, removedImageTools, err = relaycommon.StripImageGenerationTool(outboundRequestBody)
@@ -122,7 +129,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
-		if removedIDs == 0 && removedImageTools == 0 {
+		if removedIDs == 0 && removedImageTools == 0 && !bodyChanged {
 			info.UpstreamRequestBodySize = storage.Size()
 			requestBody = common.ReaderOnly(storage)
 		} else {

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -514,6 +515,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			strings.HasPrefix(request.Model, "claude-opus-4-7") ||
 			strings.HasPrefix(request.Model, "claude-opus-4-8")) {
 		request.Model = baseModel
+		info.ReasoningEffort = effortLevel
 		request.Thinking = &dto.Thinking{
 			Type: "adaptive",
 		}
@@ -621,7 +623,22 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			logClaudeMessagesError(c, "read pass-through request body failed: %s %s", err.Error(), summarizeClaudeChannelForLog(info))
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		logClaudeMessagesDebug(c, "using pass-through request body: bytes=%d disk=%t %s", storage.Size(), storage.IsDisk(), summarizeClaudeChannelForLog(info))
+		var passthroughBody []byte
+		bodyChanged := false
+		if info.IsModelMapped {
+			passthroughBody, err = storage.Bytes()
+			if err != nil {
+				logClaudeMessagesError(c, "read pass-through request body for model mapping failed: %s %s", err.Error(), summarizeClaudeChannelForLog(info))
+				return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+			}
+			originalBody := passthroughBody
+			passthroughBody, err = helper.ApplyModelMappingToPassthroughBody(passthroughBody, info, request)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			bodyChanged = !bytes.Equal(originalBody, passthroughBody)
+		}
+		logClaudeMessagesDebug(c, "using pass-through request body: bytes=%d disk=%t mapped=%t %s", storage.Size(), storage.IsDisk(), bodyChanged, summarizeClaudeChannelForLog(info))
 		if shouldTraceXiaomiClaude(c, info) {
 			bodyBytes, bodyErr := storage.Bytes()
 			if bodyErr != nil {
@@ -631,8 +648,18 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 				logXiaomiClaudeTrace(c, "FINAL upstream request body raw bytes=%d:\n%s", len(bodyBytes), string(bodyBytes))
 			}
 		}
-		info.UpstreamRequestBodySize = storage.Size()
-		requestBody = common.ReaderOnly(storage)
+		if bodyChanged {
+			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(passthroughBody)
+			if bodyErr != nil {
+				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			defer closer.Close()
+			info.UpstreamRequestBodySize = size
+			requestBody = body
+		} else {
+			info.UpstreamRequestBodySize = storage.Size()
+			requestBody = common.ReaderOnly(storage)
+		}
 		if claudeRelayDetailLogEnabled(c) {
 			if bodyBytes, bodyErr := storage.Bytes(); bodyErr != nil {
 				logClaudeRelayDetail(c, "outbound upstream request body (pass-through) read failed: %s", bodyErr.Error())

@@ -34,10 +34,10 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	if info.ClientReasoningEffort == "" {
 		info.ClientReasoningEffort = clientReasoningEffort
 	}
-	// Keep the client value available even when no mapping/adaptor runs later.
-	if info.ReasoningEffort == "" {
-		info.ReasoningEffort = info.ClientReasoningEffort
-	}
+	// A retry may select a different channel. Reset the upstream effort to the
+	// preserved client value before applying the current channel's mapping so
+	// an override from the previous channel cannot leak into this request.
+	info.ReasoningEffort = info.ClientReasoningEffort
 	info.ModelMappingInputTokenEstimate = info.GetEstimatePromptTokens()
 	info.ModelMappingThresholdEnabled = info.ChannelMeta.ModelMappingInputTokenThresholdEnabled
 	info.ModelMappingThreshold = info.ChannelMeta.ModelMappingInputTokenThreshold
@@ -58,7 +58,7 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 			info.ModelMappingSkippedReason = "invalid_mapping_json"
 			return fmt.Errorf("unmarshal_model_mapping_failed")
 		}
-		if err := validateConditionalModelMappingConflicts(modelMap); err != nil {
+		if err := validateModelMappingRules(modelMap); err != nil {
 			info.ModelMappingSkippedReason = "mapping_conflict"
 			return err
 		}
@@ -124,47 +124,73 @@ func parseModelMappingRule(key, value string) (modelMappingRule, error) {
 	return rule, nil
 }
 
-func validateConditionalModelMappingConflicts(modelMap map[string]string) error {
-	plain := make(map[string]bool)
-	conditional := make(map[string]bool)
+func validateModelMappingRules(modelMap map[string]string) error {
+	seen := make(map[string]struct{}, len(modelMap))
 	for key, value := range modelMap {
 		rule, err := parseModelMappingRule(key, value)
 		if err != nil {
 			return err
 		}
-		conflictKey := rule.model + "\x00" + rule.effort
+		// A conditional and a plain rule with the same model/effort are a
+		// supported pair: the conditional rule handles requests without image
+		// input and the plain rule is the final fallback. Precedence is resolved
+		// explicitly in getMappedModel below rather than rejecting the pair.
+		layer := "plain"
 		if rule.conditional {
-			if plain[conflictKey] {
-				return errors.New("model_mapping_contains_conditional_conflict")
-			}
-			conditional[conflictKey] = true
-		} else {
-			if conditional[conflictKey] {
-				return errors.New("model_mapping_contains_conditional_conflict")
-			}
-			plain[conflictKey] = true
+			layer = "conditional"
 		}
+		normalizedKey := layer + "\x00" + rule.model + "\x00" + rule.effort
+		if _, exists := seen[normalizedKey]; exists {
+			return errors.New("model_mapping_contains_duplicate_rule")
+		}
+		seen[normalizedKey] = struct{}{}
 	}
 	return nil
 }
 
+// Kept as a compatibility alias for package-local callers/tests using the
+// previous helper name. Conditional/plain pairs are intentionally allowed.
+func validateConditionalModelMappingConflicts(modelMap map[string]string) error {
+	return validateModelMappingRules(modelMap)
+}
+
 func getMappedModel(modelMap map[string]string, model, effort string, requestNeedsImageInput bool) (mappedModel, mappedEffort string, exists bool) {
-	var fallback *modelMappingRule
+	var conditionalExact, conditionalFallback *modelMappingRule
+	var plainExact, plainFallback *modelMappingRule
 	for key, value := range modelMap {
 		rule, err := parseModelMappingRule(key, value)
 		if err != nil || rule.model != model || rule.conditional && requestNeedsImageInput {
 			continue
 		}
 		if rule.effort == effort && effort != "" {
-			return rule.targetModel, rule.targetEffort, true
+			candidate := rule
+			if rule.conditional {
+				conditionalExact = &candidate
+			} else {
+				plainExact = &candidate
+			}
 		}
 		if rule.effort == "" {
 			candidate := rule
-			fallback = &candidate
+			if rule.conditional {
+				conditionalFallback = &candidate
+			} else {
+				plainFallback = &candidate
+			}
 		}
 	}
-	if fallback != nil {
-		return fallback.targetModel, fallback.targetEffort, true
+	// Exact reasoning-effort rules take precedence over model-only fallbacks.
+	// For requests without image input, conditional rules win ties within each
+	// specificity level; for image requests they were filtered out above.
+	for _, candidate := range []*modelMappingRule{
+		conditionalExact,
+		plainExact,
+		conditionalFallback,
+		plainFallback,
+	} {
+		if candidate != nil {
+			return candidate.targetModel, candidate.targetEffort, true
+		}
 	}
 	return "", "", false
 }
@@ -196,6 +222,12 @@ func requestReasoningEffort(request dto.Request) string {
 	case *dto.OpenAIResponsesCompactionRequest:
 		if req.Reasoning != nil {
 			return req.Reasoning.Effort
+		}
+	case *dto.ClaudeRequest:
+		return req.GetEfforts()
+	case *dto.GeminiChatRequest:
+		if req.GenerationConfig.ThinkingConfig != nil {
+			return req.GenerationConfig.ThinkingConfig.ThinkingLevel
 		}
 	}
 	return ""
@@ -230,6 +262,23 @@ func setRequestReasoningEffort(request dto.Request, info *common.RelayInfo, effo
 			req.Reasoning = &dto.Reasoning{}
 		}
 		req.Reasoning.Effort = effort
+	case *dto.ClaudeRequest:
+		var outputConfig map[string]any
+		if len(req.OutputConfig) > 0 && appcommon.Unmarshal(req.OutputConfig, &outputConfig) != nil {
+			outputConfig = make(map[string]any)
+		}
+		if outputConfig == nil {
+			outputConfig = make(map[string]any)
+		}
+		outputConfig["effort"] = effort
+		if data, err := appcommon.Marshal(outputConfig); err == nil {
+			req.OutputConfig = data
+		}
+	case *dto.GeminiChatRequest:
+		if req.GenerationConfig.ThinkingConfig == nil {
+			req.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{}
+		}
+		req.GenerationConfig.ThinkingConfig.ThinkingLevel = effort
 	}
 }
 

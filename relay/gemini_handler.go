@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -141,7 +142,32 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		requestBody = common.ReaderOnly(storage)
+		if info.IsModelMapped {
+			passthroughBody, bodyErr := storage.Bytes()
+			if bodyErr != nil {
+				return types.NewError(bodyErr, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+			}
+			originalBody := passthroughBody
+			passthroughBody, bodyErr = helper.ApplyModelMappingToPassthroughBody(passthroughBody, info, request)
+			if bodyErr != nil {
+				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			if !bytes.Equal(originalBody, passthroughBody) {
+				body, size, closer, outboundErr := relaycommon.NewOutboundJSONBody(passthroughBody)
+				if outboundErr != nil {
+					return types.NewError(outboundErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+				}
+				defer closer.Close()
+				info.UpstreamRequestBodySize = size
+				requestBody = body
+			} else {
+				info.UpstreamRequestBodySize = storage.Size()
+				requestBody = common.ReaderOnly(storage)
+			}
+		} else {
+			info.UpstreamRequestBodySize = storage.Size()
+			requestBody = common.ReaderOnly(storage)
+		}
 	} else {
 		// 使用 ConvertGeminiRequest 转换请求格式
 		convertedRequest, err := adaptor.ConvertGeminiRequest(c, info, request)

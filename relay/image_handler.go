@@ -56,6 +56,22 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			service.MarkImageRecordFailure(c, err)
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
+		var passthroughBody []byte
+		bodyChanged := false
+		if info.IsModelMapped {
+			passthroughBody, err = storage.Bytes()
+			if err != nil {
+				service.MarkImageRecordFailure(c, err)
+				return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+			}
+			originalBody := passthroughBody
+			passthroughBody, err = helper.ApplyModelMappingToPassthroughBody(passthroughBody, info, request)
+			if err != nil {
+				service.MarkImageRecordFailure(c, err)
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			bodyChanged = !bytes.Equal(originalBody, passthroughBody)
+		}
 		if common.DebugTraceEnabledForContext(c) {
 			if bodyBytes, bodyErr := storage.Bytes(); bodyErr == nil {
 				service.LogImageRelayJSONRequestTrace(c, "pass-through", bodyBytes)
@@ -63,7 +79,19 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				logger.LogWarn(c, fmt.Sprintf("[image trace] request pass-through read failed: %s", bodyErr.Error()))
 			}
 		}
-		requestBody = common.ReaderOnly(storage)
+		if bodyChanged {
+			body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(passthroughBody)
+			if bodyErr != nil {
+				service.MarkImageRecordFailure(c, bodyErr)
+				return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			defer closer.Close()
+			info.UpstreamRequestBodySize = size
+			requestBody = body
+		} else {
+			info.UpstreamRequestBodySize = storage.Size()
+			requestBody = common.ReaderOnly(storage)
+		}
 	} else {
 		convertedRequest, err := adaptor.ConvertImageRequest(c, info, *request)
 		if err != nil {

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -99,19 +100,31 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
+		if relaycommon.ShouldStripImageGeneration(info.RelayMode) || info.IsModelMapped {
 			jsonData, readErr := storage.Bytes()
 			if readErr != nil {
 				return types.NewError(readErr, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 			}
-			jsonData, removed, stripErr := relaycommon.StripImageGenerationTool(jsonData)
-			if stripErr != nil {
-				return types.NewError(stripErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			originalBody := jsonData
+			mappedBody, mapErr := helper.ApplyModelMappingToPassthroughBody(jsonData, info, request)
+			if mapErr != nil {
+				return types.NewError(mapErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			jsonData = mappedBody
+			bodyChanged := !bytes.Equal(jsonData, originalBody)
+			removed := 0
+			if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
+				var stripErr error
+				jsonData, removed, stripErr = relaycommon.StripImageGenerationTool(jsonData)
+				if stripErr != nil {
+					return types.NewError(stripErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+				}
+				bodyChanged = bodyChanged || removed > 0
 			}
 			if common.DebugEnabled {
 				println("requestBody: ", string(jsonData))
 			}
-			if removed > 0 {
+			if bodyChanged {
 				body, size, closer, bodyErr := relaycommon.NewOutboundJSONBody(jsonData)
 				if bodyErr != nil {
 					return types.NewError(bodyErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
