@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -144,6 +145,37 @@ func UpdateOption(c *gin.Context) {
 				"message": "开票金额阈值必须是不小于 0 的数字",
 			})
 			return
+		}
+	case "quota_setting.pre_consume_min_balance":
+		v, parseErr := strconv.ParseFloat(strings.TrimSpace(option.Value.(string)), 64)
+		if parseErr != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "预扣最低余额必须是不小于 0 的有限金额",
+			})
+			return
+		}
+		quotaSetting := *operation_setting.GetQuotaSetting()
+		quotaSetting.EnablePreConsumeMinBalance = true
+		quotaSetting.PreConsumeMinBalance = v
+		if _, conversionErr := quotaSetting.PreConsumeMinBalanceQuota(); conversionErr != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": conversionErr.Error(),
+			})
+			return
+		}
+	case "quota_setting.enable_pre_consume_min_balance":
+		if option.Value == "true" {
+			quotaSetting := *operation_setting.GetQuotaSetting()
+			quotaSetting.EnablePreConsumeMinBalance = true
+			if _, conversionErr := quotaSetting.PreConsumeMinBalanceQuota(); conversionErr != nil {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": conversionErr.Error(),
+				})
+				return
+			}
 		}
 	case "invoice_setting.online_time":
 		onlineTime := strings.TrimSpace(option.Value.(string))

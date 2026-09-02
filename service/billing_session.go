@@ -11,9 +11,16 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	preConsumePathFormula        = "formula"
+	preConsumePathMinimumBalance = "minimum_balance"
+	preConsumePathTrustQuota     = "trust_quota"
 )
 
 // ---------------------------------------------------------------------------
@@ -158,6 +165,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 
 	// ---- 信任额度旁路 ----
 	if s.shouldTrust(c) {
+		s.relayInfo.PreConsumePath = preConsumePathTrustQuota
 		effectiveQuota = 0
 		logger.LogInfo(c, fmt.Sprintf("用户 %d 额度充足, 信任且不需要预扣费 (funding=%s)", s.relayInfo.UserId, s.funding.Source()))
 	} else if effectiveQuota > 0 {
@@ -284,6 +292,9 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			types.ErrorCodeInvalidRequest, http.StatusBadRequest,
 			types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 	}
+	// Reset the path before trying the preferred funding source. This matters
+	// when subscription_first falls back to the wallet after a failed attempt.
+	relayInfo.PreConsumePath = preConsumePathFormula
 
 	// 钱包路径需要先检查用户额度
 	tryWallet := func() (*BillingSession, *types.NewAPIError) {
@@ -303,9 +314,35 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 				types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
-		if userQuota-preConsumedQuota < 0 {
+		// Optional minimum-balance policy: use the configured monetary balance
+		// threshold as a gate and skip formula-based pre-consumption. Settlement
+		// still charges the actual usage after the upstream request completes.
+		effectivePreConsumedQuota := preConsumedQuota
+		relayInfo.PreConsumePath = preConsumePathFormula
+		quotaSetting := operation_setting.GetQuotaSetting()
+		if quotaSetting != nil && quotaSetting.EnablePreConsumeMinBalance {
+			minimumBalanceQuota, conversionErr := quotaSetting.PreConsumeMinBalanceQuota()
+			if conversionErr != nil {
+				return nil, types.NewErrorWithStatusCode(
+					conversionErr,
+					types.ErrorCodeModelPriceError,
+					http.StatusBadRequest,
+					types.ErrOptionWithSkipRetry(),
+					types.ErrOptionWithNoRecordErrorLog(),
+				)
+			}
+			if userQuota <= minimumBalanceQuota {
+				return nil, types.NewErrorWithStatusCode(
+					fmt.Errorf("用户余额不足, 当前余额: %s, 最低余额: %s", logger.FormatQuota(userQuota), logger.FormatQuota(minimumBalanceQuota)),
+					types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest,
+					types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+			}
+			relayInfo.PreConsumePath = preConsumePathMinimumBalance
+			effectivePreConsumedQuota = 0
+		}
+		if userQuota-effectivePreConsumedQuota < 0 {
 			return nil, types.NewErrorWithStatusCode(
-				fmt.Errorf("预扣费额度失败, 用户剩余额度: %s, 需要预扣费额度: %s", logger.FormatQuota(userQuota), logger.FormatQuota(preConsumedQuota)),
+				fmt.Errorf("预扣费额度失败, 用户剩余额度: %s, 需要预扣费额度: %s", logger.FormatQuota(userQuota), logger.FormatQuota(effectivePreConsumedQuota)),
 				types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest,
 				types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
 		}
@@ -315,13 +352,16 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 			relayInfo: relayInfo,
 			funding:   &WalletFunding{userId: relayInfo.UserId},
 		}
-		if apiErr := session.preConsume(c, preConsumedQuota); apiErr != nil {
+		if apiErr := session.preConsume(c, effectivePreConsumedQuota); apiErr != nil {
 			return nil, apiErr
 		}
 		return session, nil
 	}
 
 	trySubscription := func() (*BillingSession, *types.NewAPIError) {
+		// A wallet attempt may have set the minimum-balance marker before
+		// falling back here; subscription always uses the formula amount.
+		relayInfo.PreConsumePath = preConsumePathFormula
 		if !allowSubscription {
 			return nil, types.NewErrorWithStatusCode(
 				fmt.Errorf("当前渠道不支持订阅支付"),

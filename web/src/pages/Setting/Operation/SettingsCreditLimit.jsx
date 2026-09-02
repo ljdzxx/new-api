@@ -73,6 +73,8 @@ export default function SettingsCreditLimit(props) {
       DEFAULT_INVITE_RISK_WEIGHTS,
     ),
     'quota_setting.enable_free_model_pre_consume': true,
+    'quota_setting.enable_pre_consume_min_balance': false,
+    'quota_setting.pre_consume_min_balance': 0,
   });
   const [subscriptionPlans, setSubscriptionPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(false);
@@ -85,6 +87,15 @@ export default function SettingsCreditLimit(props) {
     (sum, value) => sum + Number(value || 0),
     0,
   );
+
+  const balanceCurrency = (() => {
+    const type = props.options?.['general_setting.quota_display_type'] || 'USD';
+    if (type === 'CNY') return '¥';
+    if (type === 'CUSTOM') {
+      return props.options?.['general_setting.custom_currency_symbol'] || '¤';
+    }
+    return '$';
+  })();
 
   const updateInviteRiskWeight = (key, value) => {
     const next = {
@@ -164,6 +175,15 @@ export default function SettingsCreditLimit(props) {
       currentInputs.InviteRiskScoreWeights = stringifyInviteRiskWeights(
         DEFAULT_INVITE_RISK_WEIGHTS,
       );
+    }
+    if (
+      currentInputs['quota_setting.enable_pre_consume_min_balance'] ===
+      undefined
+    ) {
+      currentInputs['quota_setting.enable_pre_consume_min_balance'] = false;
+    }
+    if (currentInputs['quota_setting.pre_consume_min_balance'] === undefined) {
+      currentInputs['quota_setting.pre_consume_min_balance'] = 0;
     }
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
@@ -340,6 +360,45 @@ export default function SettingsCreditLimit(props) {
                 />
               </Col>
             </Row>
+            <Form.Section text={t('预扣设置')}>
+              <Row gutter={16}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('预扣最低余额')}
+                    field={'quota_setting.pre_consume_min_balance'}
+                    min={0}
+                    step={0.01}
+                    suffix={balanceCurrency}
+                    extraText={t(
+                      '金额单位跟随站点额度展示货币；开启后仅检查余额高于该金额，不再按请求预扣额度公式扣款',
+                    )}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'quota_setting.pre_consume_min_balance': String(
+                          value ?? 0,
+                        ),
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.Switch
+                    label={t('启用预扣最低余额')}
+                    field={'quota_setting.enable_pre_consume_min_balance'}
+                    extraText={t(
+                      '开启后，每次预扣仅判断用户余额是否大于最低余额；请求结束后仍按实际用量结算',
+                    )}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'quota_setting.enable_pre_consume_min_balance': value,
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+            </Form.Section>
             <Form.Section text={t('邀请奖励风控')}>
               <Row gutter={16}>
                 <Col xs={24} sm={12} md={8} lg={8} xl={8}>

@@ -155,6 +155,11 @@ type RelayInfo struct {
 	// BillingSource indicates whether this request is billed from wallet quota or subscription.
 	// "" or "wallet" => wallet; "subscription" => subscription
 	BillingSource string
+	// PreConsumePath records the actual pre-consume branch selected for this
+	// request. It is kept on RelayInfo so the billing diagnostic can distinguish
+	// the optional minimum-balance gate from the legacy formula path (and the
+	// trust-quota bypass) after funding fallback has completed.
+	PreConsumePath string
 	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
 	SubscriptionId int
 	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)

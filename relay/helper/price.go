@@ -380,14 +380,27 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				return types.PriceData{}, err
 			}
 		}
-		if globalModelRatio != 1 || common.DebugTraceEnabledForContext(c) {
+		quotaSetting := operation_setting.GetQuotaSetting()
+		preConsumePolicy := "formula"
+		preConsumePolicyEnabled := false
+		if quotaSetting != nil && quotaSetting.EnablePreConsumeMinBalance {
+			preConsumePolicy = "minimum_balance"
+			preConsumePolicyEnabled = true
+		}
+		// Keep this diagnostic visible whenever the optional minimum-balance
+		// policy is enabled, even when the effective global ratio is 1. The
+		// actual funding path is logged by BillingSession after wallet/subscription
+		// selection; this field records the pricing policy that was configured
+		// while the pre-consume quota was calculated.
+		if globalModelRatio != 1 || common.DebugTraceEnabledForContext(c) || preConsumePolicyEnabled {
 			channelID := 0
 			if info.ChannelMeta != nil {
 				channelID = info.ChannelMeta.ChannelId
 			}
 			logger.LogInfo(c, fmt.Sprintf(
-				"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_preconsume_tokens=%d scaled_preconsume_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
+				"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s pre_consume_calculation_path=formula pre_consume_policy=%s pre_consume_policy_enabled=%t system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_preconsume_tokens=%d scaled_preconsume_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
 				info.UserId, channelID, info.TokenId, info.OriginModelName,
+				preConsumePolicy, preConsumePolicyEnabled,
 				systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio,
 				preConsumedTokens, scaledPreConsumedTokens,
 				preConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, float64(preConsumedTokens)*modelRatio*groupRatioInfo.GroupRatio,

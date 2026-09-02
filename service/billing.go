@@ -39,7 +39,34 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 		return apiErr
 	}
 	relayInfo.Billing = session
+	logPreConsumePath(c, relayInfo, preConsumedQuota, session.GetPreConsumedQuota())
 	return nil
+}
+
+// logPreConsumePath emits the final branch selected by BillingSession after
+// subscription/wallet fallback. ModelPriceHelper logs the ratio calculation
+// before that selection, so this second line is the authoritative route marker
+// for production troubleshooting while retaining the same searchable prefix.
+func logPreConsumePath(c *gin.Context, relayInfo *relaycommon.RelayInfo, formulaQuota int, effectiveQuota int) {
+	if relayInfo == nil {
+		return
+	}
+	channelID := 0
+	if relayInfo.ChannelMeta != nil {
+		channelID = relayInfo.ChannelMeta.ChannelId
+	}
+	path := relayInfo.PreConsumePath
+	if path == "" {
+		path = preConsumePathFormula
+	}
+	priceData := relayInfo.PriceData
+	logger.LogInfo(c, fmt.Sprintf(
+		"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s pre_consume_path=%s billing_source=%s formula_quota=%d effective_preconsume_quota=%d system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f",
+		relayInfo.UserId, channelID, relayInfo.TokenId, relayInfo.OriginModelName,
+		path, relayInfo.BillingSource, formulaQuota, effectiveQuota,
+		priceData.SystemGlobalModelRatio, priceData.UserGlobalModelRatio,
+		priceData.ChannelModelRatio, priceData.GlobalModelRatio,
+	))
 }
 
 // ---------------------------------------------------------------------------

@@ -46,6 +46,8 @@ const OperationSetting = () => {
     InviteRiskScoreWeights:
       '{"ip":25,"fingerprint":30,"canvas":10,"webgl":10,"audio":6,"fonts":6,"ua":5,"locale":4,"screen":3,"hardware":1}',
     'quota_setting.enable_free_model_pre_consume': true,
+    'quota_setting.enable_pre_consume_min_balance': false,
+    'quota_setting.pre_consume_min_balance': 0,
 
     /* 通用设置 */
     TopUpLink: '',

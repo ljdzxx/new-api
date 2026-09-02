@@ -877,12 +877,7 @@ func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	var texts = make([]string, 0)
 
 	if r.Input != nil {
-		// Count the complete Responses input JSON, not only input_text leaves.
-		// History items, tool calls/results, reasoning and encrypted_content all
-		// contribute to the upstream prompt but are otherwise easy to lose while
-		// normalizing the heterogeneous input union. ParseInput is still used
-		// below for media metadata.
-		texts = append(texts, string(r.Input))
+		texts = append(texts, extractResponsesBillableText(r.Input)...)
 		inputs := r.ParseInput()
 		for _, input := range inputs {
 			if input.Type == "input_image" {
@@ -905,33 +900,213 @@ func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	}
 
 	if len(r.Instructions) > 0 {
-		texts = append(texts, string(r.Instructions))
-	}
-
-	if len(r.Metadata) > 0 {
-		texts = append(texts, string(r.Metadata))
-	}
-
-	if len(r.Text) > 0 {
-		texts = append(texts, string(r.Text))
-	}
-
-	if len(r.ToolChoice) > 0 {
-		texts = append(texts, string(r.ToolChoice))
+		texts = append(texts, extractResponsesBillableText(r.Instructions)...)
 	}
 
 	if len(r.Prompt) > 0 {
-		texts = append(texts, string(r.Prompt))
+		texts = append(texts, extractResponsesBillableText(r.Prompt)...)
 	}
 
 	if len(r.Tools) > 0 {
-		texts = append(texts, string(r.Tools))
+		texts = append(texts, extractResponsesToolText(r.Tools)...)
 	}
 
 	return &types.TokenCountMeta{
 		CombineText: strings.Join(texts, "\n"),
 		Files:       fileMeta,
 		MaxTokens:   int(lo.FromPtrOr(r.MaxOutputTokens, uint(0))),
+	}
+}
+
+// responsesMediaInputTypes identifies input items whose payload must never be
+// treated as ordinary text. Their media token accounting is handled separately
+// through ParseInput and FileMeta.
+var responsesMediaInputTypes = map[string]struct{}{
+	"input_image": {},
+	"input_file":  {},
+	"input_audio": {},
+	"input_video": {},
+}
+
+// responsesTextFields is deliberately small. Responses payloads contain many
+// strings which are identifiers, URLs, metadata, or encoded data. Only these
+// fields are recursively considered when an item type is not explicitly
+// recognized.
+var responsesTextFields = [...]string{"text", "content", "output", "arguments", "summary"}
+
+// extractResponsesBillableText returns only text leaves which can contribute to
+// prompt token billing. It intentionally does not walk every string in an
+// object: doing so would count image/file data, URLs, IDs, roles, metadata, and
+// encrypted blobs as if they were prompt text.
+func extractResponsesBillableText(raw json.RawMessage) []string {
+	texts := make([]string, 0)
+	collectResponsesBillableText(raw, &texts)
+	return texts
+}
+
+func collectResponsesBillableText(raw json.RawMessage, texts *[]string) {
+	if len(raw) == 0 {
+		return
+	}
+
+	switch common.GetJsonType(raw) {
+	case "string":
+		var value string
+		if err := common.Unmarshal(raw, &value); err == nil && value != "" {
+			*texts = append(*texts, value)
+		}
+	case "array":
+		var values []json.RawMessage
+		if err := common.Unmarshal(raw, &values); err != nil {
+			return
+		}
+		for _, value := range values {
+			collectResponsesBillableText(value, texts)
+		}
+	case "object":
+		var object map[string]json.RawMessage
+		if err := common.Unmarshal(raw, &object); err != nil {
+			return
+		}
+
+		// A media item can contain very large base64/data or URL fields. Stop
+		// before looking at any of its children.
+		if typeName := responsesJSONString(object["type"]); typeName != "" {
+			if _, isMedia := responsesMediaInputTypes[typeName]; isMedia {
+				return
+			}
+		}
+
+		switch responsesJSONString(object["type"]) {
+		case "input_text", "output_text", "summary_text":
+			appendResponsesStringField(object, "text", texts)
+		case "message":
+			collectResponsesBillableText(object["content"], texts)
+		case "function_call":
+			appendResponsesStringField(object, "name", texts)
+			appendResponsesStringField(object, "arguments", texts)
+		case "function_call_output":
+			collectResponsesBillableText(object["output"], texts)
+		case "reasoning":
+			collectResponsesBillableText(object["summary"], texts)
+		case "compaction":
+			// encrypted_content is intentionally omitted. Some compaction
+			// payloads also carry a plaintext summary/content representation.
+			for _, field := range [...]string{"summary", "content", "text"} {
+				collectResponsesBillableText(object[field], texts)
+			}
+		default:
+			// For unknown item types, recurse only through known textual
+			// containers. In particular, do not iterate over every map value.
+			for _, field := range responsesTextFields {
+				collectResponsesBillableText(object[field], texts)
+			}
+		}
+	}
+}
+
+func appendResponsesStringField(object map[string]json.RawMessage, field string, texts *[]string) {
+	value, ok := object[field]
+	if !ok || common.GetJsonType(value) != "string" {
+		return
+	}
+	var text string
+	if err := common.Unmarshal(value, &text); err == nil && text != "" {
+		*texts = append(*texts, text)
+	}
+}
+
+func responsesJSONString(raw json.RawMessage) string {
+	if common.GetJsonType(raw) != "string" {
+		return ""
+	}
+	var value string
+	if err := common.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	return value
+}
+
+// extractResponsesToolText keeps the useful textual parts of Responses tools
+// while avoiding JSON punctuation, schema keywords, and arbitrary non-text
+// values. Tool names/descriptions and nested schema descriptions are billable;
+// metadata/IDs and encoded values are not.
+func extractResponsesToolText(raw json.RawMessage) []string {
+	texts := make([]string, 0)
+	collectResponsesToolText(raw, &texts)
+	return texts
+}
+
+func collectResponsesToolText(raw json.RawMessage, texts *[]string) {
+	if len(raw) == 0 {
+		return
+	}
+	switch common.GetJsonType(raw) {
+	case "array":
+		var values []json.RawMessage
+		if err := common.Unmarshal(raw, &values); err != nil {
+			return
+		}
+		for _, value := range values {
+			collectResponsesToolText(value, texts)
+		}
+	case "object":
+		var object map[string]json.RawMessage
+		if err := common.Unmarshal(raw, &object); err != nil {
+			return
+		}
+		appendResponsesStringField(object, "name", texts)
+		appendResponsesStringField(object, "description", texts)
+		if function, ok := object["function"]; ok {
+			collectResponsesToolText(function, texts)
+		}
+		if parameters, ok := object["parameters"]; ok {
+			collectResponsesToolDescriptions(parameters, texts)
+		}
+		if schema, ok := object["schema"]; ok {
+			collectResponsesToolDescriptions(schema, texts)
+		}
+		if schema, ok := object["input_schema"]; ok {
+			collectResponsesToolDescriptions(schema, texts)
+		}
+		if schema, ok := object["json_schema"]; ok {
+			collectResponsesToolDescriptions(schema, texts)
+		}
+	}
+}
+
+func collectResponsesToolDescriptions(raw json.RawMessage, texts *[]string) {
+	if len(raw) == 0 {
+		return
+	}
+	switch common.GetJsonType(raw) {
+	case "array":
+		var values []json.RawMessage
+		if err := common.Unmarshal(raw, &values); err != nil {
+			return
+		}
+		for _, value := range values {
+			collectResponsesToolDescriptions(value, texts)
+		}
+	case "object":
+		var object map[string]json.RawMessage
+		if err := common.Unmarshal(raw, &object); err != nil {
+			return
+		}
+		appendResponsesStringField(object, "description", texts)
+		if properties, ok := object["properties"]; ok {
+			var propertyMap map[string]json.RawMessage
+			if err := common.Unmarshal(properties, &propertyMap); err == nil {
+				for _, property := range propertyMap {
+					collectResponsesToolDescriptions(property, texts)
+				}
+			}
+		}
+		for _, field := range [...]string{"schema", "items", "additionalProperties", "anyOf", "allOf", "oneOf", "not"} {
+			if child, ok := object[field]; ok {
+				collectResponsesToolDescriptions(child, texts)
+			}
+		}
 	}
 }
 
