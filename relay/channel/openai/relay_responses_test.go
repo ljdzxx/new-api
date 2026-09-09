@@ -6,9 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -20,6 +23,99 @@ type unexpectedEOFReader struct{}
 
 func (unexpectedEOFReader) Read([]byte) (int, error) {
 	return 0, io.ErrUnexpectedEOF
+}
+
+func TestResponsesStreamFailureBoundaries(t *testing.T) {
+	created := `{"type":"response.created","sequence_number":0,"response":{"id":"resp_original"}}`
+	failed := `{"type":"response.failed","response":{"id":"resp_original","error":{"code":"server_error","message":"upstream failed"},"usage":{"input_tokens":12,"output_tokens":3,"total_tokens":15}}}`
+	for _, tc := range []struct {
+		name    string
+		events  []string
+		started bool
+		message string
+	}{
+		{"empty stream", nil, false, "before response.completed"},
+		{"heartbeat only", []string{`{"type":"response.keepalive"}`}, false, "before response.completed"},
+		{"created then EOF", []string{created}, true, "before response.completed"},
+		{"malformed event", []string{created, `{broken`}, true, "invalid upstream Responses event"},
+		{"failed", []string{created, failed, `{"type":"response.output_text.delta","delta":"must not be forwarded"}`}, true, "upstream failed"},
+		{"incomplete", []string{created, `{"type":"response.incomplete","response":{"id":"resp_original","incomplete_details":{"reason":"max_output_tokens"}}}`}, true, "response.incomplete"},
+		{"flat error", []string{created, `{"type":"error","code":"server_error","message":"flat failure"}`}, true, "flat failure"},
+		{"first event failure", []string{failed}, false, "upstream failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(r)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			var body strings.Builder
+			for _, event := range tc.events {
+				body.WriteString("data: " + event + "\n\n")
+			}
+			resp := &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body.String()))}
+			usage, apiErr := OaiResponsesStreamHandler(c, &relaycommon.RelayInfo{}, resp)
+			require.NotNil(t, apiErr)
+			require.Contains(t, apiErr.Error(), tc.message)
+			require.Equal(t, tc.started, helper.ResponsesStreamStarted(c))
+			require.Equal(t, tc.started, types.IsSkipRetryError(apiErr))
+			require.NotContains(t, r.Body.String(), "must not be forwarded")
+			require.NotContains(t, r.Body.String(), "event: response.failed", "controller owns final failure framing")
+			if tc.name == "failed" {
+				require.Equal(t, 12, usage.PromptTokens)
+				require.Equal(t, 3, usage.CompletionTokens)
+			}
+		})
+	}
+}
+
+func TestResponsesStreamStopsAtCompleted(t *testing.T) {
+	r := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(r)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	body := "data: " + `{"type":"response.completed","response":{"id":"resp_done","usage":{"input_tokens":10,"output_tokens":2,"total_tokens":12}}}` + "\n\n" +
+		"data: " + `{"type":"response.output_text.delta","delta":"late output"}` + "\n\n"
+	resp := &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
+	usage, apiErr := OaiResponsesStreamHandler(c, &relaycommon.RelayInfo{}, resp)
+	require.Nil(t, apiErr)
+	require.Equal(t, 12, usage.TotalTokens)
+	require.NotContains(t, r.Body.String(), "late output")
+}
+
+func TestResponsesStreamClosesUpstreamOnTimeoutOrTerminal(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 1
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	for _, event := range []string{
+		`{"type":"response.created","response":{"id":"resp_timeout"}}`,
+		`{"type":"response.completed","response":{"id":"resp_done"}}`,
+		`{"type":"response.failed","response":{"error":{"code":"server_error","message":"failed"}}}`,
+	} {
+		reader, writer := io.Pipe()
+		r := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(r)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		result := make(chan *types.NewAPIError, 1)
+		go func() {
+			_, err := OaiResponsesStreamHandler(c, &relaycommon.RelayInfo{DisablePing: true}, &http.Response{StatusCode: 200, Header: make(http.Header), Body: reader})
+			result <- err
+		}()
+		_, err := io.WriteString(writer, "data: "+event+"\n\n")
+		require.NoError(t, err)
+		select {
+		case apiErr := <-result:
+			if strings.Contains(event, "response.completed") {
+				require.Nil(t, apiErr)
+			} else {
+				require.NotNil(t, apiErr)
+			}
+		case <-time.After(5 * time.Second):
+			_ = writer.Close()
+			<-result
+			t.Fatal("stream did not stop without upstream EOF")
+		}
+		_, err = writer.Write([]byte("late event"))
+		require.ErrorIs(t, err, io.ErrClosedPipe)
+		_ = writer.Close()
+	}
 }
 
 func TestSendResponsesKeepAliveWritesIgnoredResponsesEvent(t *testing.T) {

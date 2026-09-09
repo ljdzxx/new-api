@@ -94,9 +94,17 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 	if requestContextDone(c) {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
-	return FlushWriter(c)
+	recordResponsesEvent(c, resp.Type, data)
+	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", resp.Type, data); err != nil {
+		return err
+	}
+	if err := FlushWriter(c); err != nil {
+		return err
+	}
+	if isResponsesEvent(c, resp.Type) && (resp.Type == "response.completed" || resp.Type == "response.failed" || resp.Type == "response.incomplete" || resp.Type == "error") {
+		getResponsesStreamState(c).Ended = true
+	}
+	return nil
 }
 
 func StringData(c *gin.Context, str string) error {

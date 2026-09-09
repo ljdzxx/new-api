@@ -277,6 +277,14 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
 	if newAPIError != nil {
+		// Preserve partial-stream settlement. The outer error handler's Refund
+		// is idempotent after BillingSession.Settle; no new attempt may follow.
+		if info.IsStream && helper.ResponsesStreamStarted(c) {
+			types.ErrOptionWithSkipRetry()(newAPIError)
+			if partialUsage, ok := usage.(*dto.Usage); ok && partialUsage != nil {
+				service.PostTextConsumeQuota(c, info, partialUsage, nil)
+			}
+		}
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError

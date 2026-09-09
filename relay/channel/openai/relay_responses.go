@@ -89,30 +89,58 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
 	completed := false
+	var streamErr *types.NewAPIError
 
 	scanResult := helper.StreamScannerHandlerWithOptions(c, resp, info, func(data string, sr *helper.StreamResult) {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
+			if streamResponse.Type == "" {
+				streamErr = types.NewOpenAIError(fmt.Errorf("upstream sent a Responses event without a type"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+				sr.Stop(streamErr)
+				return
+			}
+			failed := streamResponse.Type == "response.failed" || streamResponse.Type == "response.incomplete" || streamResponse.Type == "error"
+			if failed {
+				streamErr = types.NewOpenAIError(fmt.Errorf("upstream returned %s", streamResponse.Type), types.ErrorCodeBadResponse, http.StatusBadGateway)
+				if streamResponse.Response != nil {
+					if upstreamErr := streamResponse.Response.GetOpenAIError(); upstreamErr != nil {
+						streamErr = types.WithOpenAIError(*upstreamErr, http.StatusBadGateway)
+					}
+				} else if streamResponse.Type == "error" {
+					var upstreamErr types.OpenAIError
+					if common.UnmarshalJsonStr(data, &upstreamErr) == nil && upstreamErr.Message != "" {
+						streamErr = types.WithOpenAIError(upstreamErr, http.StatusBadGateway)
+					}
+				}
+				sr.Stop(streamErr)
+			}
 			clientData := data
-			if helper.ShouldScaleResponseUsage(info) {
+			if !failed && helper.ShouldScaleResponseUsage(info) {
 				patched, patchErr := helper.PatchResponseUsageJSONForRelay(common.StringToByteSlice(data), types.RelayFormatOpenAIResponses, info)
 				if patchErr != nil {
 					logger.LogError(c, "failed to scale responses stream usage: "+patchErr.Error())
-					sr.Error(patchErr)
+					streamErr = types.NewOpenAIError(patchErr, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+					sr.Stop(patchErr)
 					return
 				}
 				clientData = string(patched)
 			}
-			if err := sendResponsesStreamData(c, streamResponse, clientData); err != nil {
-				logger.LogWarn(c, "failed to write responses stream data: "+err.Error())
-				sr.Error(err)
-				return
+			if !failed {
+				if err := sendResponsesStreamData(c, streamResponse, clientData); err != nil {
+					logger.LogWarn(c, "failed to write responses stream data: "+err.Error())
+					streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+					sr.Stop(err)
+					return
+				}
 			}
 			switch streamResponse.Type {
-			case "response.completed":
-				completed = true
+			case "response.completed", "response.failed", "response.incomplete":
+				completed = streamResponse.Type == "response.completed"
+				if completed {
+					sr.Done()
+				}
 				if streamResponse.Response != nil {
 					if streamResponse.Response.Usage != nil {
 						if streamResponse.Response.Usage.InputTokens != 0 {
@@ -165,13 +193,20 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			}
 		} else {
 			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
-			sr.Error(err)
+			streamErr = types.NewOpenAIError(fmt.Errorf("invalid upstream Responses event: %w", err), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			sr.Stop(err)
 		}
 	}, helper.StreamScannerOptions{
 		PingDataFunc: sendResponsesKeepAlive,
 	})
 
 	if !completed {
+		if streamErr == nil {
+			streamErr = types.NewOpenAIError(fmt.Errorf("upstream Responses stream ended before response.completed (%s)", scanResult.Reason), types.ErrorCodeBadResponse, http.StatusBadGateway)
+		}
+		if helper.ResponsesStreamStarted(c) || scanResult.Reason == helper.StreamScannerClientDisconnected {
+			types.ErrOptionWithSkipRetry()(streamErr)
+		}
 		logger.LogError(c, fmt.Sprintf(
 			"responses stream ended before response.completed: reason=%s err=%v received_response_count=%d prompt_tokens=%d completion_tokens=%d total_tokens=%d output_text_bytes=%d",
 			scanResult.Reason,
@@ -200,7 +235,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
-	return usage, nil
+	return usage, streamErr
 }
 
 func sendResponsesKeepAlive(c *gin.Context) error {

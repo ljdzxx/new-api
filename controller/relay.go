@@ -194,6 +194,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 				}
 			}
+			if relayFormat == types.RelayFormatOpenAIResponses && c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
+				if err := helper.WriteResponsesStreamFailure(c, newAPIError); err != nil {
+					logger.LogWarn(c, "failed to write responses terminal error: "+err.Error())
+				}
+				return
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -516,6 +522,9 @@ func recordGlobalQuotaInsufficientHit(c *gin.Context, channelID int, errText str
 }
 
 func shouldForceRetryForGlobalQuotaInsufficient(c *gin.Context, channelID int, err *types.NewAPIError) (bool, *types.NewAPIError) {
+	if helper.ResponsesStreamStarted(c) || (c != nil && c.Request != nil && c.Request.Context().Err() != nil) {
+		return false, nil
+	}
 	if err == nil || !service.ShouldMatchGlobalQuotaInsufficientKeyword(err) {
 		return false, nil
 	}
@@ -1094,6 +1103,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+	if helper.ResponsesStreamStarted(c) || (c != nil && c.Request != nil && c.Request.Context().Err() != nil) {
+		return false
+	}
 	if openaiErr == nil {
 		return false
 	}
