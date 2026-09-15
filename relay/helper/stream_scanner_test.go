@@ -27,11 +27,8 @@ func init() {
 func setupStreamTest(t *testing.T, body io.Reader) (*gin.Context, *http.Response, *relaycommon.RelayInfo) {
 	t.Helper()
 
-	oldTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 30
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldTimeout
-	})
+	// Shared fixtures must not mutate global settings: many callers run in
+	// parallel. Tests that override timeouts or ping settings run serially.
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -194,7 +191,6 @@ func TestStreamScannerHandler_DoneStopsScanner(t *testing.T) {
 }
 
 func TestStreamScannerHandlerWithOptions_ClientDisconnected(t *testing.T) {
-	t.Parallel()
 
 	pr, pw := io.Pipe()
 	t.Cleanup(func() {
@@ -341,25 +337,27 @@ func TestStreamScannerHandler_DataWithExtraSpaces(t *testing.T) {
 // ---------- Decoupling: scanner not blocked by slow handler ----------
 
 func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
-	t.Parallel()
-
-	// Strategy: use a slow upstream (io.Pipe, 10ms per chunk) AND a slow handler (20ms per chunk).
-	// If the scanner were synchronously coupled to the handler, total time would be
-	// ~numChunks * (10ms + 20ms) = 30ms * 50 = 1500ms.
-	// With decoupling, total time should be closer to
-	// ~numChunks * max(10ms, 20ms) = 20ms * 50 = 1000ms
-	// because the scanner reads ahead into the buffer while the handler processes.
-	const numChunks = 50
-	const upstreamDelay = 10 * time.Millisecond
-	const handlerDelay = 20 * time.Millisecond
+	// Block the first callback and prove the scanner can still read subsequent
+	// chunks. This tests decoupling without depending on OS timer granularity.
+	const numChunks = 6 // Fits within the scanner's bounded read-ahead buffer.
+	handlerEntered := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseHandler) }) }
+	defer release()
+	readAhead := make(chan struct{})
 
 	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
 	go func() {
 		defer pw.Close()
 		for i := 0; i < numChunks; i++ {
-			fmt.Fprintf(pw, "data: {\"id\":%d}\n", i)
-			time.Sleep(upstreamDelay)
+			if _, err := fmt.Fprintf(pw, "data: {\"id\":%d}\n", i); err != nil {
+				return
+			}
 		}
+		close(readAhead)
 		fmt.Fprint(pw, "data: [DONE]\n")
 	}()
 
@@ -375,16 +373,30 @@ func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 
 	var count atomic.Int64
-	start := time.Now()
 	done := make(chan struct{})
 	go func() {
 		StreamScannerHandler(c, resp, info, func(data string) bool {
-			time.Sleep(handlerDelay)
-			count.Add(1)
+			if count.Add(1) == 1 {
+				close(handlerEntered)
+				<-releaseHandler
+			}
 			return true
 		})
 		close(done)
 	}()
+
+	select {
+	case <-handlerEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first handler did not start")
+	}
+	select {
+	case <-readAhead:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scanner did not read ahead while the handler was blocked")
+	}
+	require.EqualValues(t, 1, count.Load())
+	release()
 
 	select {
 	case <-done:
@@ -392,15 +404,7 @@ func TestStreamScannerHandler_ScannerDecoupledFromSlowHandler(t *testing.T) {
 		t.Fatal("StreamScannerHandler did not complete in time")
 	}
 
-	elapsed := time.Since(start)
 	assert.Equal(t, int64(numChunks), count.Load())
-
-	coupledTime := time.Duration(numChunks) * (upstreamDelay + handlerDelay)
-	t.Logf("elapsed=%v, coupled_estimate=%v", elapsed, coupledTime)
-
-	// If decoupled, elapsed should be well under the coupled estimate.
-	assert.Less(t, elapsed, coupledTime*85/100,
-		"decoupled elapsed time (%v) should be significantly less than coupled estimate (%v)", elapsed, coupledTime)
 }
 
 func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
@@ -437,7 +441,6 @@ func TestStreamScannerHandler_SlowUpstreamFastHandler(t *testing.T) {
 // ---------- Ping tests ----------
 
 func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
-	t.Parallel()
 
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
@@ -500,7 +503,6 @@ func TestStreamScannerHandler_PingSentDuringSlowUpstream(t *testing.T) {
 }
 
 func TestStreamScannerHandler_PingDisabledByRelayInfo(t *testing.T) {
-	t.Parallel()
 
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled
@@ -755,7 +757,6 @@ func TestStreamScannerHandler_StreamStatus_ReplacesPreInitialized(t *testing.T) 
 }
 
 func TestStreamScannerHandler_PingInterleavesWithSlowUpstream(t *testing.T) {
-	t.Parallel()
 
 	setting := operation_setting.GetGeneralSetting()
 	oldEnabled := setting.PingIntervalEnabled

@@ -286,7 +286,9 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			}
 		}
 		// reset status code 重置状态码
-		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+		if newAPIError.GetErrorCode() != types.ErrorCodeClientDisconnected {
+			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+		}
 		return newAPIError
 	}
 

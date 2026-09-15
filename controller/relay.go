@@ -182,6 +182,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
+			if newAPIError.GetErrorCode() == types.ErrorCodeClientDisconnected {
+				logger.LogWarn(c, "relay canceled by downstream: "+newAPIError.Error())
+				return
+			}
 			if relayFormat == types.RelayFormatClaude {
 				logClaudeRelayError(c, "relay finished with error: request_id=%s status=%d err=%s %s", requestId, newAPIError.StatusCode, newAPIError.Error(), summarizeClaudeRelayHTTPForLog(c))
 			}
@@ -439,6 +443,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			return
 		}
 
+		if newAPIError.GetErrorCode() == types.ErrorCodeClientDisconnected {
+			relayInfo.LastError = newAPIError
+			break
+		}
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		if c.GetBool(contextKeyUpstreamCallStarted) && newAPIError.StatusCode > 0 && c.GetInt(contextKeyUpstreamResponseCode) == 0 {
 			c.Set(contextKeyUpstreamResponseCode, newAPIError.StatusCode)
@@ -1138,6 +1146,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
+	if err.GetErrorCode() == types.ErrorCodeClientDisconnected {
+		return
+	}
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, err.Error()))
 	if service.ShouldMarkChannelQuotaInsufficient(err) {
 		if markErr := service.MarkChannelQuotaInsufficientDaily(channelError.ChannelId, err.ErrorWithStatusCode()); markErr != nil {

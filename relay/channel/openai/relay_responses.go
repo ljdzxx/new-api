@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -90,12 +91,16 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var responseTextBuilder strings.Builder
 	completed := false
 	var streamErr *types.NewAPIError
+	lastEventType := ""
+	forwardedEvents := 0
+	lastForwardedAt := time.Now()
 
 	scanResult := helper.StreamScannerHandlerWithOptions(c, resp, info, func(data string, sr *helper.StreamResult) {
 
 		// 检查当前数据是否包含 completed 状态和 usage 信息
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
+			lastEventType = streamResponse.Type
 			if streamResponse.Type == "" {
 				streamErr = types.NewOpenAIError(fmt.Errorf("upstream sent a Responses event without a type"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 				sr.Stop(streamErr)
@@ -130,10 +135,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			if !failed {
 				if err := sendResponsesStreamData(c, streamResponse, clientData); err != nil {
 					logger.LogWarn(c, "failed to write responses stream data: "+err.Error())
-					streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+					streamErr = types.NewClientDisconnectedError(err)
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
 					sr.Stop(err)
 					return
 				}
+				forwardedEvents++
+				lastForwardedAt = time.Now()
 			}
 			switch streamResponse.Type {
 			case "response.completed", "response.failed", "response.incomplete":
@@ -202,13 +210,21 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	if !completed {
 		if streamErr == nil {
-			streamErr = types.NewOpenAIError(fmt.Errorf("upstream Responses stream ended before response.completed (%s)", scanResult.Reason), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			if scanResult.Reason == helper.StreamScannerClientDisconnected {
+				streamErr = types.NewClientDisconnectedError(fmt.Errorf("downstream disconnected before response.completed: %w", scanResult.Err))
+			} else {
+				streamErr = types.NewOpenAIError(fmt.Errorf("upstream Responses stream ended before response.completed (%s)", scanResult.Reason), types.ErrorCodeBadResponse, http.StatusBadGateway)
+			}
 		}
 		if helper.ResponsesStreamStarted(c) || scanResult.Reason == helper.StreamScannerClientDisconnected {
 			types.ErrOptionWithSkipRetry()(streamErr)
 		}
-		logger.LogError(c, fmt.Sprintf(
-			"responses stream ended before response.completed: reason=%s err=%v received_response_count=%d prompt_tokens=%d completion_tokens=%d total_tokens=%d output_text_bytes=%d",
+		logEnd := logger.LogError
+		if streamErr.GetErrorCode() == types.ErrorCodeClientDisconnected {
+			logEnd = logger.LogWarn
+		}
+		logEnd(c, fmt.Sprintf(
+			"responses stream ended before response.completed: reason=%s err=%v received_response_count=%d prompt_tokens=%d completion_tokens=%d total_tokens=%d output_text_bytes=%d last_event=%q forwarded_events=%d last_forwarded_ago_ms=%d downstream_context_error=%v downstream_remote=%q downstream_user_agent=%q",
 			scanResult.Reason,
 			scanResult.Err,
 			info.ReceivedResponseCount,
@@ -216,6 +232,12 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			usage.CompletionTokens,
 			usage.TotalTokens,
 			responseTextBuilder.Len(),
+			lastEventType,
+			forwardedEvents,
+			time.Since(lastForwardedAt).Milliseconds(),
+			c.Request.Context().Err(),
+			c.Request.RemoteAddr,
+			c.Request.UserAgent(),
 		))
 	}
 

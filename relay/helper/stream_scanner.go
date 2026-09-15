@@ -294,8 +294,13 @@ func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
-			if err != io.EOF {
+		if c.Request.Context().Err() != nil {
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
+		} else if err := scanner.Err(); err != nil {
+			if ctx.Err() != nil {
+				// cleanup closes the body to unblock Scan; this is not an upstream failure.
+				logger.LogDebug(c, "scanner stopped during stream cleanup: %v", err)
+			} else if err != io.EOF {
 				logger.LogError(c, "scanner error: "+err.Error())
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 			}
@@ -312,7 +317,9 @@ func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *
 	}
 
 	cleanup()
-	if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
+	if info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
+		logger.LogWarn(c, fmt.Sprintf("stream canceled by downstream: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
+	} else if info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors() {
 		logger.LogInfo(c, fmt.Sprintf("stream ended: %s", info.StreamStatus.Summary()))
 	} else {
 		logger.LogError(c, fmt.Sprintf("stream ended: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))

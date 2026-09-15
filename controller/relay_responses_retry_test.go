@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestResponsesRetryBoundary(t *testing.T) {
@@ -52,7 +54,8 @@ func TestResponsesRetryBoundary(t *testing.T) {
 	}
 }
 
-func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
+func setupResponsesRelayBillingTest(t *testing.T) *gorm.DB {
+	t.Helper()
 	originalPolicy := billing_policy.GetConfig()
 	originalRatios := ratio_setting.ModelRatio2JSONString()
 	t.Cleanup(func() {
@@ -76,6 +79,11 @@ func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
 	seedRelayMockBillingRows(t, db)
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", 42).Update("quota", 1000000).Error)
 	require.NoError(t, db.Model(&model.Token{}).Where("id = ?", 77).Update("remain_quota", 1000000).Error)
+	return db
+}
+
+func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
+	db := setupResponsesRelayBillingTest(t)
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -114,4 +122,73 @@ func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
 	var user model.User
 	require.NoError(t, db.First(&user, 42).Error)
 	require.Equal(t, 1000000-logs[0].Quota, user.Quota)
+}
+
+type responsesCancelWriter struct {
+	gin.ResponseWriter
+	cancel context.CancelFunc
+}
+
+func (w *responsesCancelWriter) Write(data []byte) (int, error) {
+	n, err := w.ResponseWriter.Write(data)
+	if strings.Contains(string(data), "response.reasoning_summary_text.delta") {
+		w.cancel()
+	}
+	return n, err
+}
+
+func TestResponsesRelayClientDisconnectPreservesSettlementWithoutChannelError(t *testing.T) {
+	for _, output := range []bool{false, true} {
+		t.Run(fmt.Sprintf("output=%t", output), func(t *testing.T) {
+			db := setupResponsesRelayBillingTest(t)
+			oldErrorLogs := constant.ErrorLogEnabled
+			constant.ErrorLogEnabled = true
+			t.Cleanup(func() { constant.ErrorLogEnabled = oldErrorLogs })
+			var calls atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, "data: "+`{"type":"response.created","response":{"id":"resp_cancel"}}`+"\n\n")
+				if output {
+					fmt.Fprint(w, "data: "+`{"type":"response.output_text.delta","delta":"Hello world"}`+"\n\n")
+				}
+				fmt.Fprint(w, "data: "+`{"type":"response.reasoning_summary_text.delta","delta":"thinking"}`+"\n\n")
+			}))
+			defer upstream.Close()
+			oldTimeout, oldRetries := common.RelayTimeout, common.RetryTimes
+			common.RelayTimeout, common.RetryTimes = 5, 3
+			service.InitHttpClient()
+			t.Cleanup(func() { common.RelayTimeout, common.RetryTimes = oldTimeout, oldRetries; service.InitHttpClient() })
+			c, recorder, _ := newRelayMockContext(true)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-4o-mini","input":"hello","stream":true}`)).WithContext(ctx)
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Writer = &responsesCancelWriter{ResponseWriter: c.Writer, cancel: cancel}
+			common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{})
+			common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, upstream.URL)
+			common.SetContextKey(c, constant.ContextKeyUserQuota, 1000000)
+			c.Set("status_code_mapping", `{"499":"502"}`)
+			Relay(c, types.RelayFormatOpenAIResponses)
+			require.Equal(t, context.Canceled, ctx.Err())
+			require.EqualValues(t, 1, calls.Load())
+			require.NotContains(t, recorder.Body.String(), "event: response.failed")
+			require.NotContains(t, recorder.Body.String(), "invalid_prompt")
+			var errorsCount int64
+			require.NoError(t, db.Model(&model.Log{}).Where("type = ?", model.LogTypeError).Count(&errorsCount).Error)
+			require.Zero(t, errorsCount, "downstream cancellation must not create an upstream error log")
+			var logs []model.Log
+			require.NoError(t, db.Where("type = ?", model.LogTypeConsume).Find(&logs).Error)
+			require.Len(t, logs, 1)
+			if output {
+				require.Positive(t, logs[0].CompletionTokens)
+				require.Positive(t, logs[0].Quota)
+			} else {
+				require.Zero(t, logs[0].Quota)
+			}
+			var user model.User
+			require.NoError(t, db.First(&user, 42).Error)
+			require.Equal(t, 1000000-logs[0].Quota, user.Quota, "settlement must survive the deferred refund")
+		})
+	}
 }

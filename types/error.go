@@ -64,6 +64,7 @@ const (
 	ErrorCodeReadRequestBodyFailed ErrorCode = "read_request_body_failed"
 	ErrorCodeConvertRequestFailed  ErrorCode = "convert_request_failed"
 	ErrorCodeAccessDenied          ErrorCode = "access_denied"
+	ErrorCodeClientDisconnected    ErrorCode = "client_disconnected"
 	ErrorCodeSystemRateLimit       ErrorCode = "system_rate_limit"
 
 	// request error
@@ -98,6 +99,15 @@ type NewAPIError struct {
 	StatusCode         int
 	UpstreamStatusCode int
 	Metadata           json.RawMessage
+}
+
+// NewClientDisconnectedError describes a downstream cancellation, not an
+// upstream HTTP response. 499 is for internal accounting only: the client is gone.
+func NewClientDisconnectedError(err error) *NewAPIError {
+	e := NewErrorWithStatusCode(err, ErrorCodeClientDisconnected, 499,
+		ErrOptionWithSkipRetry(), ErrOptionWithNoRecordErrorLog())
+	e.UpstreamStatusCode = 0
+	return e
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
