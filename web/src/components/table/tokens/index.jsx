@@ -34,6 +34,7 @@ import {
 } from '../../../helpers';
 import CardPro from '../../common/ui/CardPro';
 import TokensTable from './TokensTable';
+import TokenAPIEndpoints from './TokenAPIEndpoints';
 import TokensActions from './TokensActions';
 import TokensFilters from './TokensFilters';
 import TokensDescription from './TokensDescription';
@@ -434,6 +435,7 @@ function TokensPage() {
         })}
         t={tokensData.t}
       >
+        <TokenAPIEndpoints />
         <TokensTable {...tokensData} />
       </CardPro>
     </>

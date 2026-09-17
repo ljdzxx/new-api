@@ -38,7 +38,8 @@ import {
   timestamp2string,
   renderGroup,
   renderGroupOption,
-  renderRatio,
+  renderGroupLabel,
+  renderRatioWithOriginal,
   stringToColor,
   renderQuota,
   getModelCategories,
@@ -96,22 +97,11 @@ const renderStatus = (text, record, t) => {
 const renderGroupValue = (optionNode, t) => {
   const group = optionNode?.value || '';
   const ratio = optionNode?.ratio;
-  if (group === 'auto') {
-    return (
-      <span className='flex items-center gap-1 min-w-0'>
-        <Tag color='white' shape='circle'>
-          {t('智能熔断')}
-        </Tag>
-        {ratio !== undefined && renderRatio(ratio)}
-      </span>
-    );
-  }
   return (
     <span className='flex items-center gap-1 min-w-0'>
-      <Tag color={stringToColor(group)} shape='circle' className='max-w-[200px]'>
-        <span className='truncate'>{group}</span>
-      </Tag>
-      {ratio !== undefined && renderRatio(ratio)}
+      {renderGroupLabel(optionNode, group === 'auto' ? t('智能熔断') : group)}
+      {ratio !== undefined &&
+        renderRatioWithOriginal(ratio, optionNode?.original_ratio)}
     </span>
   );
 };

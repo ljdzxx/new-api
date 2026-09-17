@@ -40,6 +40,7 @@ const RatioSetting = () => {
     CreateCacheRatio: '',
     CompletionRatio: '',
     GroupRatio: '',
+    GroupIcon: '{}',
     GroupGroupRatio: '',
     GroupRateLimit: '',
     ImageRatio: '',

@@ -4450,7 +4450,15 @@
     "whsec_xxx 的 Webhook 签名密钥，敏感信息不显示": "Webhook signature key for whsec_xxx, sensitive information not displayed",
     "Worker地址": "Worker Address",
     "Worker密钥": "Worker Key",
-    "your AI integration?": "your AI integration?"
+    "your AI integration?": "your AI integration?",
+    "分组ICON": "Group icons",
+    "渠道图标与样式名称对照表": "Channel icons and style names",
+    "点击样式名称可复制，名称区分大小写；同一图标的分组使用固定颜色。未配置的分组不显示图标。": "Click a style name to copy it. Names are case-sensitive. Groups with the same icon share a fixed color. Unconfigured groups have no icon.",
+    "图标样式名称": "Icon style name",
+    "暂无渠道图标": "No channel icon available",
+    "键为分组名称，值为下方对照表中的图标样式名称，例如：{\"codex-pro\":\"OpenAI\"}；使用 {} 清空配置。": "Keys are group names; values are icon style names from the table below, e.g. {\"codex-pro\":\"OpenAI\"}. Use {} to clear the configuration.",
+    "请输入分组名称到有效图标样式名称的 JSON 对象": "Enter a JSON object mapping group names to valid icon style names",
+    "复制API地址": "Copy API URL"
   },
   "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Enable request body pass-through. When enabled, final response tokens may differ from billing tokens.",
   "缩放API响应usage": "Scale API response usage",

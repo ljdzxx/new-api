@@ -96,6 +96,7 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute.Use(middleware.UserAuth())
 			{
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
+				selfRoute.GET("/self/api-info", controller.GetUserAPIInfo)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/self/user-level", controller.GetSelfUserLevel)
 				selfRoute.GET("/models", controller.GetUserModels)

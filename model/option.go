@@ -134,6 +134,7 @@ func InitOptionMap() {
 	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
 	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
+	common.OptionMap["GroupIcon"] = ratio_setting.GroupIcon2JSONString()
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
 	common.OptionMap["UserLevelPolicies"] = setting.UserLevelPolicies2JSONString()
@@ -501,6 +502,8 @@ func updateOptionMap(key string, value string) (err error) {
 		ratio_setting.SetGlobalModelRatioInputTokenThreshold(threshold)
 	case "GroupRatio":
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
+	case "GroupIcon":
+		err = ratio_setting.UpdateGroupIconByJSONString(value)
 	case "GroupGroupRatio":
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
 	case "UserUsableGroups":

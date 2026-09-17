@@ -24,6 +24,7 @@ import {
   showSuccess,
   timestamp2string,
   renderGroupOption,
+  renderGroupLabel,
   renderQuotaWithPrompt,
   getModelCategories,
   selectFilter,
@@ -134,6 +135,8 @@ const EditTokenModal = (props) => {
         label: info.desc,
         value: group,
         ratio: info.ratio,
+        original_ratio: info.original_ratio,
+        icon: info.icon,
       }));
       if (statusState?.status?.default_use_auto_group) {
         if (localGroupOptions.some((group) => group.value === 'auto')) {
@@ -366,6 +369,12 @@ const EditTokenModal = (props) => {
                         placeholder={t('令牌分组，默认为用户的分组')}
                         optionList={groups}
                         renderOptionItem={renderGroupOption}
+                        renderSelectedItem={(option) =>
+                          renderGroupLabel(option)
+                        }
+                        filter={selectFilter}
+                        searchPosition='dropdown'
+                        searchable
                         showClear
                         style={{ width: '100%' }}
                       />

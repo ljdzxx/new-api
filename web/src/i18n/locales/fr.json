@@ -4391,7 +4391,15 @@
     "whsec_xxx 的 Webhook 签名密钥，敏感信息不显示": "Clé de signature Webhook whsec_xxx, les informations sensibles ne sont pas affichées",
     "Worker地址": "Adresse du Worker",
     "Worker密钥": "Clé du Worker",
-    "your AI integration?": "votre intégration IA ?"
+    "your AI integration?": "votre intégration IA ?",
+    "分组ICON": "Icônes des groupes",
+    "渠道图标与样式名称对照表": "Icônes des canaux et noms de styles",
+    "点击样式名称可复制，名称区分大小写；同一图标的分组使用固定颜色。未配置的分组不显示图标。": "Cliquez sur un nom de style pour le copier. La casse est importante. Les groupes avec la même icône partagent une couleur fixe. Aucun symbole ne sera affiché sans configuration.",
+    "图标样式名称": "Nom du style d’icône",
+    "暂无渠道图标": "Aucune icône de canal disponible",
+    "键为分组名称，值为下方对照表中的图标样式名称，例如：{\"codex-pro\":\"OpenAI\"}；使用 {} 清空配置。": "Les clés sont les noms de groupes et les valeurs les noms des styles ci-dessous, par exemple : {\"codex-pro\":\"OpenAI\"}. Utilisez {} pour effacer la configuration.",
+    "请输入分组名称到有效图标样式名称的 JSON 对象": "Saisissez un objet JSON associant les groupes à des noms de styles d’icônes valides",
+    "复制API地址": "Copier l’URL de l’API"
   },
   "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Active la transmission directe du corps de requête. Une fois activée, les tokens de la réponse finale peuvent différer des tokens facturés.",
   "缩放API响应usage": "Mettre à l’échelle l’usage de la réponse API",

@@ -4901,7 +4901,15 @@
     "whsec_xxx 的 Webhook 签名密钥，敏感信息不显示": "Khóa chữ ký Webhook cho whsec_xxx, thông tin nhạy cảm không được hiển thị",
     "Worker地址": "Địa chỉ Worker",
     "Worker密钥": "Khóa Worker",
-    "your AI integration?": "tích hợp AI của bạn?"
+    "your AI integration?": "tích hợp AI của bạn?",
+    "分组ICON": "Biểu tượng nhóm",
+    "渠道图标与样式名称对照表": "Biểu tượng kênh và tên kiểu",
+    "点击样式名称可复制，名称区分大小写；同一图标的分组使用固定颜色。未配置的分组不显示图标。": "Nhấp tên kiểu để sao chép. Tên phân biệt chữ hoa và chữ thường. Các nhóm có cùng biểu tượng dùng cùng màu cố định. Nhóm chưa cấu hình không hiển thị biểu tượng.",
+    "图标样式名称": "Tên kiểu biểu tượng",
+    "暂无渠道图标": "Chưa có biểu tượng kênh",
+    "键为分组名称，值为下方对照表中的图标样式名称，例如：{\"codex-pro\":\"OpenAI\"}；使用 {} 清空配置。": "Khóa là tên nhóm, giá trị là tên kiểu biểu tượng trong bảng bên dưới, ví dụ: {\"codex-pro\":\"OpenAI\"}. Dùng {} để xóa cấu hình.",
+    "请输入分组名称到有效图标样式名称的 JSON 对象": "Nhập đối tượng JSON ánh xạ tên nhóm tới tên kiểu biểu tượng hợp lệ",
+    "复制API地址": "Sao chép URL API"
   },
   "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Bật truyền qua nội dung yêu cầu. Khi bật, token trong phản hồi cuối có thể khác với token tính phí.",
   "缩放API响应usage": "Điều chỉnh usage trong phản hồi API",

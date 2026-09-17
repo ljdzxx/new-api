@@ -304,6 +304,11 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "GroupIcon":
+		if err = ratio_setting.CheckGroupIcon(option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 	case "GroupRatio":
 		err = ratio_setting.CheckGroupRatio(option.Value.(string))
 		if err != nil {

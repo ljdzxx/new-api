@@ -18,6 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import i18next from 'i18next';
+import {
+  channelTypeIconMap,
+  getGroupIconStyle,
+  GROUP_ICON_NAMES,
+} from '../constants/channel-icons';
+import { Check } from 'lucide-react';
 import { Modal, Tag, Typography, Avatar } from '@douyinfe/semi-ui';
 import { copy, showSuccess } from './utils';
 import { MOBILE_BREAKPOINT } from '../hooks/common/useIsMobile';
@@ -328,51 +334,6 @@ export const getModelCategories = (() => {
     return categoriesCache;
   };
 })();
-
-const channelTypeIconMap = {
-  1: 'OpenAI', // OpenAI
-  3: 'OpenAI', // Azure OpenAI
-  57: 'OpenAI', // Codex
-  2: 'Midjourney', // Midjourney Proxy
-  5: 'Midjourney', // Midjourney Proxy Plus
-  36: 'Suno', // Suno API
-  4: 'Ollama', // Ollama
-  14: 'Claude.Color', // Anthropic Claude
-  33: 'Claude.Color', // AWS Claude
-  41: 'Gemini.Color', // Vertex AI
-  34: 'Cohere.Color', // Cohere
-  39: 'Cloudflare.Color', // Cloudflare
-  43: 'DeepSeek.Color', // DeepSeek
-  58: 'XiaomiMiMo', // Xiaomi MiMo
-  15: 'Wenxin.Color', // 百度文心千帆
-  46: 'Wenxin.Color', // 百度文心千帆V2
-  17: 'Qwen.Color', // 阿里通义千问
-  18: 'Spark.Color', // 讯飞星火认知
-  16: 'Zhipu.Color', // 智谱 ChatGLM
-  26: 'Zhipu.Color', // 智谱 GLM-4V
-  24: 'Gemini.Color', // Google Gemini
-  11: 'Gemini.Color', // Google PaLM2
-  47: 'Xinference.Color', // Xinference
-  25: 'Moonshot', // Moonshot
-  27: 'Perplexity.Color', // Perplexity
-  20: 'OpenRouter', // OpenRouter
-  19: 'Ai360.Color', // 360 智脑
-  23: 'Hunyuan.Color', // 腾讯混元
-  31: 'Yi.Color', // 零一万物
-  35: 'Minimax.Color', // MiniMax
-  37: 'Dify.Color', // Dify
-  38: 'Jina', // Jina
-  40: 'SiliconCloud.Color', // SiliconCloud
-  42: 'Mistral.Color', // Mistral AI
-  45: 'Doubao.Color', // 字节火山方舟、豆包通用
-  48: 'XAI', // xAI
-  49: 'Coze', // Coze
-  50: 'Kling.Color', // 可灵 Kling
-  51: 'Jimeng.Color', // 即梦 Jimeng
-  54: 'Doubao.Color', // 豆包视频 Doubao Video
-  56: 'Replicate', // Replicate
-  22: 'FastGPT.Color', // 知识库：FastGPT
-};
 
 /**
  * 根据渠道类型返回对应的厂商图标
@@ -815,6 +776,26 @@ export function renderRatio(ratio) {
   );
 }
 
+// 分组特殊倍率生效时，原始倍率加删除线，旁边展示当前生效倍率
+export function renderRatioWithOriginal(ratio, originalRatio) {
+  if (
+    originalRatio === undefined ||
+    originalRatio === null ||
+    originalRatio === ratio ||
+    typeof ratio !== 'number'
+  ) {
+    return renderRatio(ratio);
+  }
+  return (
+    <span className='inline-flex items-center gap-1'>
+      <del style={{ color: 'var(--semi-color-text-2)' }}>
+        {originalRatio}x {i18next.t('倍率')}
+      </del>
+      {renderRatio(ratio)}
+    </span>
+  );
+}
+
 const measureTextWidth = (
   text,
   style = {
@@ -893,6 +874,28 @@ export function truncateText(text, maxWidth = 200) {
   }
 }
 
+export const renderGroupLabel = (option, label = option?.value) => {
+  const icon = GROUP_ICON_NAMES.has(option?.icon) ? option.icon : '';
+  return (
+    <Tag
+      color={icon ? undefined : stringToColor(option?.value || '')}
+      style={icon ? getGroupIconStyle(icon) : undefined}
+      size='small'
+      shape='circle'
+      className='max-w-full'
+    >
+      <span className='inline-flex min-w-0 items-center gap-1'>
+        {icon && (
+          <span className='inline-flex shrink-0'>
+            {getLobeHubIcon(icon, 14)}
+          </span>
+        )}
+        <span className='truncate'>{label}</span>
+      </span>
+    </Tag>
+  );
+};
+
 export const renderGroupOption = (item) => {
   const {
     disabled,
@@ -906,52 +909,49 @@ export const renderGroupOption = (item) => {
     onClick,
     empty,
     emptyContent,
-    ...rest
   } = item;
 
-  const baseStyle = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 16px',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    backgroundColor: focused ? 'var(--semi-color-fill-0)' : 'transparent',
-    opacity: disabled ? 0.5 : 1,
-    ...(selected && {
-      backgroundColor: 'var(--semi-color-primary-light-default)',
-    }),
-    '&:hover': {
-      backgroundColor: !disabled && 'var(--semi-color-fill-1)',
-    },
-  };
-
-  const handleClick = () => {
-    if (!disabled && onClick) {
-      onClick();
-    }
-  };
-
-  const handleMouseEnter = (e) => {
-    if (!disabled && onMouseEnter) {
-      onMouseEnter(e);
-    }
-  };
+  if (empty) return <div className='px-4 py-2'>{emptyContent}</div>;
 
   return (
     <div
-      style={baseStyle}
-      onClick={handleClick}
-      onMouseEnter={handleMouseEnter}
+      role='option'
+      aria-selected={!!selected}
+      aria-disabled={!!disabled}
+      className={className}
+      style={{
+        ...style,
+        padding: '10px 12px',
+        margin: '2px 4px',
+        borderRadius: 8,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        backgroundColor: selected
+          ? 'var(--semi-color-primary-light-default)'
+          : focused
+            ? 'var(--semi-color-fill-0)'
+            : 'transparent',
+        opacity: disabled ? 0.5 : 1,
+      }}
+      onClick={(event) => !disabled && onClick?.(event)}
+      onMouseEnter={(event) => !disabled && onMouseEnter?.(event)}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        <Typography.Text strong type={disabled ? 'tertiary' : undefined}>
-          {value}
-        </Typography.Text>
-        <Typography.Text type='secondary' size='small'>
-          {label}
-        </Typography.Text>
+      <div className='flex items-center justify-between gap-3'>
+        <div className='min-w-0'>{renderGroupLabel(item)}</div>
+        <div className='flex shrink-0 items-center gap-2'>
+          {renderRatioWithOriginal(item.ratio, item.original_ratio)}
+          {selected && (
+            <Check size={14} style={{ color: 'var(--semi-color-primary)' }} />
+          )}
+        </div>
       </div>
-      {item.ratio && renderRatio(item.ratio)}
+      {label && label !== value && (
+        <div
+          className='mt-1 text-xs break-words'
+          style={{ color: 'var(--semi-color-text-2)' }}
+        >
+          {label}
+        </div>
+      )}
     </div>
   );
 };

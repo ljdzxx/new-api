@@ -29,7 +29,11 @@ import {
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 
+import GroupIconGuide from './GroupIconGuide';
+import { GROUP_ICON_NAMES } from '../../../constants/channel-icons';
+
 const defaultInputs = {
+  GroupIcon: '{}',
   GroupRatio: '',
   UserUsableGroups: '',
   GroupGroupRatio: '',
@@ -143,6 +147,44 @@ export default function GroupRatioSettings(props) {
               ]}
               onChange={(value) => setInputs({ ...inputs, GroupRatio: value })}
             />
+          </Col>
+        </Row>
+        <Row gutter={16}>
+          <Col xs={24} sm={16}>
+            <Form.TextArea
+              label={t('分组ICON')}
+              field='GroupIcon'
+              placeholder={'{\n  "codex-pro": "OpenAI"\n}'}
+              extraText={t(
+                '键为分组名称，值为下方对照表中的图标样式名称，例如：{"codex-pro":"OpenAI"}；使用 {} 清空配置。',
+              )}
+              autosize={{ minRows: 3, maxRows: 10 }}
+              trigger='blur'
+              stopValidateWithError
+              rules={[
+                {
+                  validator: (_, value) => {
+                    try {
+                      const icons = JSON.parse(value);
+                      return (
+                        icons !== null &&
+                        typeof icons === 'object' &&
+                        !Array.isArray(icons) &&
+                        Object.entries(icons).every(
+                          ([group, icon]) =>
+                            group.trim() !== '' && GROUP_ICON_NAMES.has(icon),
+                        )
+                      );
+                    } catch {
+                      return false;
+                    }
+                  },
+                  message: t('请输入分组名称到有效图标样式名称的 JSON 对象'),
+                },
+              ]}
+              onChange={(value) => setInputs({ ...inputs, GroupIcon: value })}
+            />
+            <GroupIconGuide />
           </Col>
         </Row>
         <Row gutter={16}>

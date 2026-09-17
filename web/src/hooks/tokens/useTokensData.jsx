@@ -121,6 +121,8 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
           label: info?.desc || group,
           value: group,
           ratio: info?.ratio,
+          original_ratio: info?.original_ratio,
+          icon: info?.icon,
         }));
         if (statusState?.status?.default_use_auto_group) {
           options.sort((a, b) => {
