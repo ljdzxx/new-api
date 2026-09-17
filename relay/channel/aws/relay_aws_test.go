@@ -2,16 +2,55 @@ package aws
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAwsRelayTimeoutOnlyNonStream(t *testing.T) {
+	oldTimeout := common.RelayTimeout
+	common.RelayTimeout = 7
+	service.InitHttpClient()
+	t.Cleanup(func() {
+		service.GetHttpClient().CloseIdleConnections()
+		common.RelayTimeout = oldTimeout
+		service.InitHttpClient()
+	})
+
+	for _, isStream := range []bool{true, false} {
+		ctx, cancel := newAwsInvokeContext(context.Background(), isStream)
+		_, hasDeadline := ctx.Deadline()
+		cancel()
+		require.Equal(t, !isStream, hasDeadline)
+
+		info := &relaycommon.RelayInfo{
+			IsStream: isStream,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ApiKey:            "access-key|secret-key|us-east-1",
+				UpstreamModelName: "claude-3-5-sonnet-20240620",
+			},
+		}
+		client, err := newAwsClient(nil, info)
+		require.NoError(t, err)
+		httpClient, ok := client.Options().HTTPClient.(*http.Client)
+		require.True(t, ok)
+		require.Equal(t, isStream, httpClient.Timeout == 0)
+	}
+
+	common.RelayTimeout = 0
+	ctx, cancel := newAwsInvokeContext(context.Background(), false)
+	defer cancel()
+	_, hasDeadline := ctx.Deadline()
+	require.False(t, hasDeadline)
+}
 
 func TestDoAwsClientRequest_AppliesRuntimeHeaderOverrideToAnthropicBeta(t *testing.T) {
 	t.Parallel()

@@ -99,10 +99,7 @@ func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *
 	// Always create a fresh StreamStatus for each scanner run.
 	info.StreamStatus = relaycommon.NewStreamStatus()
 
-	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
-	if streamingTimeout <= 0 {
-		streamingTimeout = 30 * time.Second
-	}
+	streamingTimeout := relaycommon.StreamingTimeout()
 
 	var (
 		stopChan    = make(chan bool, 3)

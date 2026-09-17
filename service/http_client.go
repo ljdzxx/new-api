@@ -70,6 +70,22 @@ func GetHttpClientWithProxy(proxyURL string) (*http.Client, error) {
 	return NewProxyHttpClient(proxyURL)
 }
 
+// GetRelayHttpClient applies RELAY_TIMEOUT only to non-streaming requests.
+// A streaming client shares the transport and proxy configuration, but does not
+// mutate the cached client used concurrently by non-streaming requests.
+func GetRelayHttpClient(proxyURL string, isStream bool) (*http.Client, error) {
+	client, err := GetHttpClientWithProxy(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	if !isStream || client == nil {
+		return client, nil
+	}
+	streamClient := *client
+	streamClient.Timeout = 0
+	return &streamClient, nil
+}
+
 // ResetProxyClientCache 清空代理客户端缓存，确保下次使用时重新初始化
 func ResetProxyClientCache() {
 	proxyClientLock.Lock()

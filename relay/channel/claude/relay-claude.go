@@ -949,7 +949,8 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	return nil
 }
 
-func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {
+// FinalizeStreamUsage also supports interrupted streams without writing a success event.
+func FinalizeStreamUsage(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {
 	if claudeInfo.Usage.PromptTokens == 0 {
 		//上游出错
 	}
@@ -972,7 +973,10 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 		claudeInfo.Usage.UsageSemantic = "anthropic"
 		attachClaudeBillingUsage(claudeInfo.Usage)
 	}
+}
 
+func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {
+	FinalizeStreamUsage(c, info, claudeInfo)
 	if info.RelayFormat == types.RelayFormatClaude {
 		//
 	} else if info.RelayFormat == types.RelayFormatOpenAI {
@@ -1127,10 +1131,7 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 
 	logClaudePassThroughDetail(c, "---------- pass-through stream BEGIN (status=%d) ----------", resp.StatusCode)
 
-	streamingTimeout := time.Duration(constant.StreamingTimeout) * time.Second
-	if streamingTimeout <= 0 {
-		streamingTimeout = 30 * time.Second
-	}
+	streamingTimeout := relaycommon.StreamingTimeout()
 
 	var (
 		stopChan = make(chan bool, 3)

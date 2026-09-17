@@ -136,7 +136,7 @@ var SyncFrequency int // unit is second
 var BatchUpdateEnabled = false
 var BatchUpdateInterval int
 
-var RelayTimeout int // unit is second
+var RelayTimeout int // Non-streaming request timeout in seconds; 0 means unlimited.
 
 var RelayMaxIdleConns int
 var RelayMaxIdleConnsPerHost int

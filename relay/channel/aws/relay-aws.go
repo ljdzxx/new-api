@@ -11,6 +11,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -40,25 +41,19 @@ func getAwsErrorStatusCode(err error) int {
 	return http.StatusInternalServerError
 }
 
-func newAwsInvokeContext() (context.Context, context.CancelFunc) {
-	if common.RelayTimeout <= 0 {
-		return context.Background(), func() {}
+func newAwsInvokeContext(parent context.Context, isStream bool) (context.Context, context.CancelFunc) {
+	if isStream || common.RelayTimeout <= 0 {
+		return context.WithCancel(parent)
 	}
-	return context.WithTimeout(context.Background(), time.Duration(common.RelayTimeout)*time.Second)
+	return context.WithTimeout(parent, time.Duration(common.RelayTimeout)*time.Second)
 }
 
 func newAwsClient(c *gin.Context, info *relaycommon.RelayInfo) (*bedrockruntime.Client, error) {
-	var (
-		httpClient *http.Client
-		err        error
-	)
-	if info.ChannelSetting.Proxy != "" {
-		httpClient, err = service.NewProxyHttpClient(info.ChannelSetting.Proxy)
-		if err != nil {
-			return nil, fmt.Errorf("new proxy http client failed: %w", err)
-		}
-	} else {
-		httpClient = service.GetHttpClient()
+	// Nova currently uses the non-streaming InvokeModel API.
+	isStream := info.IsStream && !isNovaModel(getAwsModelID(info.UpstreamModelName))
+	httpClient, err := service.GetRelayHttpClient(info.ChannelSetting.Proxy, isStream)
+	if err != nil {
+		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
 
 	awsSecret := strings.Split(info.ApiKey, "|")
@@ -229,7 +224,7 @@ func getAwsModelID(requestModel string) string {
 
 func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 
-	ctx, cancel := newAwsInvokeContext()
+	ctx, cancel := newAwsInvokeContext(c.Request.Context(), false)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
@@ -259,16 +254,34 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 }
 
 func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
-	ctx, cancel := newAwsInvokeContext()
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(c.Request.Context())
+	defer cancel(context.Canceled)
+	info.StreamStatus = relaycommon.NewStreamStatus()
+	streamingTimeout := relaycommon.StreamingTimeout()
+	headerTimer := time.AfterFunc(streamingTimeout, func() { cancel(context.DeadlineExceeded) })
+	defer headerTimer.Stop()
 
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
+	headerTimer.Stop()
 	if err != nil {
+		if c.Request.Context().Err() != nil {
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
+			return types.NewClientDisconnectedError(c.Request.Context().Err()), nil
+		}
+		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, context.DeadlineExceeded)
+			return types.NewOpenAIError(context.DeadlineExceeded, types.ErrorCodeAwsInvokeError, http.StatusGatewayTimeout, types.ErrOptionWithSkipRetry()), nil
+		}
 		statusCode := getAwsErrorStatusCode(err)
 		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, statusCode), nil
 	}
 	stream := awsResp.GetStream()
-	defer stream.Close()
+	defer func() {
+		cancel(context.Canceled)
+		_ = stream.Close()
+	}()
+	idleTimer := time.NewTimer(streamingTimeout)
+	defer idleTimer.Stop()
 
 	claudeInfo := &claude.ClaudeResponseInfo{
 		ResponseId:   helper.GetResponseID(c),
@@ -278,10 +291,45 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 		Usage:        &dto.Usage{},
 	}
 
-	for event := range stream.Events() {
+	for {
+		var event bedrockruntimeTypes.ResponseStream
+		select {
+		case <-ctx.Done():
+			reason := relaycommon.StreamEndReasonClientGone
+			if c.Request.Context().Err() == nil {
+				reason = relaycommon.StreamEndReasonTimeout
+			}
+			info.StreamStatus.SetEndReason(reason, context.Cause(ctx))
+			logger.LogWarn(c, "AWS stream canceled: "+info.StreamStatus.Summary())
+			// Return collected usage so the existing settlement path can bill partial output.
+			claude.FinalizeStreamUsage(c, info, claudeInfo)
+			return nil, claudeInfo.Usage
+		case <-idleTimer.C:
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, context.DeadlineExceeded)
+			cancel(context.DeadlineExceeded)
+			logger.LogWarn(c, "AWS stream timed out: "+info.StreamStatus.Summary())
+			claude.FinalizeStreamUsage(c, info, claudeInfo)
+			return nil, claudeInfo.Usage
+		case next, ok := <-stream.Events():
+			if !ok {
+				if ctx.Err() != nil {
+					continue // Classify cancellation through ctx.Done(), not as upstream EOF.
+				}
+				if err := stream.Err(); err != nil {
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+					return types.NewOpenAIError(err, types.ErrorCodeAwsInvokeError, http.StatusBadGateway, types.ErrOptionWithSkipRetry()), claudeInfo.Usage
+				}
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+				claude.HandleStreamFinalResponse(c, info, claudeInfo)
+				return nil, claudeInfo.Usage
+			}
+			idleTimer.Reset(streamingTimeout)
+			event = next
+		}
 		switch v := event.(type) {
 		case *bedrockruntimeTypes.ResponseStreamMemberChunk:
 			info.SetFirstResponseTime()
+			info.ReceivedResponseCount++
 			respErr := claude.HandleStreamResponseData(c, info, claudeInfo, string(v.Value.Bytes))
 			if respErr != nil {
 				return respErr, nil
@@ -294,15 +342,12 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 			return types.NewError(errors.New("nil or unknown response type"), types.ErrorCodeInvalidRequest), nil
 		}
 	}
-
-	claude.HandleStreamFinalResponse(c, info, claudeInfo)
-	return nil, claudeInfo.Usage
 }
 
 // Nova模型处理函数
 func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 
-	ctx, cancel := newAwsInvokeContext()
+	ctx, cancel := newAwsInvokeContext(c.Request.Context(), false)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))

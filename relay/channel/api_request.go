@@ -547,15 +547,9 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
-	var client *http.Client
-	var err error
-	if info.ChannelSetting.Proxy != "" {
-		client, err = service.NewProxyHttpClient(info.ChannelSetting.Proxy)
-		if err != nil {
-			return nil, fmt.Errorf("new proxy http client failed: %w", err)
-		}
-	} else {
-		client = service.GetHttpClient()
+	client, err := service.GetRelayHttpClient(info.ChannelSetting.Proxy, info.IsStream)
+	if err != nil {
+		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
 
 	var stopPinger context.CancelFunc
@@ -583,8 +577,11 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	if c != nil && !c.GetBool("channel_forward_precheck") {
 		c.Set("upstream_call_started", true)
 	}
-	resp, err := client.Do(req)
+	resp, err := service.DoRelayHTTPRequest(c.Request.Context(), client, req, info.IsStream)
 	if err != nil {
+		if c.Request.Context().Err() != nil {
+			return nil, types.NewClientDisconnectedError(c.Request.Context().Err())
+		}
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
@@ -593,7 +590,9 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	common.WrapResponseBodyForDebugTrace(c, resp, info)
 
-	_ = req.Body.Close()
+	if req.Body != nil {
+		_ = req.Body.Close()
+	}
 	_ = c.Request.Body.Close()
 	return resp, nil
 }

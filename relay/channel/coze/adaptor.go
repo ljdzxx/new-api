@@ -73,6 +73,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *common.RelayInfo, requestBody 
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	// 解析 resp
 	var cozeResponse CozeChatResponse
 	respBody, err := io.ReadAll(resp.Body)
@@ -95,7 +96,11 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *common.RelayInfo, requestBody 
 				break
 			}
 		}
-		time.Sleep(time.Second * 1)
+		select {
+		case <-c.Request.Context().Done():
+			return nil, c.Request.Context().Err()
+		case <-time.After(time.Second):
+		}
 	}
 	// 发送获取消息请求
 	return getChatDetail(a, c, info)

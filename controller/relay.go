@@ -350,6 +350,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	retryLoopLimit := relayRetryLoopLimit()
 	for ; retryParam.GetRetry() <= retryLoopLimit; retryParam.IncreaseRetry() {
+		if err := c.Request.Context().Err(); err != nil {
+			newAPIError = types.NewClientDisconnectedError(err)
+			break
+		}
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -443,6 +447,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			return
 		}
 
+		if err := c.Request.Context().Err(); err != nil {
+			newAPIError = types.NewClientDisconnectedError(err)
+		}
 		if newAPIError.GetErrorCode() == types.ErrorCodeClientDisconnected {
 			relayInfo.LastError = newAPIError
 			break
