@@ -26,22 +26,8 @@ import { fetchTokenKey } from '../../helpers/token';
 
 const { Text, Title } = Typography;
 
-const IMAGE_MODEL = 'gpt-image-2';
 const IMAGE_SITE_URL = 'https://image.jucodex.com';
 const PROMPT_REF_URL = 'https://prompt.doingfb.com';
-
-function tokenSupportsModel(token, model) {
-  if (!token || token.status !== 1) return false;
-  if (!token.model_limits_enabled) return true;
-
-  const limits = String(token.model_limits || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (limits.length === 0) return false;
-  return limits.includes(model);
-}
 
 const ImageGenerationV2 = () => {
   const { t } = useTranslation();
@@ -50,11 +36,22 @@ const ImageGenerationV2 = () => {
   const [selectedTokenId, setSelectedTokenId] = useState('');
   const [jumping, setJumping] = useState(false);
   const [imageSiteUrl, setImageSiteUrl] = useState('');
+  const [models, setModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [loadedToken, setLoadedToken] = useState(null);
 
   const usableTokens = useMemo(
-    () => tokens.filter((token) => tokenSupportsModel(token, IMAGE_MODEL)),
+    () => tokens.filter((token) => token.status === 1),
     [tokens],
   );
+  const selectedToken = usableTokens.find(
+    (token) => String(token.id) === selectedTokenId,
+  );
+  const modelsReady = Boolean(selectedToken && loadedToken === selectedToken);
+  const modelOptions = modelsReady
+    ? models.map((model) => ({ label: model, value: model }))
+    : [];
 
   const tokenOptions = useMemo(
     () =>
@@ -83,12 +80,14 @@ const ImageGenerationV2 = () => {
       }
       const items = Array.isArray(data) ? data : data?.items || [];
       setTokens(items);
-      const firstUsable = items.find((token) =>
-        tokenSupportsModel(token, IMAGE_MODEL),
+      const activeTokens = items.filter((token) => token.status === 1);
+      setSelectedTokenId((current) =>
+        activeTokens.some((token) => String(token.id) === current)
+          ? current
+          : activeTokens[0]
+            ? String(activeTokens[0].id)
+            : '',
       );
-      if (firstUsable) {
-        setSelectedTokenId((current) => current || String(firstUsable.id));
-      }
     } catch (error) {
       showError(error);
     } finally {
@@ -100,9 +99,54 @@ const ImageGenerationV2 = () => {
     loadTokens();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setModels([]);
+    setSelectedModel('');
+    setLoadedToken(null);
+    setModelsLoading(Boolean(selectedToken));
+    if (!selectedToken) return;
+
+    const loadModels = async () => {
+      try {
+        const rawKey = await fetchTokenKey(selectedToken.id);
+        if (cancelled) return;
+        const res = await API.get('/v1/models', {
+          headers: { Authorization: `Bearer sk-${rawKey}` },
+          disableDuplicate: true,
+          skipErrorHandler: true,
+        });
+        if (cancelled) return;
+        if (!Array.isArray(res.data?.data)) {
+          throw new Error(
+            res.data?.error?.message || res.data?.message || t('加载模型失败'),
+          );
+        }
+        const availableModels = [
+          ...new Set(res.data.data.map((model) => model.id).filter(Boolean)),
+        ].sort();
+        setModels(availableModels);
+        setSelectedModel(availableModels[0] || '');
+        setLoadedToken(selectedToken);
+      } catch (error) {
+        if (!cancelled) showError(error);
+      } finally {
+        if (!cancelled) setModelsLoading(false);
+      }
+    };
+    loadModels();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedToken, t]);
+
   const handleStart = async () => {
-    if (!selectedTokenId) {
+    if (!selectedToken) {
       Toast.warning(t('请先选择生图令牌'));
+      return;
+    }
+    if (!modelsReady || modelsLoading || !models.includes(selectedModel)) {
+      Toast.warning(t('请选择模型'));
       return;
     }
     setJumping(true);
@@ -110,7 +154,7 @@ const ImageGenerationV2 = () => {
       const rawKey = await fetchTokenKey(selectedTokenId);
       const targetUrl = `${IMAGE_SITE_URL}?apiKey=${encodeURIComponent(
         `sk-${rawKey}`,
-      )}&apiMode=images&model=${IMAGE_MODEL}`;
+      )}&apiMode=images&model=${encodeURIComponent(selectedModel)}`;
       setImageSiteUrl(targetUrl);
     } catch (error) {
       Toast.error({
@@ -135,10 +179,25 @@ const ImageGenerationV2 = () => {
             className='flex-1 min-w-0 md:max-w-[520px]'
             placeholder={t('选择令牌')}
             loading={tokensLoading}
+            disabled={jumping}
             optionList={tokenOptions}
             value={selectedTokenId || undefined}
             onChange={(value) => setSelectedTokenId(String(value || ''))}
             emptyContent={t('暂无可用令牌')}
+            filter
+          />
+          <Text strong className='shrink-0'>
+            {t('模型选择')}
+          </Text>
+          <Select
+            className='flex-1 min-w-0 md:max-w-[360px]'
+            placeholder={t('请选择模型')}
+            loading={modelsLoading}
+            disabled={!modelsReady || jumping || tokensLoading}
+            optionList={modelOptions}
+            value={modelsReady ? selectedModel || undefined : undefined}
+            onChange={(value) => setSelectedModel(String(value || ''))}
+            emptyContent={t('暂无可用模型')}
             filter
           />
           <div className='flex items-center gap-2 shrink-0'>
@@ -146,12 +205,16 @@ const ImageGenerationV2 = () => {
               icon={<RefreshCcw size={15} />}
               onClick={loadTokens}
               loading={tokensLoading}
+              disabled={jumping}
             />
             <Button
               type='primary'
               theme='solid'
               icon={<Sparkles size={16} />}
               loading={jumping}
+              disabled={
+                tokensLoading || modelsLoading || !modelsReady || !selectedModel
+              }
               onClick={handleStart}
             >
               {t('开始生图')}
@@ -160,7 +223,7 @@ const ImageGenerationV2 = () => {
         </div>
         {tokens.length > 0 && usableTokens.length === 0 && (
           <Text type='warning' size='small' className='block mt-2'>
-            {t('当前没有支持 gpt-image-2 的启用令牌。')}
+            {t('暂无可用令牌')}
           </Text>
         )}
       </div>

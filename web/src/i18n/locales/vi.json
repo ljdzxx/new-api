@@ -1,5 +1,7 @@
 {
   "translation": {
+    "模型选择": "Chọn mô hình",
+    "暂无可用模型": "Không có mô hình khả dụng",
     " + 图片生成调用 {{symbol}}{{price}} / 1次 * {{ratioType}} {{ratio}}": " + Gọi tạo hình ảnh {{symbol}}{{price}} / 1 lần * {{ratioType}} {{ratio}}",
     " + 文件搜索 {{count}}次 / 1K 次 * {{symbol}}{{price}} * {{ratioType}} {{ratio}}_one": " + Tìm kiếm tệp {{count}} lần / 1K lần * {{symbol}}{{price}} * {{ratioType}} {{ratio}}",
     " + 文件搜索 {{count}}次 / 1K 次 * {{symbol}}{{price}} * {{ratioType}} {{ratio}}_other": " + Tìm kiếm tệp {{count}} lần / 1K lần * {{symbol}}{{price}} * {{ratioType}} {{ratio}}",
