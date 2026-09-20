@@ -985,6 +985,70 @@ html.dark .with-pastel-balls::before {
   border-radius: 10px !important;
 }
 
+/* Token group colors follow the DOM theme even when Select caches its options. */
+.group-icon-theme {
+  --group-icon-color: var(--group-icon-light, #475569);
+}
+
+body[theme-mode='dark'] .group-icon-theme {
+  --group-icon-color: var(--group-icon-dark, #cbd5e1);
+}
+
+.token-group-heading {
+  color: var(--group-icon-color);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.token-group-dropdown {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.token-group-option {
+  background: transparent;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.token-group-option[data-focused='true'] {
+  background: #f1f5f9;
+}
+
+.token-group-option[data-selected='true'] {
+  background: #e2e8f0;
+}
+
+.token-group-description {
+  color: #475569;
+}
+
+body[theme-mode='dark'] .token-group-dropdown {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+body[theme-mode='dark'] .token-group-dropdown .semi-input-wrapper {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+body[theme-mode='dark'] .token-group-option {
+  border-color: #334155;
+}
+
+body[theme-mode='dark'] .token-group-option[data-focused='true'] {
+  background: #29374b;
+}
+
+body[theme-mode='dark'] .token-group-option[data-selected='true'] {
+  background: #334155;
+}
+
+body[theme-mode='dark'] .token-group-description {
+  color: #cbd5e1;
+}
+
 /* ==================== 首页默认落地页 ==================== */
 .home-landing {
   position: relative;

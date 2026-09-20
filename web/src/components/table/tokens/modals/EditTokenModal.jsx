@@ -17,13 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useContext, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   API,
   showError,
   showSuccess,
   timestamp2string,
   renderGroupOption,
+  renderGroupOptionGroups,
   renderGroupLabel,
   renderQuotaWithPrompt,
   getModelCategories,
@@ -51,13 +52,11 @@ import {
   IconKey,
 } from '@douyinfe/semi-icons';
 import { useTranslation } from 'react-i18next';
-import { StatusContext } from '../../../../context/Status';
 
 const { Text, Title } = Typography;
 
 const EditTokenModal = (props) => {
   const { t } = useTranslation();
-  const [statusState, statusDispatch] = useContext(StatusContext);
   const [loading, setLoading] = useState(false);
   const isMobile = useIsMobile();
   const formApiRef = useRef(null);
@@ -138,15 +137,7 @@ const EditTokenModal = (props) => {
         original_ratio: info.original_ratio,
         icon: info.icon,
       }));
-      if (statusState?.status?.default_use_auto_group) {
-        if (localGroupOptions.some((group) => group.value === 'auto')) {
-          localGroupOptions.sort((a, b) => (a.value === 'auto' ? -1 : 1));
-        }
-      }
       setGroups(localGroupOptions);
-      // if (statusState?.status?.default_use_auto_group && formApiRef.current) {
-      //   formApiRef.current.setValue('group', 'auto');
-      // }
     } else {
       showError(t(message));
     }
@@ -365,9 +356,9 @@ const EditTokenModal = (props) => {
                     {groups.length > 0 ? (
                       <Form.Select
                         field='group'
+                        dropdownClassName='token-group-dropdown'
                         label={t('令牌分组')}
                         placeholder={t('令牌分组，默认为用户的分组')}
-                        optionList={groups}
                         renderOptionItem={renderGroupOption}
                         renderSelectedItem={(option) =>
                           renderGroupLabel(option)
@@ -377,7 +368,9 @@ const EditTokenModal = (props) => {
                         searchable
                         showClear
                         style={{ width: '100%' }}
-                      />
+                      >
+                        {renderGroupOptionGroups(groups, t)}
+                      </Form.Select>
                     ) : (
                       <Form.Select
                         placeholder={t('管理员未设置用户可选分组')}

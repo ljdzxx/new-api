@@ -66,46 +66,42 @@ export const channelTypeIconMap = {
 // Each entry carries a `light`/`dark` pair: saturated for light mode and
 // luminous for dark mode, so the text stays bright and readable on both.
 export const CHANNEL_ICON_COLORS = {
-  OpenAI: { light: '#059669', dark: '#34D399' },
+  OpenAI: { light: '#15803D', dark: '#4ADE80' },
   Midjourney: { light: '#4F46E5', dark: '#818CF8' },
   Suno: { light: '#9333EA', dark: '#C084FC' },
   Ollama: { light: '#475569', dark: '#94A3B8' },
-  Claude: { light: '#EA580C', dark: '#FB923C' },
+  Claude: { light: '#B45309', dark: '#FBBF24' },
   Gemini: { light: '#4F46E5', dark: '#818CF8' },
-  Cohere: { light: '#059669', dark: '#34D399' },
-  Cloudflare: { light: '#EA580C', dark: '#FB923C' },
+  Cohere: { light: '#047857', dark: '#34D399' },
+  Cloudflare: { light: '#C2410C', dark: '#FB923C' },
   DeepSeek: { light: '#2563EB', dark: '#60A5FA' },
-  XiaomiMiMo: { light: '#EA580C', dark: '#FB923C' },
+  XiaomiMiMo: { light: '#C2410C', dark: '#FB923C' },
   Wenxin: { light: '#2563EB', dark: '#60A5FA' },
   Qwen: { light: '#7C3AED', dark: '#A78BFA' },
   Spark: { light: '#2563EB', dark: '#60A5FA' },
   Zhipu: { light: '#2563EB', dark: '#60A5FA' },
   Xinference: { light: '#7C3AED', dark: '#A78BFA' },
   Moonshot: { light: '#475569', dark: '#94A3B8' },
-  Perplexity: { light: '#0D9488', dark: '#2DD4BF' },
+  Perplexity: { light: '#0F766E', dark: '#2DD4BF' },
   OpenRouter: { light: '#4F46E5', dark: '#818CF8' },
-  Ai360: { light: '#16A34A', dark: '#4ADE80' },
+  Ai360: { light: '#15803D', dark: '#4ADE80' },
   Hunyuan: { light: '#2563EB', dark: '#60A5FA' },
   Yi: { light: '#7C3AED', dark: '#A78BFA' },
   Minimax: { light: '#DC2626', dark: '#F87171' },
   Dify: { light: '#2563EB', dark: '#60A5FA' },
   Jina: { light: '#2563EB', dark: '#60A5FA' },
   SiliconCloud: { light: '#7C3AED', dark: '#A78BFA' },
-  Mistral: { light: '#EA580C', dark: '#FB923C' },
+  Mistral: { light: '#C2410C', dark: '#FB923C' },
   Doubao: { light: '#2563EB', dark: '#60A5FA' },
-  XAI: { light: '#475569', dark: '#94A3B8' },
+  XAI: { light: '#475569', dark: '#E2E8F0' },
   Coze: { light: '#2563EB', dark: '#60A5FA' },
-  Kling: { light: '#16A34A', dark: '#4ADE80' },
-  Jimeng: { light: '#0891B2', dark: '#22D3EE' },
+  Kling: { light: '#15803D', dark: '#4ADE80' },
+  Jimeng: { light: '#0E7490', dark: '#22D3EE' },
   Replicate: { light: '#475569', dark: '#94A3B8' },
   FastGPT: { light: '#2563EB', dark: '#60A5FA' },
 };
 
 const GROUP_ICON_FALLBACK_COLORS = { light: '#475569', dark: '#94A3B8' };
-
-const isDarkMode = () =>
-  typeof document !== 'undefined' &&
-  document.body?.getAttribute('theme-mode') === 'dark';
 
 export const GROUP_ICON_NAMES = new Set(
   Object.values(channelTypeIconMap).flatMap((name) => [
@@ -114,21 +110,24 @@ export const GROUP_ICON_NAMES = new Set(
   ]),
 );
 
-export const getGroupIconColor = (icon) => {
+export const getGroupIconVariables = (icon) => {
   const entry =
     CHANNEL_ICON_COLORS[icon?.split('.')[0]] || GROUP_ICON_FALLBACK_COLORS;
-  return isDarkMode() ? entry.dark : entry.light;
+  return {
+    '--group-icon-light': entry.light,
+    '--group-icon-dark': entry.dark,
+  };
 };
 
 // Tag style: luminous text on a subtle same-hue tint, adapting to the
 // current theme so the label stays bright and readable in dark mode.
 export const getGroupIconStyle = (icon) => {
-  const color = getGroupIconColor(icon);
-  const dark = isDarkMode();
   return {
-    color,
-    backgroundColor: `${color}${dark ? '24' : '14'}`,
-    borderColor: `${color}${dark ? '47' : '2E'}`,
-    fontWeight: 500,
+    ...getGroupIconVariables(icon),
+    color: 'var(--group-icon-color)',
+    backgroundColor:
+      'color-mix(in srgb, var(--group-icon-color) 10%, transparent)',
+    borderColor: 'color-mix(in srgb, var(--group-icon-color) 20%, transparent)',
+    fontWeight: 600,
   };
 };

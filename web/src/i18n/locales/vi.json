@@ -1,5 +1,7 @@
 {
   "translation": {
+    "{{name}}系列": "Dòng {{name}}",
+    "其他分组": "Các nhóm khác",
     "模型选择": "Chọn mô hình",
     "暂无可用模型": "Không có mô hình khả dụng",
     " + 图片生成调用 {{symbol}}{{price}} / 1次 * {{ratioType}} {{ratio}}": " + Gọi tạo hình ảnh {{symbol}}{{price}} / 1 lần * {{ratioType}} {{ratio}}",

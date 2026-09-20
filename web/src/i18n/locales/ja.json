@@ -1,5 +1,7 @@
 {
   "translation": {
+    "{{name}}系列": "{{name}}シリーズ",
+    "其他分组": "その他のグループ",
     "模型选择": "モデル選択",
     "暂无可用模型": "利用可能なモデルがありません",
     " + 图片生成调用 {{symbol}}{{price}} / 1次 * {{ratioType}} {{ratio}}": " + 画像生成APIコール {{symbol}}{{price}} / 1回 * {{ratioType}} {{ratio}}",

@@ -38,6 +38,7 @@ import {
   timestamp2string,
   renderGroup,
   renderGroupOption,
+  renderGroupOptionGroups,
   renderGroupLabel,
   renderRatioWithOriginal,
   stringToColor,
@@ -101,7 +102,11 @@ const renderGroupValue = (optionNode, t) => {
     <span className='flex items-center gap-1 min-w-0'>
       {renderGroupLabel(optionNode, group === 'auto' ? t('智能熔断') : group)}
       {ratio !== undefined &&
-        renderRatioWithOriginal(ratio, optionNode?.original_ratio)}
+        renderRatioWithOriginal(
+          ratio,
+          optionNode?.original_ratio,
+          optionNode?.icon,
+        )}
     </span>
   );
 };
@@ -131,9 +136,9 @@ const renderGroupColumn = (
       <div className='w-[360px]' onClick={(event) => event.stopPropagation()}>
         <Select
           size='small'
+          dropdownClassName='token-group-dropdown'
           value={text || undefined}
           placeholder={t('用户分组')}
-          optionList={rowGroupOptions}
           renderOptionItem={renderGroupOption}
           renderSelectedItem={(optionNode) => renderGroupValue(optionNode, t)}
           filter={selectFilter}
@@ -145,7 +150,9 @@ const renderGroupColumn = (
           emptyContent={t('暂无数据')}
           style={{ width: '100%' }}
           onChange={(value) => updateTokenGroup(record, value)}
-        />
+        >
+          {renderGroupOptionGroups(rowGroupOptions, t)}
+        </Select>
         {text === 'auto' && record?.cross_group_retry ? (
           <div
             className='mt-1 text-xs'

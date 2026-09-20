@@ -20,11 +20,12 @@ For commercial licensing, please contact support@quantumnous.com
 import i18next from 'i18next';
 import {
   channelTypeIconMap,
+  getGroupIconVariables,
   getGroupIconStyle,
   GROUP_ICON_NAMES,
 } from '../constants/channel-icons';
 import { Check } from 'lucide-react';
-import { Modal, Tag, Typography, Avatar } from '@douyinfe/semi-ui';
+import { Modal, Tag, Typography, Avatar, Select } from '@douyinfe/semi-ui';
 import { copy, showSuccess } from './utils';
 import { MOBILE_BREAKPOINT } from '../hooks/common/useIsMobile';
 import { visit } from 'unist-util-visit';
@@ -760,7 +761,17 @@ export function renderGroup(group) {
   );
 }
 
-export function renderRatio(ratio) {
+export function renderRatio(ratio, icon) {
+  if (GROUP_ICON_NAMES.has(icon)) {
+    return (
+      <span
+        className='group-icon-theme inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs'
+        style={getGroupIconStyle(icon)}
+      >
+        {ratio}x {i18next.t('倍率')}
+      </span>
+    );
+  }
   let color = 'green';
   if (ratio > 5) {
     color = 'red';
@@ -777,21 +788,21 @@ export function renderRatio(ratio) {
 }
 
 // 分组特殊倍率生效时，原始倍率加删除线，旁边展示当前生效倍率
-export function renderRatioWithOriginal(ratio, originalRatio) {
+export function renderRatioWithOriginal(ratio, originalRatio, icon) {
   if (
     originalRatio === undefined ||
     originalRatio === null ||
     originalRatio === ratio ||
     typeof ratio !== 'number'
   ) {
-    return renderRatio(ratio);
+    return renderRatio(ratio, icon);
   }
   return (
     <span className='inline-flex items-center gap-1'>
       <del style={{ color: 'var(--semi-color-text-2)' }}>
         {originalRatio}x {i18next.t('倍率')}
       </del>
-      {renderRatio(ratio)}
+      {renderRatio(ratio, icon)}
     </span>
   );
 }
@@ -882,7 +893,7 @@ export const renderGroupLabel = (option, label = option?.value) => {
       style={icon ? getGroupIconStyle(icon) : undefined}
       size='small'
       shape='circle'
-      className='max-w-full'
+      className='group-icon-theme max-w-full'
     >
       <span className='inline-flex min-w-0 items-center gap-1'>
         {icon && (
@@ -894,6 +905,58 @@ export const renderGroupLabel = (option, label = option?.value) => {
       </span>
     </Tag>
   );
+};
+
+export const renderGroupOptionGroups = (options, t) => {
+  const groups = new Map();
+  options.forEach((option) => {
+    const icon = option.icon || '';
+    if (!groups.has(icon)) groups.set(icon, []);
+    groups.get(icon).push(option);
+  });
+
+  return [...groups.entries()]
+    .sort(([a], [b]) => {
+      if (!a) return 1;
+      if (!b) return -1;
+      return a.localeCompare(b);
+    })
+    .map(([icon, items]) => {
+      const title = icon
+        ? t('{{name}}系列', { name: icon.replace(/\.Color$/, '') })
+        : t('其他分组');
+      return (
+        <Select.OptGroup
+          key={`${icon}:${title}`}
+          label={
+            <span className='flex items-center gap-2 py-1'>
+              <span
+                aria-hidden='true'
+                className='flex-1 border-t'
+                style={{ borderColor: 'var(--semi-color-border)' }}
+              />
+              <span
+                className='group-icon-theme token-group-heading'
+                style={icon ? getGroupIconVariables(icon) : undefined}
+              >
+                {title}
+              </span>
+              <span
+                aria-hidden='true'
+                className='flex-1 border-t'
+                style={{ borderColor: 'var(--semi-color-border)' }}
+              />
+            </span>
+          }
+        >
+          {items
+            .sort((a, b) => a.value.localeCompare(b.value))
+            .map((option) => (
+              <Select.Option key={option.value} {...option} />
+            ))}
+        </Select.OptGroup>
+      );
+    });
 };
 
 export const renderGroupOption = (item) => {
@@ -918,18 +981,15 @@ export const renderGroupOption = (item) => {
       role='option'
       aria-selected={!!selected}
       aria-disabled={!!disabled}
-      className={className}
+      className={`${className || ''} token-group-option`}
+      data-selected={!!selected}
+      data-focused={!!focused}
       style={{
         ...style,
         padding: '10px 12px',
         margin: '2px 4px',
         borderRadius: 8,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        backgroundColor: selected
-          ? 'var(--semi-color-primary-light-default)'
-          : focused
-            ? 'var(--semi-color-fill-0)'
-            : 'transparent',
         opacity: disabled ? 0.5 : 1,
       }}
       onClick={(event) => !disabled && onClick?.(event)}
@@ -938,17 +998,14 @@ export const renderGroupOption = (item) => {
       <div className='flex items-center justify-between gap-3'>
         <div className='min-w-0'>{renderGroupLabel(item)}</div>
         <div className='flex shrink-0 items-center gap-2'>
-          {renderRatioWithOriginal(item.ratio, item.original_ratio)}
+          {renderRatioWithOriginal(item.ratio, item.original_ratio, item.icon)}
           {selected && (
             <Check size={14} style={{ color: 'var(--semi-color-primary)' }} />
           )}
         </div>
       </div>
       {label && label !== value && (
-        <div
-          className='mt-1 text-xs break-words'
-          style={{ color: 'var(--semi-color-text-2)' }}
-        >
+        <div className='token-group-description mt-1.5 text-xs leading-relaxed break-words'>
           {label}
         </div>
       )}

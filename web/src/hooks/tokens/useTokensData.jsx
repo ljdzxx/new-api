@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@douyinfe/semi-ui';
 import {
@@ -30,11 +30,9 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import { fetchTokenKey as fetchTokenKeyById } from '../../helpers/token';
-import { StatusContext } from '../../context/Status';
 
 export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
   const { t } = useTranslation();
-  const [statusState] = useContext(StatusContext);
 
   // Basic state
   const [tokens, setTokens] = useState([]);
@@ -124,13 +122,6 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
           original_ratio: info?.original_ratio,
           icon: info?.icon,
         }));
-        if (statusState?.status?.default_use_auto_group) {
-          options.sort((a, b) => {
-            if (a.value === 'auto') return -1;
-            if (b.value === 'auto') return 1;
-            return 0;
-          });
-        }
         setGroupOptions(options);
       } else {
         showError(t(message));
@@ -510,7 +501,7 @@ export const useTokensData = (openFluentNotification, openCCSwitchModal) => {
 
   useEffect(() => {
     loadGroups();
-  }, [statusState?.status?.default_use_auto_group]);
+  }, []);
 
   return {
     // Basic state
