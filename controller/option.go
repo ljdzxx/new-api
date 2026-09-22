@@ -94,6 +94,7 @@ func GetOptions(c *gin.Context) {
 		Key:   "CompletionRatioMeta",
 		Value: buildCompletionRatioMetaValue(optionValues),
 	})
+	options = append(options, &model.Option{Key: "RegisterRiskRedisEnabled", Value: strconv.FormatBool(common.RedisEnabled && common.RDB != nil)})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -136,6 +137,14 @@ func UpdateOption(c *gin.Context) {
 		option.Value = common.Interface2String(option.Value.(int))
 	default:
 		option.Value = fmt.Sprintf("%v", option.Value)
+	}
+	if option.Key == "RegisterRiskRedisEnabled" {
+		common.ApiErrorMsg(c, "Redis 状态为只读配置")
+		return
+	}
+	if err := common.ValidateRegisterRiskOption(option.Key, option.Value.(string)); err != nil {
+		common.ApiError(c, err)
+		return
 	}
 	switch option.Key {
 	case "invoice_setting.min_amount":
@@ -297,10 +306,10 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
-		if weights.Total() != 100 {
+		if err = weights.Validate(); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "邀请奖励风控权重总分必须等于 100",
+				"message": err.Error(),
 			})
 			return
 		}

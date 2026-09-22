@@ -43,6 +43,10 @@ const OperationSetting = () => {
     InviteRiskControlEnabled: false,
     InviteRiskThreshold: 60,
     InviteRiskDailyLimit: 0,
+    RegisterRiskControlEnabled: false,
+    RegisterRiskCooldownHours: 24,
+    RegisterRiskHitThreshold: 1,
+    RegisterRiskRejectMessage: '当前注册环境操作过于频繁，请稍后重试',
     InviteRiskScoreWeights:
       '{"ip":25,"fingerprint":30,"canvas":10,"webgl":10,"audio":6,"fonts":6,"ua":5,"locale":4,"screen":3,"hardware":1}',
     'quota_setting.enable_free_model_pre_consume': true,

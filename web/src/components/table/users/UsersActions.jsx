@@ -17,19 +17,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React from 'react';
-import { Button } from '@douyinfe/semi-ui';
+import React, { useState } from 'react';
+import { Button, Modal } from '@douyinfe/semi-ui';
 import { useNavigate } from 'react-router-dom';
 
-const UsersActions = ({ setShowAddUser, setShowInviteRewardAudits, t }) => {
+const UsersActions = ({
+  setShowAddUser,
+  setShowInviteRewardAudits,
+  selectedRowKeys,
+  batchLoading,
+  batchManageUsers,
+  loading,
+  t,
+}) => {
   const navigate = useNavigate();
+  const [batchOperation, setBatchOperation] = useState(null);
 
   const handleAddUser = () => {
     setShowAddUser(true);
   };
 
   return (
-    <div className='flex gap-2 w-full md:w-auto order-2 md:order-1'>
+    <div className='flex flex-wrap gap-2 w-full md:w-auto order-2 md:order-1'>
       <Button
         className='w-full md:w-auto'
         type='tertiary'
@@ -49,6 +58,61 @@ const UsersActions = ({ setShowAddUser, setShowInviteRewardAudits, t }) => {
       <Button className='w-full md:w-auto' onClick={handleAddUser} size='small'>
         {t('添加用户')}
       </Button>
+      <Button
+        className='w-full md:w-auto'
+        size='small'
+        type='danger'
+        disabled={!selectedRowKeys.length || loading || batchLoading}
+        onClick={() =>
+          setBatchOperation({ action: 'disable', ids: [...selectedRowKeys] })
+        }
+      >
+        {t('批量禁用')}
+      </Button>
+      <Button
+        className='w-full md:w-auto'
+        size='small'
+        disabled={!selectedRowKeys.length || loading || batchLoading}
+        onClick={() =>
+          setBatchOperation({ action: 'enable', ids: [...selectedRowKeys] })
+        }
+      >
+        {t('批量启用')}
+      </Button>
+      {selectedRowKeys.length > 0 && (
+        <span className='self-center text-sm'>
+          {t('已勾选 {{selected}} 个用户', {
+            selected: selectedRowKeys.length,
+          })}
+        </span>
+      )}
+      <Modal
+        title={
+          batchOperation?.action === 'disable' ? t('批量禁用') : t('批量启用')
+        }
+        visible={!!batchOperation}
+        confirmLoading={batchLoading}
+        cancelButtonProps={{ disabled: batchLoading }}
+        closable={!batchLoading}
+        maskClosable={false}
+        closeOnEsc={!batchLoading}
+        onCancel={() => {
+          if (!batchLoading) setBatchOperation(null);
+        }}
+        onOk={async () => {
+          if (!batchOperation || batchLoading) return;
+          await batchManageUsers(batchOperation.ids, batchOperation.action);
+          setBatchOperation(null);
+        }}
+      >
+        {batchOperation?.action === 'disable'
+          ? t('确定要禁用选中的 {{selected}} 个用户吗？', {
+              selected: batchOperation?.ids.length,
+            })
+          : t('确定要启用选中的 {{selected}} 个用户吗？', {
+              selected: batchOperation?.ids.length,
+            })}
+      </Modal>
     </div>
   );
 };

@@ -69,6 +69,10 @@ export default function SettingsCreditLimit(props) {
     InviteRiskControlEnabled: false,
     InviteRiskThreshold: 60,
     InviteRiskDailyLimit: 0,
+    RegisterRiskControlEnabled: false,
+    RegisterRiskCooldownHours: 24,
+    RegisterRiskHitThreshold: 1,
+    RegisterRiskRejectMessage: '当前注册环境操作过于频繁，请稍后重试',
     InviteRiskScoreWeights: stringifyInviteRiskWeights(
       DEFAULT_INVITE_RISK_WEIGHTS,
     ),
@@ -108,42 +112,59 @@ export default function SettingsCreditLimit(props) {
     });
   };
 
-  function onSubmit() {
+  async function onSubmit() {
+    if (
+      Object.values(inviteRiskWeights).some(
+        (value) => !Number.isInteger(Number(value)) || value < 0 || value > 100,
+      )
+    ) {
+      return showError(t('邀请奖励风控各项权重必须是 0 到 100 之间的整数'));
+    }
     if (inviteRiskWeightTotal !== 100) {
       return showError(t('邀请奖励风控权重总分必须等于 100'));
     }
+    const cooldown = Number(inputs.RegisterRiskCooldownHours);
+    const hits = Number(inputs.RegisterRiskHitThreshold);
+    if (!Number.isInteger(cooldown) || cooldown < 1 || cooldown > 720) {
+      return showError(t('注册风控冷却时间必须是 1 到 720 之间的整数'));
+    }
+    if (!Number.isInteger(hits) || hits < 1 || hits > 100000) {
+      return showError(t('注册风控命中阈值必须是 1 到 100000 之间的整数'));
+    }
+    const message = inputs.RegisterRiskRejectMessage || '';
+    if (!message.trim() || Array.from(message).length > 200) {
+      return showError(t('注册失败提示词必须为 1 到 200 个字符'));
+    }
     const updateArray = compareObjects(inputs, inputsRow);
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
-    const requestQueue = updateArray.map((item) => {
-      let value = '';
-      if (typeof inputs[item.key] === 'boolean') {
-        value = String(inputs[item.key]);
-      } else {
-        value = inputs[item.key];
-      }
-      return API.put('/api/option/', {
-        key: item.key,
-        value,
-      });
-    });
+    // Persist the parameters before enabling the gate; disable it first.
+    const order = (item) =>
+      item.key === 'RegisterRiskControlEnabled'
+        ? inputs.RegisterRiskControlEnabled
+          ? 1
+          : -1
+        : 0;
+    updateArray.sort((left, right) => order(left) - order(right));
     setLoading(true);
-    Promise.all(requestQueue)
-      .then((res) => {
-        if (requestQueue.length === 1) {
-          if (res.includes(undefined)) return;
-        } else if (requestQueue.length > 1) {
-          if (res.includes(undefined))
-            return showError(t('部分保存失败，请重试'));
+    try {
+      for (const item of updateArray) {
+        const res = await API.put('/api/option/', {
+          key: item.key,
+          value: String(inputs[item.key]),
+        });
+        if (!res.data?.success) {
+          showError(res.data?.message || t('部分保存失败，请重试'));
+          await props.refresh();
+          return;
         }
-        showSuccess(t('保存成功'));
-        props.refresh();
-      })
-      .catch(() => {
-        showError(t('保存失败，请重试'));
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      }
+      showSuccess(t('保存成功'));
+      await props.refresh();
+    } catch (err) {
+      showError(t('保存失败，请重试'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -171,6 +192,15 @@ export default function SettingsCreditLimit(props) {
     if (currentInputs.InviteRiskDailyLimit === undefined) {
       currentInputs.InviteRiskDailyLimit = 0;
     }
+    currentInputs.RegisterRiskControlEnabled =
+      currentInputs.RegisterRiskControlEnabled ?? false;
+    currentInputs.RegisterRiskCooldownHours =
+      currentInputs.RegisterRiskCooldownHours ?? 24;
+    currentInputs.RegisterRiskHitThreshold =
+      currentInputs.RegisterRiskHitThreshold ?? 1;
+    currentInputs.RegisterRiskRejectMessage =
+      currentInputs.RegisterRiskRejectMessage ??
+      '当前注册环境操作过于频繁，请稍后重试';
     if (currentInputs.InviteRiskScoreWeights === undefined) {
       currentInputs.InviteRiskScoreWeights = stringifyInviteRiskWeights(
         DEFAULT_INVITE_RISK_WEIGHTS,
@@ -539,6 +569,93 @@ export default function SettingsCreditLimit(props) {
                   </Col>
                 ))}
               </Row>
+              <Form.Section text={t('注册风控')}>
+                <Tag
+                  color={
+                    props.options?.RegisterRiskRedisEnabled === 'true'
+                      ? 'green'
+                      : 'orange'
+                  }
+                >
+                  {props.options?.RegisterRiskRedisEnabled === 'true'
+                    ? t('Redis 已启用')
+                    : t('Redis 未启用，注册风控不生效')}
+                </Tag>
+                <Row gutter={16}>
+                  <Col xs={24} md={8}>
+                    <Form.Switch
+                      field='RegisterRiskControlEnabled'
+                      label={t('启用注册风控')}
+                      extraText={t(
+                        '仅在 Redis 已启用时生效，独立于邀请奖励风控；微信注册不采集画像、不参与此风控。',
+                      )}
+                      onChange={(value) =>
+                        setInputs({
+                          ...inputs,
+                          RegisterRiskControlEnabled: value,
+                        })
+                      }
+                    />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <Form.InputNumber
+                      field='RegisterRiskCooldownHours'
+                      label={t('注册风控冷却时间（小时）')}
+                      min={1}
+                      max={720}
+                      step={1}
+                      extraText={t(
+                        '默认 24 小时。每次命中都会重新计时，包括被拒绝的注册；连续未命中满冷却时间后才能重置。',
+                      )}
+                      onChange={(value) =>
+                        setInputs({
+                          ...inputs,
+                          RegisterRiskCooldownHours: String(value ?? ''),
+                        })
+                      }
+                    />
+                  </Col>
+                  <Col xs={24} md={8}>
+                    <Form.InputNumber
+                      field='RegisterRiskHitThreshold'
+                      label={t('注册风控命中阈值')}
+                      min={1}
+                      max={100000}
+                      step={1}
+                      extraText={t(
+                        '首次注册记为 0；后续命中加 1，达到阈值即拒绝。默认 1 表示同一画像首次重复注册即拒绝。',
+                      )}
+                      onChange={(value) =>
+                        setInputs({
+                          ...inputs,
+                          RegisterRiskHitThreshold: String(value ?? ''),
+                        })
+                      }
+                    />
+                  </Col>
+                  <Col span={24}>
+                    <Form.Input
+                      field='RegisterRiskRejectMessage'
+                      label={t('注册失败提示词')}
+                      maxLength={200}
+                      extraText={t(
+                        '达到命中阈值时显示此提示。画像无效或 Redis 故障时暂停本次注册并提示重试。',
+                      )}
+                      onChange={(value) =>
+                        setInputs({
+                          ...inputs,
+                          RegisterRiskRejectMessage: value,
+                        })
+                      }
+                    />
+                    <div className='text-xs text-gray-500 mb-4'>
+                      {t(
+                        '复用全部 10 项风控指标进行精确匹配，不使用邀请风险评分权重；任意一项变化都会生成不同画像。',
+                      )}
+                    </div>
+                  </Col>
+                </Row>
+              </Form.Section>
             </Form.Section>
 
             <Row>

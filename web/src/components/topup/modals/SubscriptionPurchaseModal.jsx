@@ -109,7 +109,7 @@ function getPeriodicQuotaLabels(plan, t) {
   };
 }
 
-function getPaymentButtonIcon(paymentType, paymentName) {
+function getPaymentButtonIcon(paymentType, paymentName, t) {
   if (paymentType === 'alipay') {
     return <SiAlipay size={20} color='#1677FF' />;
   }
@@ -123,7 +123,7 @@ function getPaymentButtonIcon(paymentType, paymentName) {
     return (
       <img
         src='/taobao_75px.png'
-        alt='Mall'
+        alt={t('商城')}
         style={{
           width: 20,
           height: 20,
@@ -230,7 +230,7 @@ const SubscriptionPurchaseModal = ({
         key: method.type,
         label: method.name || method.type,
         active: selectedEpayMethod === method.type,
-        icon: getPaymentButtonIcon(method.type, method),
+        icon: getPaymentButtonIcon(method.type, method, t),
         onClick: () => {
           setSelectedEpayMethod(method.type);
           onPayEpay(method.type);
@@ -243,7 +243,7 @@ const SubscriptionPurchaseModal = ({
       key: 'mall',
       label: t('商城'),
       active: false,
-      icon: getPaymentButtonIcon('mall'),
+      icon: getPaymentButtonIcon('mall', null, t),
       onClick: onPayMall,
     });
   }

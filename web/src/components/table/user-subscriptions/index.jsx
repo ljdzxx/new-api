@@ -362,7 +362,7 @@ const UserSubscriptionsPage = () => {
                     {plan.title || `#${sub.plan_id || '-'}`}
                   </div>
                   <div className='text-xs text-gray-500'>
-                    ID: {sub.id} · {t('来源')}: {sub.source || '-'}
+                    {'ID:'} {sub.id} · {t('来源')}: {sub.source || '-'}
                   </div>
                 </div>
                 <div>

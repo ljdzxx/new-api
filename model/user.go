@@ -714,8 +714,10 @@ func (user *User) Insert(inviterId int) error {
 	if result.Error != nil {
 		return result.Error
 	}
-	if err := SaveUserRegistrationProfile(user.Id, user.RegistrationIP, user.RegistrationFingerprint); err != nil {
-		common.SysLog(fmt.Sprintf("failed to save registration profile for user #%d: %s", user.Id, err.Error()))
+	if user.WeChatId == "" {
+		if err := SaveUserRegistrationProfile(user.Id, user.RegistrationIP, user.RegistrationFingerprint); err != nil {
+			common.SysLog(fmt.Sprintf("failed to save registration profile for user #%d: %s", user.Id, err.Error()))
+		}
 	}
 
 	// 用户创建成功后，根据角色初始化边栏配置
@@ -780,8 +782,10 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 // FinalizeOAuthUserCreation performs post-transaction tasks for OAuth user creation.
 // This should be called after the transaction commits successfully.
 func (user *User) FinalizeOAuthUserCreation(inviterId int) {
-	if err := SaveUserRegistrationProfile(user.Id, user.RegistrationIP, user.RegistrationFingerprint); err != nil {
-		common.SysLog(fmt.Sprintf("failed to save registration profile for user #%d: %s", user.Id, err.Error()))
+	if user.WeChatId == "" {
+		if err := SaveUserRegistrationProfile(user.Id, user.RegistrationIP, user.RegistrationFingerprint); err != nil {
+			common.SysLog(fmt.Sprintf("failed to save registration profile for user #%d: %s", user.Id, err.Error()))
+		}
 	}
 	// 用户创建成功后，根据角色初始化边栏配置
 	var createdUser User

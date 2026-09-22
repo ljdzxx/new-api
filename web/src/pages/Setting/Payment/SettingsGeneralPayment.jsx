@@ -203,7 +203,7 @@ export default function SettingsGeneralPayment(props) {
               <Form.Slot label={t('支付金额显示货币及汇率')}>
                 <InputGroup style={{ width: '100%' }}>
                   <Input
-                    prefix='1 USD = '
+                    prefix={'1 USD ='}
                     style={{ width: '50%' }}
                     value={paymentDisplayRatePreview}
                     disabled={
@@ -229,8 +229,8 @@ export default function SettingsGeneralPayment(props) {
                     <Select.Option value='FOLLOW_QUOTA'>
                       {t('跟随额度显示')}
                     </Select.Option>
-                    <Select.Option value='USD'>USD ($)</Select.Option>
-                    <Select.Option value='CNY'>CNY (¥)</Select.Option>
+                    <Select.Option value='USD'>{'USD ($)'}</Select.Option>
+                    <Select.Option value='CNY'>{'CNY (¥)'}</Select.Option>
                     <Select.Option value='CUSTOM'>
                       {t('自定义货币')}
                     </Select.Option>

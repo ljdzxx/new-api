@@ -119,13 +119,13 @@ function renderStatusTag(status, t) {
   }
 }
 
-const emptyNode = (
+const renderEmpty = (t) => (
   <Empty
     image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
     darkModeImage={
       <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
     }
-    description='暂无统计记录'
+    description={t('暂无统计记录')}
     style={{ padding: 30 }}
   />
 );
@@ -404,7 +404,7 @@ const UserSubscriptionStatsModal = ({ visible, onCancel, user, t }) => {
             {t('订阅额度统计')}
           </Typography.Title>
           <Text type='tertiary'>
-            {user?.username || '-'} (ID: {user?.id || '-'})
+            {user?.username || '-'} {'(ID:'} {user?.id || '-'})
           </Text>
         </Space>
       }
@@ -418,7 +418,9 @@ const UserSubscriptionStatsModal = ({ visible, onCancel, user, t }) => {
         <div className='flex flex-col gap-3'>
           <div className='flex items-center justify-between gap-3 flex-wrap'>
             <Text type='tertiary'>
-              {t('展示该用户按日沉淀的订阅额度记录，支持按日汇总与按套餐明细查看。')}
+              {t(
+                '展示该用户按日沉淀的订阅额度记录，支持按日汇总与按套餐明细查看。',
+              )}
             </Text>
             <Button
               icon={<IconRefresh spin={refreshing} />}
@@ -535,7 +537,7 @@ const UserSubscriptionStatsModal = ({ visible, onCancel, user, t }) => {
                 showSizeChanger: false,
                 onPageChange: handleDailyPageChange,
               }}
-              empty={emptyNode}
+              empty={renderEmpty(t)}
             />
           </TabPane>
           <TabPane tab={t('按套餐明细')} itemKey='detail'>
@@ -554,7 +556,7 @@ const UserSubscriptionStatsModal = ({ visible, onCancel, user, t }) => {
                 showSizeChanger: false,
                 onPageChange: handleDetailPageChange,
               }}
-              empty={emptyNode}
+              empty={renderEmpty(t)}
             />
           </TabPane>
         </Tabs>

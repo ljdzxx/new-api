@@ -203,7 +203,9 @@ export default function BillingPolicyManager({
             </h3>
             <Space>
               <Tag color='blue'>{config?.state || 'legacy'}</Tag>
-              <Text type='tertiary'>revision {config?.revision || 0}</Text>
+              <Text type='tertiary'>
+                {t('修订版本')} {config?.revision || 0}
+              </Text>
             </Space>
           </div>
           <Space wrap>

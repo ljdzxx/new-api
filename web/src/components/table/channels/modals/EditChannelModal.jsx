@@ -3194,7 +3194,7 @@ const EditChannelModal = (props) => {
                     {inputs.type === 39 && (
                       <Form.Input
                         field='other'
-                        label='Account ID'
+                        label={t('账户 ID')}
                         placeholder={
                           '请输入Account ID，例如：d6b5da8hk1awo8nap34ube6gh'
                         }
@@ -3290,7 +3290,7 @@ const EditChannelModal = (props) => {
                           <div>
                             <Form.Input
                               field='base_url'
-                              label='AZURE_OPENAI_ENDPOINT'
+                              label={'AZURE_OPENAI_ENDPOINT'}
                               placeholder={t(
                                 '请输入 AZURE_OPENAI_ENDPOINT，例如：https://docs-test-001.openai.azure.com',
                               )}

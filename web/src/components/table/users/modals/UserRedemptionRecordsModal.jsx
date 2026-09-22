@@ -104,13 +104,13 @@ const renderSourceTag = (rewardType, t) => {
   );
 };
 
-const emptyNode = (
+const renderEmpty = (t) => (
   <Empty
     image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
     darkModeImage={
       <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
     }
-    description='暂无兑换记录'
+    description={t('暂无兑换记录')}
     style={{ padding: 30 }}
   />
 );
@@ -227,7 +227,7 @@ const UserRedemptionRecordsModal = ({ visible, onCancel, user, t }) => {
             {t('用户兑换记录')}
           </Typography.Title>
           <Text type='tertiary'>
-            {user?.username || '-'} (ID: {user?.id || '-'})
+            {user?.username || '-'} {'(ID:'} {user?.id || '-'})
           </Text>
         </Space>
       }
@@ -286,7 +286,7 @@ const UserRedemptionRecordsModal = ({ visible, onCancel, user, t }) => {
           showSizeChanger: false,
           onPageChange: (page) => loadData(page, statusFilter),
         }}
-        empty={emptyNode}
+        empty={renderEmpty(t)}
       />
     </Modal>
   );

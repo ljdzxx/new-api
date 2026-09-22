@@ -218,8 +218,8 @@ export default function SettingsInvoice(props) {
                 field={'invoice_setting.r2_enabled'}
                 label={t('启用发票 R2 存储')}
                 size='default'
-                checkedText='｜'
-                uncheckedText='〇'
+                checkedText={'｜'}
+                uncheckedText={'〇'}
                 onChange={handleFieldChange('invoice_setting.r2_enabled')}
               />
             </Col>
@@ -281,7 +281,7 @@ export default function SettingsInvoice(props) {
               <Form.Input
                 field={'invoice_setting.r2_object_prefix'}
                 label={t('R2 对象前缀')}
-                placeholder='invoices/'
+                placeholder={'invoices/'}
                 extraText={t('建议和 R2 生命周期规则前缀保持一致')}
                 onChange={handleFieldChange('invoice_setting.r2_object_prefix')}
               />

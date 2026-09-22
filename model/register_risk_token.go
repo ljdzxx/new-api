@@ -19,11 +19,12 @@ import (
 const (
 	RegisterRiskScoreAbnormal = 100
 
-	RegisterRiskReasonMissingToken = "risk_token_missing"
-	RegisterRiskReasonInvalidToken = "risk_token_invalid"
-	RegisterRiskReasonExpiredToken = "risk_token_expired"
-	RegisterRiskReasonReusedToken  = "risk_token_reused"
-	RegisterRiskReasonIPUAMismatch = "risk_token_ip_ua_mismatch"
+	RegisterRiskReasonMissingToken     = "risk_token_missing"
+	RegisterRiskReasonInvalidToken     = "risk_token_invalid"
+	RegisterRiskReasonExpiredToken     = "risk_token_expired"
+	RegisterRiskReasonReusedToken      = "risk_token_reused"
+	RegisterRiskReasonIPUAMismatch     = "risk_token_ip_ua_mismatch"
+	RegisterRiskReasonStoreUnavailable = "risk_token_store_unavailable"
 )
 
 const (
@@ -39,13 +40,14 @@ type RegisterRiskChallengeResponse struct {
 }
 
 type registerRiskChallenge struct {
-	Id         string
-	Nonce      string
-	IPHash     string
-	UAHash     string
-	PrivateKey *rsa.PrivateKey
-	ExpiresAt  int64
-	Used       bool
+	Id            string
+	Nonce         string
+	IPHash        string
+	UAHash        string
+	PrivateKey    *rsa.PrivateKey `json:"-"`
+	PrivateKeyDER []byte
+	ExpiresAt     int64
+	Used          bool
 }
 
 type registerRiskTokenRecord struct {
@@ -129,10 +131,9 @@ func CreateRegisterRiskChallenge(ip string, ua string) (*RegisterRiskChallengeRe
 		PrivateKey: privateKey,
 		ExpiresAt:  time.Now().Add(registerRiskChallengeTTL).Unix(),
 	}
-	registerRiskChallengeMu.Lock()
-	defer registerRiskChallengeMu.Unlock()
-	cleanupRegisterRiskStoreLocked(time.Now().Unix())
-	registerRiskChallenges[challenge.Id] = challenge
+	if err := saveRegisterRiskChallenge(challenge); err != nil {
+		return nil, err
+	}
 	return &RegisterRiskChallengeResponse{
 		ChallengeId: challenge.Id,
 		Nonce:       challenge.Nonce,
@@ -174,6 +175,9 @@ func decryptRegisterRiskEnvelope(challenge *registerRiskChallenge, encryptedEnve
 	if err != nil {
 		return nil, err
 	}
+	if len(iv) != gcm.NonceSize() {
+		return nil, errors.New("invalid register risk nonce size")
+	}
 	plaintext, err := gcm.Open(nil, iv, ciphertext, []byte(challenge.Id))
 	if err != nil {
 		return nil, err
@@ -187,22 +191,16 @@ func decryptRegisterRiskEnvelope(challenge *registerRiskChallenge, encryptedEnve
 
 func CollectRegisterRiskToken(challengeId string, encryptedEnvelope string, ip string, ua string) (string, error) {
 	now := time.Now().Unix()
-	registerRiskChallengeMu.Lock()
-	challenge, ok := registerRiskChallenges[challengeId]
-	if !ok || challenge == nil {
-		registerRiskChallengeMu.Unlock()
-		return "", errors.New("register risk challenge not found")
+	challenge, err := loadRegisterRiskChallenge(challengeId)
+	if err != nil {
+		return "", err
 	}
 	if challenge.Used || challenge.ExpiresAt <= now {
-		delete(registerRiskChallenges, challengeId)
-		registerRiskChallengeMu.Unlock()
 		return "", errors.New("register risk challenge expired")
 	}
 	if challenge.IPHash != registerRiskHash("ip", ip) || challenge.UAHash != registerRiskHash("ua", ua) {
-		registerRiskChallengeMu.Unlock()
 		return "", errors.New("register risk challenge client mismatch")
 	}
-	registerRiskChallengeMu.Unlock()
 
 	payload, err := decryptRegisterRiskEnvelope(challenge, encryptedEnvelope)
 	if err != nil {
@@ -223,16 +221,9 @@ func CollectRegisterRiskToken(challengeId string, encryptedEnvelope string, ip s
 		ExpiresAt:   time.Now().Add(registerRiskTokenTTL).Unix(),
 	}
 
-	registerRiskChallengeMu.Lock()
-	defer registerRiskChallengeMu.Unlock()
-	if current, ok := registerRiskChallenges[challengeId]; !ok || current == nil || current.Used {
-		return "", errors.New("register risk challenge already used")
+	if err := saveRegisterRiskToken(challengeId, record); err != nil {
+		return "", err
 	}
-	registerRiskChallenges[challengeId].Used = true
-	registerRiskChallenges[challengeId].PrivateKey = nil
-	delete(registerRiskChallenges, challengeId)
-	registerRiskTokens[tokenId] = record
-	cleanupRegisterRiskStoreLocked(time.Now().Unix())
 	return token, nil
 }
 
@@ -252,19 +243,11 @@ func ConsumeRegisterRiskToken(token string, ip string, ua string) (RegistrationF
 		return RegistrationFingerprint{Missing: true}, &score, RegisterRiskReasonInvalidToken
 	}
 
-	registerRiskChallengeMu.Lock()
-	defer registerRiskChallengeMu.Unlock()
 	now := time.Now().Unix()
-	cleanupRegisterRiskStoreLocked(now)
-	record, ok := registerRiskTokens[tokenId]
-	if !ok || record == nil {
-		return RegistrationFingerprint{Missing: true}, &score, RegisterRiskReasonExpiredToken
+	record, reason := takeRegisterRiskToken(tokenId)
+	if record == nil {
+		return RegistrationFingerprint{Missing: true}, &score, reason
 	}
-	record.Attempts++
-	if record.Used || record.Attempts > 1 {
-		return RegistrationFingerprint{Missing: true}, &score, RegisterRiskReasonReusedToken
-	}
-	record.Used = true
 	if record.ExpiresAt <= now {
 		return RegistrationFingerprint{Missing: true}, &score, RegisterRiskReasonExpiredToken
 	}

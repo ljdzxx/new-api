@@ -420,8 +420,8 @@ const EditUserModal = (props) => {
                               field='update_quota_switch'
                               checked={updateQuota}
                               onChange={setUpdateQuota}
-                              checkedText='｜'
-                              uncheckedText='〇'
+                              checkedText={'｜'}
+                              uncheckedText={'〇'}
                             />
                             <div className='mt-1 text-xs text-gray-500'>
                               {t(
@@ -518,8 +518,8 @@ const EditUserModal = (props) => {
                         <Form.Switch
                           field='rate_limit_enabled'
                           label={t('启用用户模型请求速率限制')}
-                          checkedText='｜'
-                          uncheckedText='〇'
+                          checkedText={'｜'}
+                          uncheckedText={'〇'}
                         />
                       </Col>
 

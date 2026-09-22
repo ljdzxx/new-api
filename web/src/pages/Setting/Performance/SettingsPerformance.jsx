@@ -224,8 +224,8 @@ export default function SettingsPerformance(props) {
                   label={t('启用磁盘缓存')}
                   extraText={t('将大请求体临时存储到磁盘')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={handleFieldChange(
                     'performance_setting.disk_cache_enabled',
                   )}
@@ -300,8 +300,8 @@ export default function SettingsPerformance(props) {
                     '控制 token auth、raw request、Xiaomi Claude trace、渠道转发预检等详细日志',
                   )}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={handleFieldChange(
                     'performance_setting.debug_trace_enabled',
                   )}
@@ -311,7 +311,9 @@ export default function SettingsPerformance(props) {
                 <Form.Input
                   field={'performance_setting.debug_trace_token'}
                   label={t('调试追踪令牌')}
-                  extraText={t('仅命中该令牌时记录追踪日志，留空表示不指定令牌')}
+                  extraText={t(
+                    '仅命中该令牌时记录追踪日志，留空表示不指定令牌',
+                  )}
                   placeholder={t('可填写 sk- 开头令牌或令牌 key')}
                   onChange={handleFieldChange(
                     'performance_setting.debug_trace_token',
@@ -328,8 +330,8 @@ export default function SettingsPerformance(props) {
                     '/v1/messages 的请求体、应答、上下游头部与流式原始数据另存为 oneapi-claude-YYYYMMDD.log',
                   )}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={handleFieldChange(
                     'performance_setting.claude_relay_debug_log_enabled',
                   )}
@@ -353,8 +355,8 @@ export default function SettingsPerformance(props) {
                   label={t('启用性能监控')}
                   extraText={t('超过阈值时拒绝新请求')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={handleFieldChange(
                     'performance_setting.monitor_enabled',
                   )}

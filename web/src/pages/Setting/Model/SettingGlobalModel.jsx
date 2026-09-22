@@ -264,7 +264,7 @@ export default function SettingGlobalModel(props) {
                 >
                   {t('ChatCompletions→Responses 兼容配置')}
                   <Tag color='orange' size='small'>
-                    测试版
+                    {t('测试版')}
                   </Tag>
                 </span>
               }

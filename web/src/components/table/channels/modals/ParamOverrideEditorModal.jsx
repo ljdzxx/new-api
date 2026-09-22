@@ -2392,7 +2392,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                           </Text>
                                           <Input
                                             value={returnErrorDraft.code}
-                                            placeholder='forced_bad_request'
+                                            placeholder={'forced_bad_request'}
                                             onChange={(nextValue) =>
                                               updateReturnErrorDraft(
                                                 selectedOperation.id,
@@ -2407,7 +2407,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                           </Text>
                                           <Input
                                             value={returnErrorDraft.type}
-                                            placeholder='invalid_request_error'
+                                            placeholder={'invalid_request_error'}
                                             onChange={(nextValue) =>
                                               updateReturnErrorDraft(
                                                 selectedOperation.id,
@@ -2564,7 +2564,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                   </Text>
                                   <Input
                                     value={pruneObjectsDraft.typeText}
-                                    placeholder='redacted_thinking'
+                                    placeholder={'redacted_thinking'}
                                     onChange={(nextValue) =>
                                       updatePruneObjectsDraft(
                                         selectedOperation.id,
@@ -2715,7 +2715,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                                       </Text>
                                                       <Input
                                                         value={rule.path}
-                                                        placeholder='type'
+                                                        placeholder={'type'}
                                                         onChange={(nextValue) =>
                                                           updatePruneRule(
                                                             selectedOperation.id,
@@ -2756,7 +2756,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                                       </Text>
                                                       <Input
                                                         value={rule.value_text}
-                                                        placeholder='redacted_thinking'
+                                                        placeholder={'redacted_thinking'}
                                                         onChange={(nextValue) =>
                                                           updatePruneRule(
                                                             selectedOperation.id,
@@ -2928,7 +2928,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                       />
                                       <Input
                                         value={syncFromTarget?.key || ''}
-                                        placeholder='session_id'
+                                        placeholder={'session_id'}
                                         onChange={(nextKey) =>
                                           updateOperation(
                                             selectedOperation.id,
@@ -2966,7 +2966,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                       />
                                       <Input
                                         value={syncToTarget?.key || ''}
-                                        placeholder='prompt_cache_key'
+                                        placeholder={'prompt_cache_key'}
                                         onChange={(nextKey) =>
                                           updateOperation(
                                             selectedOperation.id,
@@ -3165,7 +3165,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                               </Text>
                                               <Input
                                                 value={condition.path}
-                                                placeholder='model'
+                                                placeholder={'model'}
                                                 onChange={(nextValue) =>
                                                   updateCondition(
                                                     selectedOperation.id,
@@ -3206,7 +3206,7 @@ const ParamOverrideEditorModal = ({ visible, value, onSave, onCancel }) => {
                                               </Text>
                                               <Input
                                                 value={condition.value_text}
-                                                placeholder='gpt'
+                                                placeholder={'gpt'}
                                                 onChange={(nextValue) =>
                                                   updateCondition(
                                                     selectedOperation.id,

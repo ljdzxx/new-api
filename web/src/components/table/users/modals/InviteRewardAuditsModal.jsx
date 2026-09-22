@@ -155,13 +155,13 @@ const InviteRewardAuditsModal = ({ visible, handleClose, t, inviterId }) => {
           <Form.InputNumber
             field='inviter_id'
             label={t('邀请人')}
-            placeholder='ID'
+            placeholder={'ID'}
             style={{ width: 120 }}
           />
           <Form.InputNumber
             field='invitee_id'
             label={t('受邀用户')}
-            placeholder='ID'
+            placeholder={'ID'}
             style={{ width: 120 }}
           />
           <Form.Select

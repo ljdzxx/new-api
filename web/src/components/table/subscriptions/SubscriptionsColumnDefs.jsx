@@ -250,12 +250,12 @@ const renderPaymentConfig = (text, record, t, enableEpay) => {
       )}
       {hasStripe && (
         <Tag color='violet' shape='circle'>
-          Stripe
+          {'Stripe'}
         </Tag>
       )}
       {hasCreem && (
         <Tag color='cyan' shape='circle'>
-          Creem
+          {'Creem'}
         </Tag>
       )}
       {hasEpay && (

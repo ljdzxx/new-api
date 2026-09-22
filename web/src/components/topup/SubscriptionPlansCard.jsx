@@ -446,7 +446,8 @@ const SubscriptionPlansCard = ({
         <div className='mb-1.5 flex items-center justify-between gap-3'>
           <span className='text-xs font-medium text-gray-600'>{t('额度')}</span>
           <span className='text-[11px] font-medium text-gray-500'>
-            {usagePercent}% / {remainPercent}%
+            {usagePercent}
+            {'% /'} {remainPercent}%
           </span>
         </div>
         <Tooltip

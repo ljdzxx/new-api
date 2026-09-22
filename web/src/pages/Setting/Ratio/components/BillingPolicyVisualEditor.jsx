@@ -435,7 +435,9 @@ function PriceFields({ value = {}, onChange }) {
     <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
       {priceFields.map(([key, label]) => (
         <div key={key}>
-          <Text type='tertiary'>{t(label)} ($ / 1M tokens)</Text>
+          <Text type='tertiary'>
+            {t(label)} {'($ / 1M tokens)'}
+          </Text>
           <Input
             value={value[key] || ''}
             onChange={(next) => onChange({ ...value, [key]: next })}
@@ -724,7 +726,7 @@ function AdjustmentEditor({ adjustments, onChange }) {
                         value={condition.timezone || ''}
                         prefix={`${t('时区')}：`}
                         onChange={(timezone) => setCondition({ timezone })}
-                        placeholder='Asia/Shanghai'
+                        placeholder={'Asia/Shanghai'}
                       />
                     )}
                     <Select

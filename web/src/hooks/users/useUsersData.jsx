@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { API, showError, showSuccess } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
@@ -37,6 +37,9 @@ export const useUsersData = () => {
   const [userCount, setUserCount] = useState(0);
   const [sortField, setSortField] = useState('');
   const [sortOrder, setSortOrder] = useState('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const batchInProgress = useRef(false);
 
   // Modal states
   const [showAddUser, setShowAddUser] = useState(false);
@@ -69,6 +72,7 @@ export const useUsersData = () => {
 
   // Set user format with key field
   const setUserFormat = (users) => {
+    setSelectedRowKeys([]);
     for (let i = 0; i < users.length; i++) {
       users[i].key = users[i].id;
     }
@@ -205,6 +209,63 @@ export const useUsersData = () => {
     }
 
     setLoading(false);
+  };
+
+  const batchManageUsers = async (ids, action) => {
+    if (
+      batchInProgress.current ||
+      !ids.length ||
+      !['enable', 'disable'].includes(action)
+    ) {
+      return;
+    }
+    batchInProgress.current = true;
+    setBatchLoading(true);
+    const succeeded = new Set();
+    const failures = [];
+    try {
+      // Reuse the server's per-user permission checks and cache updates.
+      for (const id of [...new Set(ids)]) {
+        try {
+          const { data } = await API.post(
+            '/api/user/manage',
+            { id, action },
+            { skipErrorHandler: true },
+          );
+          if (!data.success) {
+            failures.push(`${id}: ${data.message || t('操作失败，请重试')}`);
+            continue;
+          }
+          succeeded.add(id);
+          setUsers((current) =>
+            current.map((user) =>
+              user.id === id
+                ? { ...user, status: data.data.status, role: data.data.role }
+                : user,
+            ),
+          );
+        } catch (error) {
+          failures.push(
+            `${id}: ${error.response?.data?.message || error.message || t('操作失败，请重试')}`,
+          );
+        }
+      }
+      setSelectedRowKeys((current) =>
+        current.filter((id) => !succeeded.has(id)),
+      );
+      const summary = t('批量操作完成: {{success}}个成功, {{failed}}个失败', {
+        success: succeeded.size,
+        failed: failures.length,
+      });
+      if (failures.length) {
+        showError(`${summary}\n${failures.join('\n')}`);
+      } else {
+        showSuccess(summary);
+      }
+    } finally {
+      batchInProgress.current = false;
+      setBatchLoading(false);
+    }
   };
 
   const resetUserPasskey = async (user) => {
@@ -433,6 +494,10 @@ export const useUsersData = () => {
     userCount,
     searching,
     groupOptions,
+    selectedRowKeys,
+    setSelectedRowKeys,
+    batchLoading,
+    batchManageUsers,
 
     // Modal state
     showAddUser,

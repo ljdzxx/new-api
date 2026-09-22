@@ -17,19 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, {
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { Button, Input, ScrollItem, ScrollList } from '@douyinfe/semi-ui';
 import { IconCopy } from '@douyinfe/semi-icons';
-import {
-  ArrowRight,
-  BookOpen,
-  MoreHorizontal,
-} from 'lucide-react';
+import { ArrowRight, BookOpen, MoreHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { marked } from 'marked';
 import { useTranslation } from 'react-i18next';
@@ -46,10 +37,7 @@ const CHINA_RESIDENT_ALERT_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const hasConfirmedChinaResidentAlert = () =>
   document.cookie
     .split(';')
-    .some(
-      (cookie) =>
-        cookie.trim() === `${CHINA_RESIDENT_ALERT_COOKIE}=true`,
-    );
+    .some((cookie) => cookie.trim() === `${CHINA_RESIDENT_ALERT_COOKIE}=true`);
 
 const confirmChinaResidentAlert = () => {
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
@@ -207,6 +195,7 @@ const renderJsonLine = (line, demo) => {
 };
 
 function HeroTerminalDemo() {
+  const { t } = useTranslation();
   const [activeIndex, setActiveIndex] = useState(0);
   const [transitioning, setTransitioning] = useState(false);
   const intervalRef = useRef(undefined);
@@ -259,7 +248,7 @@ function HeroTerminalDemo() {
         ))}
         <div className='home-terminal-status'>
           <span className='home-terminal-status-dot' />
-          <span>200 ok</span>
+          <span>{'200 ok'}</span>
         </div>
       </div>
 
@@ -274,12 +263,12 @@ function HeroTerminalDemo() {
 
       <div className='home-terminal-body'>
         <div className='home-terminal-block'>
-          <span className='home-terminal-label'>Request</span>
+          <span className='home-terminal-label'>{t('请求')}</span>
           <div className={transitioning ? 'home-fade-out' : ''}>
             <div>
-              <span className='home-code-command'>curl</span>{' '}
-              <span className='home-code-flag'>-X</span>{' '}
-              <span className='home-code-flag'>POST</span>{' '}
+              <span className='home-code-command'>{'curl'}</span>{' '}
+              <span className='home-code-flag'>{'-X'}</span>{' '}
+              <span className='home-code-flag'>{'POST'}</span>{' '}
               <span className='home-code-string'>
                 &quot;{demo.endpoint}&quot;
               </span>{' '}
@@ -287,13 +276,13 @@ function HeroTerminalDemo() {
             </div>
             {demo.headers.map((header) => (
               <div key={header} className='home-code-indent-2'>
-                <span className='home-code-flag'>-H</span>{' '}
+                <span className='home-code-flag'>{'-H'}</span>{' '}
                 <span className='home-code-string'>{header}</span>{' '}
                 <span className='home-code-muted'>\</span>
               </div>
             ))}
             <div className='home-code-indent-2'>
-              <span className='home-code-flag'>-d</span>{' '}
+              <span className='home-code-flag'>{'-d'}</span>{' '}
               <span className='home-code-string'>&apos;{'{'}</span>
             </div>
             {demo.request.map((line) => (
@@ -308,7 +297,7 @@ function HeroTerminalDemo() {
         </div>
 
         <div className='home-terminal-block home-terminal-response'>
-          <span className='home-terminal-label'>Response</span>
+          <span className='home-terminal-label'>{t('响应')}</span>
           <div className={transitioning ? 'home-fade-out' : ''}>
             {demo.response.map((line) => (
               <div key={line}>{renderJsonLine(line, demo)}</div>
@@ -318,10 +307,14 @@ function HeroTerminalDemo() {
       </div>
 
       <div className='home-terminal-footer'>
-        <span>{demo.latency} ms</span>
-        <span>{demo.tokens} tokens</span>
+        <span>
+          {demo.latency} {'ms'}
+        </span>
+        <span>
+          {demo.tokens} {'tokens'}
+        </span>
         <span>${(demo.tokens * 0.00003).toFixed(5)}</span>
-        <span>stream / sse</span>
+        <span>{'stream / sse'}</span>
       </div>
     </div>
   );
@@ -509,12 +502,12 @@ function HomeHero({
             <div className='home-app-row'>
               <a href='https://cherry-ai.com' target='_blank' rel='noreferrer'>
                 <CherryStudioLogo size={24} className='home-app-icon' />
-                <span>Cherry Studio</span>
+                <span>{'Cherry Studio'}</span>
               </a>
               <a href='https://ccswitch.io' target='_blank' rel='noreferrer'>
                 <img
                   src='https://ccswitch.io/favicon.png'
-                  alt='CC Switch'
+                  alt={'CC Switch'}
                   className='home-app-logo-image'
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
@@ -524,8 +517,10 @@ function HomeHero({
                     }
                   }}
                 />
-                <span className='home-app-logo home-app-logo-fallback'>CC</span>
-                <span>CC Switch</span>
+                <span className='home-app-logo home-app-logo-fallback'>
+                  {'CC'}
+                </span>
+                <span>{'CC Switch'}</span>
               </a>
               <div className='home-app-more'>
                 <MoreHorizontal size={22} />

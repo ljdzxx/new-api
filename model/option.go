@@ -119,6 +119,10 @@ func InitOptionMap() {
 	common.OptionMap["InviteRiskThreshold"] = strconv.Itoa(common.InviteRiskThreshold)
 	common.OptionMap["InviteRiskDailyLimit"] = strconv.Itoa(common.InviteRiskDailyLimit)
 	common.OptionMap["InviteRiskScoreWeights"] = common.InviteRiskScoreWeights2JSONString()
+	common.OptionMap["RegisterRiskControlEnabled"] = strconv.FormatBool(common.RegistrationRisk.Enabled)
+	common.OptionMap["RegisterRiskCooldownHours"] = strconv.Itoa(common.RegistrationRisk.CooldownHours)
+	common.OptionMap["RegisterRiskHitThreshold"] = strconv.Itoa(common.RegistrationRisk.HitThreshold)
+	common.OptionMap["RegisterRiskRejectMessage"] = common.RegistrationRisk.RejectMessage
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -199,6 +203,9 @@ func SyncOptions(frequency int) {
 }
 
 func UpdateOption(key string, value string) error {
+	if err := common.ValidateRegisterRiskOption(key, value); err != nil {
+		return err
+	}
 	if key == "UserLevelPolicies" {
 		normalizedValue, err := setting.NormalizeUserLevelPoliciesJSONString(value)
 		if err != nil {
@@ -212,12 +219,16 @@ func UpdateOption(key string, value string) error {
 		Key: key,
 	}
 	// https://gorm.io/docs/update.html#Save-All-Fields
-	DB.FirstOrCreate(&option, Option{Key: key})
+	if err := DB.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+		return err
+	}
 	option.Value = value
 	// Save is a combination function.
 	// If save value does not contain primary key, it will execute Create,
 	// otherwise it will execute Update (with all fields).
-	DB.Save(&option)
+	if err := DB.Save(&option).Error; err != nil {
+		return err
+	}
 	// Update OptionMap
 	return updateOptionMap(key, value)
 }
@@ -240,6 +251,9 @@ func UpdateBillingPolicyOptionAtomic(value string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	if err := common.ValidateRegisterRiskOption(key, value); err != nil {
+		return err
+	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	common.OptionMap[key] = value
@@ -350,6 +364,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.InviteRewardEmailOnly = boolValue
 		case "InviteRiskControlEnabled":
 			common.InviteRiskControlEnabled = boolValue
+		case "RegisterRiskControlEnabled":
+			common.RegistrationRisk.Enabled = boolValue
 		}
 	}
 	switch key {
@@ -458,6 +474,12 @@ func updateOptionMap(key string, value string) (err error) {
 		common.InviteRiskDailyLimit, _ = strconv.Atoi(value)
 	case "InviteRiskScoreWeights":
 		err = common.UpdateInviteRiskScoreWeightsByJSONString(value)
+	case "RegisterRiskCooldownHours":
+		common.RegistrationRisk.CooldownHours, _ = strconv.Atoi(value)
+	case "RegisterRiskHitThreshold":
+		common.RegistrationRisk.HitThreshold, _ = strconv.Atoi(value)
+	case "RegisterRiskRejectMessage":
+		common.RegistrationRisk.RejectMessage = value
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

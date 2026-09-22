@@ -588,8 +588,8 @@ const AddEditSubscriptionModal = ({
                     <Col span={24}>
                       <Form.Input
                         field='stripe_price_id'
-                        label='Stripe PriceId'
-                        placeholder='price_...'
+                        label={t('Stripe 价格 ID')}
+                        placeholder={'price_...'}
                         showClear
                       />
                     </Col>
@@ -597,8 +597,8 @@ const AddEditSubscriptionModal = ({
                     <Col span={24}>
                       <Form.Input
                         field='creem_product_id'
-                        label='Creem ProductId'
-                        placeholder='prod_...'
+                        label={t('Creem 产品 ID')}
+                        placeholder={'prod_...'}
                         showClear
                       />
                     </Col>

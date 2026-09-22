@@ -99,6 +99,10 @@ const UsersPage = () => {
             <UsersActions
               setShowAddUser={setShowAddUser}
               setShowInviteRewardAudits={setShowInviteRewardAudits}
+              selectedRowKeys={usersData.selectedRowKeys}
+              batchLoading={usersData.batchLoading}
+              batchManageUsers={usersData.batchManageUsers}
+              loading={loading || searching}
               t={t}
             />
 

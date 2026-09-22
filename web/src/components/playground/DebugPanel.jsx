@@ -146,7 +146,7 @@ const DebugPanel = ({
                 {t('预览请求体')}
                 {customRequestMode && (
                   <span className='px-1.5 py-0.5 text-xs bg-orange-100 text-orange-600 rounded-full'>
-                    自定义
+                    {t('自定义')}
                   </span>
                 )}
               </div>
@@ -155,7 +155,7 @@ const DebugPanel = ({
           >
             <CodeViewer
               content={debugData.previewRequest}
-              title='preview'
+              title={t('预览')}
               language='json'
             />
           </TabPane>
@@ -171,7 +171,7 @@ const DebugPanel = ({
           >
             <CodeViewer
               content={debugData.request}
-              title='request'
+              title={t('请求')}
               language='json'
             />
           </TabPane>
@@ -183,7 +183,8 @@ const DebugPanel = ({
                 {t('响应')}
                 {debugData.sseMessages && debugData.sseMessages.length > 0 && (
                   <span className='px-1.5 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full'>
-                    SSE ({debugData.sseMessages.length})
+                    {'SSE ('}
+                    {debugData.sseMessages.length})
                   </span>
                 )}
               </div>
@@ -191,11 +192,11 @@ const DebugPanel = ({
             itemKey='response'
           >
             {debugData.sseMessages && debugData.sseMessages.length > 0 ? (
-              <SSEViewer sseData={debugData.sseMessages} title='response' />
+              <SSEViewer sseData={debugData.sseMessages} title={t('响应')} />
             ) : (
               <CodeViewer
                 content={debugData.response}
-                title='response'
+                title={t('响应')}
                 language='json'
               />
             )}

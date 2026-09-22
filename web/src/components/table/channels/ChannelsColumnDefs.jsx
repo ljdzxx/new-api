@@ -132,7 +132,7 @@ const renderType = (type, record = {}, t) => {
             className='cursor-pointer'
             onClick={handleNavigate}
           >
-            IO.NET
+            {'IO.NET'}
           </Tag>
         </span>
       </Tooltip>
@@ -522,10 +522,10 @@ export const getChannelsColumns = ({
             {statusNode}
             <Tooltip
               content={
-                t('该渠道今日已被标记为欠费（上游额度不足），选路时将被自动跳过') +
-                (quotaMark.reason
-                  ? t('，原因：') + quotaMark.reason
-                  : '') +
+                t(
+                  '该渠道今日已被标记为欠费（上游额度不足），选路时将被自动跳过',
+                ) +
+                (quotaMark.reason ? t('，原因：') + quotaMark.reason : '') +
                 t('，恢复时间：') +
                 timestamp2string(quotaMark.expire_at)
               }

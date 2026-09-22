@@ -34,7 +34,7 @@ import {
   showError,
   showSuccess,
 } from '../../../helpers';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 export default function SettingsPaymentGateway(props) {
   const { t } = useTranslation();
@@ -167,23 +167,25 @@ export default function SettingsPaymentGateway(props) {
       >
         <Form.Section text={t('Stripe 设置')}>
           <Text>
-            Stripe 密钥、Webhook 等设置请
-            <a
-              href='https://dashboard.stripe.com/developers'
-              target='_blank'
-              rel='noreferrer'
-            >
-              点击此处
-            </a>
-            进行设置，最好先在
-            <a
-              href='https://dashboard.stripe.com/test/developers'
-              target='_blank'
-              rel='noreferrer'
-            >
-              测试环境
-            </a>
-            进行测试。
+            <Trans
+              i18nKey='请前往 <settings>Stripe 开发者设置</settings> 配置密钥和 Webhook，并先在 <test>测试环境</test> 中测试。'
+              components={{
+                settings: (
+                  <a
+                    href='https://dashboard.stripe.com/developers'
+                    target='_blank'
+                    rel='noreferrer'
+                  />
+                ),
+                test: (
+                  <a
+                    href='https://dashboard.stripe.com/test/developers'
+                    target='_blank'
+                    rel='noreferrer'
+                  />
+                ),
+              }}
+            />
             <br />
           </Text>
           <Banner
@@ -244,8 +246,8 @@ export default function SettingsPaymentGateway(props) {
               <Form.Switch
                 field='StripePromotionCodesEnabled'
                 size='default'
-                checkedText='｜'
-                uncheckedText='〇'
+                checkedText={'｜'}
+                uncheckedText={'〇'}
                 label={t('允许在 Stripe 支付中输入促销码')}
               />
             </Col>

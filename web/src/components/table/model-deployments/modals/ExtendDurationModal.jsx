@@ -324,7 +324,7 @@ const ExtendDurationModal = ({
               </Text>
               <div className='mt-1'>
                 <Text type='secondary' size='small'>
-                  ID: {deployment?.id}
+                  {'ID:'} {deployment?.id}
                 </Text>
               </div>
             </div>

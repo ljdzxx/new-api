@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 const hashText = async (value) => {
   const text = String(value || '');
+  if (!text) return '';
   if (!window.crypto?.subtle) {
     let hash = 0;
     for (let i = 0; i < text.length; i += 1) {

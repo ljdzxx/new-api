@@ -629,28 +629,28 @@ const NotificationSettings = ({
                               values: ['$0.99'],
                               timestamp: 1739950503,
                             }}
-                            title='webhook'
+                            title={'webhook'}
                             language='json'
                           />
                         </div>
                         <div className='text-xs text-gray-500 leading-relaxed'>
                           <div>
-                            <strong>type:</strong>{' '}
+                            <strong>{'type:'}</strong>{' '}
                             {t('通知类型 (quota_exceed: 额度预警)')}{' '}
                           </div>
                           <div>
-                            <strong>title:</strong> {t('通知标题')}
+                            <strong>{'title:'}</strong> {t('通知标题')}
                           </div>
                           <div>
-                            <strong>content:</strong>{' '}
+                            <strong>{'content:'}</strong>{' '}
                             {t('通知内容，支持 {{value}} 变量占位符')}
                           </div>
                           <div>
-                            <strong>values:</strong>{' '}
+                            <strong>{'values:'}</strong>{' '}
                             {t('按顺序替换content中的变量占位符')}
                           </div>
                           <div>
-                            <strong>timestamp:</strong> {t('Unix时间戳')}
+                            <strong>{'timestamp:'}</strong> {t('Unix时间戳')}
                           </div>
                         </div>
                       </div>
@@ -691,7 +691,8 @@ const NotificationSettings = ({
                       </div>
                       <div className='text-xs text-gray-600 font-mono bg-white p-3 rounded-lg shadow-sm mb-4'>
                         https://api.day.app/yourkey/{'{{title}}'}/
-                        {'{{content}}'}?sound=alarm&group=quota
+                        {'{{content}}'}
+                        {'?sound=alarm&group=quota'}
                       </div>
                       <div className='text-xs text-gray-500 space-y-2'>
                         <div>
@@ -710,7 +711,7 @@ const NotificationSettings = ({
                             rel='noopener noreferrer'
                             className='text-blue-500 hover:text-blue-600 font-medium'
                           >
-                            Bark {t('官方文档')}
+                            {'Bark'} {t('官方文档')}
                           </a>
                         </div>
                       </div>
@@ -811,7 +812,7 @@ const NotificationSettings = ({
                             rel='noopener noreferrer'
                             className='text-blue-500 hover:text-blue-600 font-medium'
                           >
-                            Gotify {t('官方文档')}
+                            {'Gotify'} {t('官方文档')}
                           </a>
                         </div>
                       </div>

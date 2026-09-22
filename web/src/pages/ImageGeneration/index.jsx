@@ -1227,7 +1227,7 @@ const ImageGeneration = () => {
       </section>
       <section>
         <Title heading={6} className='!mb-2'>
-          Base URL
+          {t('基础地址')}
         </Title>
         <code className='block px-3 py-2 rounded-lg bg-[var(--semi-color-fill-0)] text-sm break-all'>
           {serverAddress}/v1
@@ -1243,7 +1243,7 @@ const ImageGeneration = () => {
       </section>
       <section>
         <Title heading={6} className='!mb-2'>
-          {t('请求示例')} - generations
+          {t('请求示例')} {'- generations'}
         </Title>
         <pre className='px-4 py-3 rounded-lg bg-[var(--semi-color-fill-0)] text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed'>
           {`curl -X POST '${
@@ -1265,7 +1265,7 @@ const ImageGeneration = () => {
       </section>
       <section>
         <Title heading={6} className='!mb-2'>
-          {t('请求示例<带参考图>')} - edits
+          {t('请求示例<带参考图>')} {'- edits'}
         </Title>
         <pre className='px-4 py-3 rounded-lg bg-[var(--semi-color-fill-0)] text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed'>
           {`curl -X POST '${
@@ -1576,8 +1576,11 @@ const ImageGeneration = () => {
                 </Button>
               )}
               {recordStatus && <Tag color='grey'>{recordStatus}</Tag>}
-              <Tag color='blue'>response_format=url</Tag>
-              <Tag color='teal'>quality={quality}</Tag>
+              <Tag color='blue'>{'response_format=url'}</Tag>
+              <Tag color='teal'>
+                {'quality='}
+                {quality}
+              </Tag>
             </div>
           </div>
 
@@ -1740,7 +1743,9 @@ const ImageGeneration = () => {
                     {t('格式')}: {responseMeta.output_format || 'png'}
                   </span>
                   {responseMeta.usage?.total_tokens != null && (
-                    <span>total_tokens: {responseMeta.usage.total_tokens}</span>
+                    <span>
+                      {'total_tokens:'} {responseMeta.usage.total_tokens}
+                    </span>
                   )}
                 </div>
               )}

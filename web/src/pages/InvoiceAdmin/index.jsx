@@ -244,7 +244,9 @@ const InvoiceAdminPage = () => {
         key: 'money',
         width: 110,
         render: (money) => (
-          <Text type='danger'>CNY {Number(money || 0).toFixed(2)}</Text>
+          <Text type='danger'>
+            {'CNY'} {Number(money || 0).toFixed(2)}
+          </Text>
         ),
       },
       {
@@ -418,7 +420,9 @@ const InvoiceAdminPage = () => {
               <Text copyable={{ content: item.trade_no }}>
                 {item.trade_no || '-'}
               </Text>
-              <Text>CNY {Number(item.money || 0).toFixed(2)}</Text>
+              <Text>
+                {'CNY'} {Number(item.money || 0).toFixed(2)}
+              </Text>
               <Text>
                 {paymentName ? t(paymentName) : item.payment_method || '-'}
               </Text>
@@ -562,7 +566,9 @@ const InvoiceAdminPage = () => {
           </div>
           <div className='flex justify-between'>
             <Text type='secondary'>{t('合计金额')}</Text>
-            <Text strong>CNY {Number(issueTarget?.money || 0).toFixed(2)}</Text>
+            <Text strong>
+              {'CNY'} {Number(issueTarget?.money || 0).toFixed(2)}
+            </Text>
           </div>
           <div className='flex justify-between'>
             <Text type='secondary'>{t('公司抬头')}</Text>

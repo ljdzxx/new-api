@@ -97,7 +97,7 @@ const PaymentConfirmModal = ({
       return (
         <>
           <SiStripe className='mr-2' size={16} color='#635BFF' />
-          <Text className='text-slate-900 dark:text-slate-100'>Stripe</Text>
+          <Text className='text-slate-900 dark:text-slate-100'>{'Stripe'}</Text>
         </>
       );
     }
@@ -116,9 +116,7 @@ const PaymentConfirmModal = ({
     return (
       <>
         <SiWechat className='mr-2' size={16} color='#07C160' />
-        <Text className='text-slate-900 dark:text-slate-100'>
-          {t('微信')}
-        </Text>
+        <Text className='text-slate-900 dark:text-slate-100'>{t('微信')}</Text>
       </>
     );
   };

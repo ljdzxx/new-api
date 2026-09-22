@@ -100,8 +100,8 @@ export default function SettingsSensitiveWords(props) {
                   field={'CheckSensitiveEnabled'}
                   label={t('启用屏蔽词过滤功能')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={(value) => {
                     setInputs({
                       ...inputs,
@@ -115,8 +115,8 @@ export default function SettingsSensitiveWords(props) {
                   field={'CheckSensitiveOnPromptEnabled'}
                   label={t('启用 Prompt 检查')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={(value) =>
                     setInputs({
                       ...inputs,

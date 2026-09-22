@@ -186,10 +186,18 @@ func Register(c *gin.Context) {
 		cleanUser.Email = user.Email
 		cleanUser.IsEmailRegistration = cleanUser.Email != ""
 	}
+	reservation, err := model.ReserveRegisterRisk(c.Request.Context(), &cleanUser)
+	if err != nil {
+		respondRegisterRiskError(c, err)
+		return
+	}
 	if err := cleanUser.Insert(inviterId); err != nil {
+		// A returned ID can mean COMMIT had an uncertain outcome; retain its slot.
+		reservation.Finish(cleanUser.Id > 0)
 		common.ApiError(c, err)
 		return
 	}
+	reservation.Finish(true)
 	if common.EmailVerificationEnabled {
 		common.DeleteKey(user.Email, common.EmailVerificationPurpose)
 	}

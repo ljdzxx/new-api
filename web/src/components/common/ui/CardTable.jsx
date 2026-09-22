@@ -46,6 +46,7 @@ const CardTable = ({
   loading = false,
   rowKey = 'key',
   hidePagination = false,
+  selectionLabel,
   ...tableProps
 }) => {
   const isMobile = useIsMobile();
@@ -167,7 +168,7 @@ const CardTable = ({
                 tableProps.rowSelection.onChange?.(keys, rows);
               }}
             >
-              {t('选择此充值订单')}
+              {selectionLabel || t('选择此充值订单')}
             </Checkbox>
           </div>
         )}
@@ -239,7 +240,7 @@ const CardTable = ({
     if (tableProps.empty) return tableProps.empty;
     return (
       <div className='flex justify-center p-4'>
-        <Empty description='No Data' />
+        <Empty description={t('暂无数据')} />
       </div>
     );
   }

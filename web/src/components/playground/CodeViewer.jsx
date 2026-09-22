@@ -381,13 +381,13 @@ const CodeViewer = ({ content, title, language = 'json' }) => {
                 <span
                   style={{ fontSize: '11px', opacity: 0.7, marginLeft: '4px' }}
                 >
-                  (+
+                  {'(+'}
                   {Math.round(
                     (contentMetrics.length -
                       PERFORMANCE_CONFIG.PREVIEW_LENGTH) /
                       1000,
                   )}
-                  K)
+                  {'K)'}
                 </span>
               )}
             </Button>

@@ -39,6 +39,9 @@ import TopupHistoryModal from '../../topup/modals/TopupHistoryModal';
 const UsersTable = (usersData) => {
   const {
     users,
+    selectedRowKeys,
+    setSelectedRowKeys,
+    batchLoading,
     loading,
     activePage,
     pageSize,
@@ -203,6 +206,14 @@ const UsersTable = (usersData) => {
       <CardTable
         columns={tableColumns}
         dataSource={users}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+          getCheckboxProps: (record) => ({
+            disabled: batchLoading || !!record.DeletedAt,
+          }),
+        }}
+        selectionLabel={t('选择此用户')}
         scroll={compactMode ? undefined : { x: 'max-content' }}
         pagination={{
           currentPage: activePage,

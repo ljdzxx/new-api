@@ -164,8 +164,8 @@ export default function SettingsMonitoring(props) {
                   field={'monitor_setting.auto_test_channel_enabled'}
                   label={t('定时测试所有通道')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={(value) =>
                     setInputs({
                       ...inputs,
@@ -237,8 +237,8 @@ export default function SettingsMonitoring(props) {
                   field={'AutomaticDisableChannelEnabled'}
                   label={t('失败时自动禁用通道')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={(value) => {
                     setInputs({
                       ...inputs,
@@ -252,8 +252,8 @@ export default function SettingsMonitoring(props) {
                   field={'AutomaticEnableChannelEnabled'}
                   label={t('成功时自动启用通道')}
                   size='default'
-                  checkedText='｜'
-                  uncheckedText='〇'
+                  checkedText={'｜'}
+                  uncheckedText={'〇'}
                   onChange={(value) =>
                     setInputs({
                       ...inputs,

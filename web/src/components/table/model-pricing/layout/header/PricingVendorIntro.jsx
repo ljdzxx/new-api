@@ -87,7 +87,7 @@ const getVendorDisplayName = (vendorName, t) => {
 const createDefaultAvatar = () => (
   <div className={COMPONENT_STYLES.avatarContainer}>
     <Avatar size='large' color='transparent'>
-      AI
+      {'AI'}
     </Avatar>
   </div>
 );

@@ -112,6 +112,9 @@ func HandleOAuth(c *gin.Context) {
 	// 7. Find or create user
 	user, err := findOrCreateOAuthUser(c, provider, oauthUser, session)
 	if err != nil {
+		if respondRegisterRiskError(c, err) {
+			return
+		}
 		switch err.(type) {
 		case *OAuthUserDeletedError:
 			common.ApiErrorI18n(c, i18n.MsgOAuthUserDeleted)
@@ -268,6 +271,14 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	user.RegistrationIP = c.ClientIP()
 	riskToken, _ := session.Get("risk_token").(string)
 	user.RegistrationFingerprint, user.RegistrationRiskScore, user.RegistrationRiskReason = model.ConsumeRegisterRiskToken(riskToken, c.ClientIP(), c.GetHeader("User-Agent"))
+	reservation, err := model.ReserveRegisterRisk(c.Request.Context(), user)
+	if err != nil {
+		return nil, err
+	}
+	// Preserve the reservation if COMMIT has an uncertain outcome. Only a
+	// definite failure inside the transaction compensates the reservation.
+	keepReservation := false
+	defer func() { reservation.Finish(keepReservation) }()
 
 	// Handle affiliate code
 	affCode := session.Get("aff")
@@ -295,6 +306,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				return err
 			}
 
+			keepReservation = true
 			return nil
 		})
 		if err != nil {
@@ -324,6 +336,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				return err
 			}
 
+			keepReservation = true
 			return nil
 		})
 		if err != nil {

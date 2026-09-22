@@ -297,7 +297,7 @@ const RechargeCard = ({
       return (
         <img
           src='/taobao_75px.png'
-          alt='Taobao'
+          alt={'Taobao'}
           style={{ width: 14, height: 14, objectFit: 'contain' }}
         />
       );

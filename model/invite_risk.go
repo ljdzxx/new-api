@@ -75,12 +75,8 @@ func hashInviteRiskValue(kind string, value string) string {
 	return common.GenerateHMAC("invite_risk:" + kind + ":" + value)
 }
 
-func SaveUserRegistrationProfile(userId int, ip string, fp RegistrationFingerprint) error {
-	if userId <= 0 {
-		return nil
-	}
-	profile := UserRegistrationProfile{
-		UserId:             userId,
+func BuildUserRegistrationProfile(ip string, fp RegistrationFingerprint) UserRegistrationProfile {
+	return UserRegistrationProfile{
 		IPHash:             hashInviteRiskValue("ip", ip),
 		FingerprintHash:    hashInviteRiskValue("fingerprint", fp.FingerprintHash),
 		CanvasHash:         hashInviteRiskValue("canvas", fp.CanvasHash),
@@ -94,6 +90,14 @@ func SaveUserRegistrationProfile(userId int, ip string, fp RegistrationFingerpri
 		FingerprintMissing: fp.Missing || strings.TrimSpace(fp.FingerprintHash) == "",
 		CreatedAt:          common.GetTimestamp(),
 	}
+}
+
+func SaveUserRegistrationProfile(userId int, ip string, fp RegistrationFingerprint) error {
+	if userId <= 0 {
+		return nil
+	}
+	profile := BuildUserRegistrationProfile(ip, fp)
+	profile.UserId = userId
 	result := DB.Model(&UserRegistrationProfile{}).Where("user_id = ?", userId).Updates(map[string]interface{}{
 		"ip_hash":             profile.IPHash,
 		"fingerprint_hash":    profile.FingerprintHash,
