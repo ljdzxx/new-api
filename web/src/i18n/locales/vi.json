@@ -1,5 +1,7 @@
 {
   "translation": {
+    "缓存命中率": "Tỷ lệ trúng bộ nhớ đệm",
+    "缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。": "Tỷ lệ trúng bộ nhớ đệm = token đọc từ bộ nhớ đệm / tổng token đầu vào × 100%; tổng đầu vào bao gồm token đọc và ghi bộ nhớ đệm.",
     "提供商图标": "Biểu tượng nhà cung cấp",
     "基础地址": "URL cơ sở",
     "正在加载，请稍候...": "Đang tải, vui lòng chờ...",
@@ -4120,6 +4122,9 @@
     "用户ID": "ID người dùng",
     "用量": "Mức sử dụng",
     "用时/首字": "Thời gian/từ đầu tiên",
+    "延迟": "Độ trễ",
+    "首字": "Token đầu tiên",
+    "总耗时": "Tổng thời gian",
     "用途": "Mục đích",
     "用以防止恶意用户利用临时邮箱批量注册": "Để ngăn chặn người dùng độc hại đăng ký hàng loạt bằng địa chỉ email tạm thời",
     "用以支持基于 WebAuthn 的无密码登录注册": "Hỗ trợ đăng nhập và đăng ký không mật khẩu dựa trên WebAuthn",

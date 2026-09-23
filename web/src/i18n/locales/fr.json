@@ -1,5 +1,7 @@
 {
   "translation": {
+    "缓存命中率": "Taux de cache",
+    "缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。": "Taux de cache = lectures du cache / entrée totale × 100 % ; l’entrée totale inclut les lectures et les écritures du cache.",
     "提供商图标": "Icône du fournisseur",
     "基础地址": "URL de base",
     "正在加载，请稍候...": "Chargement, veuillez patienter...",
@@ -3711,6 +3713,9 @@
     "用户ID": "",
     "用量": "Utilisation",
     "用时/首字": "Temps/premier mot",
+    "延迟": "Latence",
+    "首字": "Premier token",
+    "总耗时": "Durée totale",
     "用以防止恶意用户利用临时邮箱批量注册": "Pour empêcher les utilisateurs malveillants d'utiliser des e-mails temporaires pour s'inscrire en masse",
     "用以支持基于 WebAuthn 的无密码登录注册": "Prise en charge de la connexion et de l'enregistrement sans mot de passe basés sur WebAuthn",
     "用以支持通过 Discord 进行登录注册": "Utilisé pour prendre en charge la connexion/l'inscription via Discord",

@@ -1,5 +1,7 @@
 {
   "translation": {
+    "缓存命中率": "Cache hit rate",
+    "缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。": "Cache hit rate = cache reads / total input × 100%; total input includes cache reads and cache writes.",
     "提供商图标": "Provider icon",
     "基础地址": "Base URL",
     "正在加载，请稍候...": "Loading, please wait...",
@@ -3757,6 +3759,9 @@
     "用户ID": "",
     "用量": "Usage",
     "用时/首字": "Time/first word",
+    "延迟": "Latency",
+    "首字": "First token",
+    "总耗时": "Total duration",
     "用以防止恶意用户利用临时邮箱批量注册": "To prevent malicious users from bulk registration using temporary email addresses",
     "用以支持基于 WebAuthn 的无密码登录注册": "Support WebAuthn-based passwordless login and registration",
     "用以支持通过 Discord 进行登录注册": "Used to support login & registration through Discord",

@@ -55,10 +55,11 @@ export const useLogsData = () => {
     TOKEN: 'token',
     GROUP: 'group',
     TYPE: 'type',
+    REQUEST: 'request',
     MODEL: 'model',
     USE_TIME: 'use_time',
-    PROMPT: 'prompt',
-    COMPLETION: 'completion',
+    TOKENS: 'tokens',
+    CACHE_HIT_RATE: 'cache_hit_rate',
     COST: 'cost',
     RETRY: 'retry',
     IP: 'ip',
@@ -119,10 +120,11 @@ export const useLogsData = () => {
       [COLUMN_KEYS.TOKEN]: true,
       [COLUMN_KEYS.GROUP]: true,
       [COLUMN_KEYS.TYPE]: true,
+      [COLUMN_KEYS.REQUEST]: true,
       [COLUMN_KEYS.MODEL]: true,
       [COLUMN_KEYS.USE_TIME]: true,
-      [COLUMN_KEYS.PROMPT]: true,
-      [COLUMN_KEYS.COMPLETION]: true,
+      [COLUMN_KEYS.TOKENS]: true,
+      [COLUMN_KEYS.CACHE_HIT_RATE]: true,
       [COLUMN_KEYS.COST]: true,
       [COLUMN_KEYS.RETRY]: isAdminUser,
       [COLUMN_KEYS.IP]: true,
@@ -141,6 +143,14 @@ export const useLogsData = () => {
     try {
       const parsed = JSON.parse(savedColumns);
       const merged = { ...defaults, ...parsed };
+
+      // Keep TOKEN visible if either of the previous input/output columns was visible.
+      if (parsed[COLUMN_KEYS.TOKENS] === undefined) {
+        merged[COLUMN_KEYS.TOKENS] =
+          parsed.prompt !== false || parsed.completion !== false;
+      }
+      delete merged.prompt;
+      delete merged.completion;
 
       if (!isAdminUser) {
         merged[COLUMN_KEYS.CHANNEL] = false;

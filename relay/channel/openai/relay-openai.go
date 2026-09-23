@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
@@ -124,62 +125,80 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var toolCount int
 	var usage = &dto.Usage{}
 	var lastStreamData string
-	var secondLastStreamData string // 存储倒数第二个stream data，用于音频模型
-
-	// 检查是否为音频模型
-	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
-
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
-		if lastStreamData != "" {
-			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+		lastStreamData = data
+		var streamResponse dto.ChatCompletionsStreamResponse
+		parsed := common.UnmarshalJsonStr(data, &streamResponse) == nil
+		if parsed {
+			if streamResponse.Id != "" {
+				responseId = streamResponse.Id
+			}
+			if streamResponse.Created != 0 {
+				createAt = streamResponse.Created
+			}
+			if streamResponse.SystemFingerprint != nil {
+				systemFingerprint = streamResponse.GetSystemFingerprint()
+			}
+			if streamResponse.Model != "" {
+				model = streamResponse.Model
+			}
+			// Usage can arrive before the final chunk, especially for audio models.
+			// Retain the latest upstream totals without holding back its output.
+			if service.ValidUsage(streamResponse.Usage) {
+				usage = streamResponse.Usage
+				containStreamUsage = true
+			}
+		}
+
+		clientData := data
+		shouldSend := true
+		if parsed {
+			switch info.RelayFormat {
+			case types.RelayFormatOpenAI:
+				// Only suppress usage-only chunks, never content or finish reasons.
+				shouldSend = info.ShouldIncludeUsage || streamResponse.Usage == nil || len(streamResponse.Choices) > 0
+			case types.RelayFormatClaude:
+				// Forward terminal content now, then close the Claude message once
+				// all usage has arrived. Do not replay its delta when finalizing.
+				shouldSend = len(streamResponse.Choices) > 0
+				changed := false
+				for i := range streamResponse.Choices {
+					choice := &streamResponse.Choices[i]
+					if choice.FinishReason != nil && *choice.FinishReason != "" {
+						if i == 0 {
+							info.FinishReason = *choice.FinishReason
+						}
+						choice.FinishReason = nil
+						changed = true
+					}
+				}
+				if changed {
+					encoded, err := common.Marshal(streamResponse)
+					if err != nil {
+						sr.Error(err)
+						return
+					}
+					clientData = string(encoded)
+				}
+			}
+		}
+		if shouldSend {
+			if err := HandleStreamFormat(c, info, clientData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
 				sr.Error(err)
 			}
 		}
-		if len(data) > 0 {
-			// 对音频模型，保存倒数第二个stream data
-			if isAudioModel && lastStreamData != "" {
-				secondLastStreamData = lastStreamData
-			}
-
-			lastStreamData = data
-			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
-				logger.LogError(c, "error processing stream token data: "+err.Error())
-				sr.Error(err)
-			}
+		var tokenErr error
+		if parsed && info.RelayMode == relayconstant.RelayModeChatCompletions {
+			tokenErr = ProcessStreamResponse(streamResponse, &responseTextBuilder, &toolCount)
+		} else {
+			tokenErr = processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount)
+		}
+		if tokenErr != nil {
+			logger.LogError(c, "error processing stream token data: "+tokenErr.Error())
+			sr.Error(tokenErr)
 		}
 	})
-
-	// 对音频模型，从倒数第二个stream data中提取usage信息
-	if isAudioModel && secondLastStreamData != "" {
-		var streamResp struct {
-			Usage *dto.Usage `json:"usage"`
-		}
-		err := common.Unmarshal([]byte(secondLastStreamData), &streamResp)
-		if err == nil && streamResp.Usage != nil && service.ValidUsage(streamResp.Usage) {
-			usage = streamResp.Usage
-			containStreamUsage = true
-
-			if common.DebugEnabled {
-				logger.LogDebug(c, "Audio model usage extracted from second last SSE: PromptTokens=%d, CompletionTokens=%d, TotalTokens=%d, InputTokens=%d, OutputTokens=%d",
-					usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens,
-					usage.InputTokens, usage.OutputTokens)
-			}
-		}
-	}
-
-	// 处理最后的响应
-	shouldSendLastResp := true
-	if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,
-		&containStreamUsage, info, &shouldSendLastResp); err != nil {
-		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
-	}
-
-	if info.RelayFormat == types.RelayFormatOpenAI {
-		if shouldSendLastResp {
-			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
-		}
-	}
 
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
@@ -191,7 +210,26 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		usage.BillingUsage = dto.NewOpenAIChatBillingUsage(usage)
 	}
 
-	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	switch info.RelayFormat {
+	case types.RelayFormatOpenAI:
+		HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
+	case types.RelayFormatClaude:
+		if lastStreamData != "" {
+			finishReason := info.FinishReason
+			if finishReason == "" {
+				finishReason = "stop"
+			}
+			finalResponse := helper.GenerateStopResponse(responseId, createAt, model, finishReason)
+			finalResponse.Usage = usage
+			finalData, err := common.Marshal(finalResponse)
+			if err == nil {
+				err = HandleStreamFormat(c, info, string(finalData), false, false)
+			}
+			if err != nil {
+				logger.LogError(c, "error finalizing Claude stream: "+err.Error())
+			}
+		}
+	}
 
 	return usage, nil
 }

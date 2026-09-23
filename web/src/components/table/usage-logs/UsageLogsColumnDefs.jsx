@@ -39,6 +39,7 @@ import {
 } from '../../../helpers';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { Route, Sparkles } from 'lucide-react';
+import './UsageLogsColumnDefs.css';
 
 const colors = [
   'amber',
@@ -160,63 +161,83 @@ function renderIsStream(bool, t) {
   }
 }
 
-function renderUseTime(type, t) {
-  const time = parseInt(type);
-  if (!Number.isFinite(time) || time < 0) {
-    return <></>;
+const LATENCY_COLORS = {
+  good: { text: 'var(--latency-good)', bar: '#10b981' },
+  warn: { text: 'var(--latency-warn)', bar: '#fbbf24' },
+  slow: { text: 'var(--latency-slow)', bar: '#f97316' },
+  critical: { text: 'var(--latency-critical)', bar: '#ef4444' },
+  unknown: { text: 'var(--latency-muted)', bar: '#9ca3af' },
+};
+
+function normalizeLatency(value, multiplier = 1) {
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'string' && value.trim() === '')
+  ) {
+    return null;
   }
-  if (time < 101) {
-    return (
-      <Tag color='green' shape='circle'>
-        {' '}
-        {time} s{' '}
-      </Tag>
-    );
-  } else if (time < 300) {
-    return (
-      <Tag color='orange' shape='circle'>
-        {' '}
-        {time} s{' '}
-      </Tag>
-    );
-  } else {
-    return (
-      <Tag color='red' shape='circle'>
-        {' '}
-        {time} s{' '}
-      </Tag>
-    );
-  }
+  const milliseconds = Number(value) * multiplier;
+  return Number.isFinite(milliseconds) && milliseconds >= 0
+    ? milliseconds
+    : null;
 }
 
-function renderFirstUseTime(type, t) {
-  const timeValue = parseFloat(type) / 1000.0;
-  if (!Number.isFinite(timeValue) || timeValue < 0) {
-    return <></>;
-  }
-  const time = timeValue.toFixed(1);
-  if (timeValue < 3) {
-    return (
-      <Tag color='green' shape='circle'>
-        {' '}
-        {time} s{' '}
-      </Tag>
-    );
-  } else if (timeValue < 10) {
-    return (
-      <Tag color='orange' shape='circle'>
-        {' '}
-        {time} s{' '}
-      </Tag>
-    );
-  } else {
-    return (
-      <Tag color='red' shape='circle'>
-        {' '}
-        {time} s{' '}
-      </Tag>
-    );
-  }
+function getLatencyColors(milliseconds, [warn, slow, critical]) {
+  if (milliseconds === null) return LATENCY_COLORS.unknown;
+  if (milliseconds >= critical) return LATENCY_COLORS.critical;
+  if (milliseconds >= slow) return LATENCY_COLORS.slow;
+  if (milliseconds >= warn) return LATENCY_COLORS.warn;
+  return LATENCY_COLORS.good;
+}
+
+function formatLatency(milliseconds) {
+  if (milliseconds === null) return '-';
+  if (milliseconds < 1000) return `${milliseconds}ms`;
+  if (milliseconds < 60000) return `${(milliseconds / 1000).toFixed(2)}s`;
+  const seconds = Math.round(milliseconds / 1000);
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function renderLatency(record, t) {
+  const other = getLogOther(record.other);
+  const firstToken = record.is_stream ? normalizeLatency(other?.frt) : null;
+  // Logs store total duration in seconds and first-token latency in milliseconds.
+  const duration = normalizeLatency(record.use_time, 1000);
+  // Match sub2api: TTFT 10s/30s/60s; total duration 1m/3m/5m.
+  const firstTokenColors = getLatencyColors(firstToken, [10000, 30000, 60000]);
+  const durationColors = getLatencyColors(duration, [60000, 180000, 300000]);
+
+  return (
+    <div className='usage-log-latency flex items-stretch gap-2 whitespace-nowrap'>
+      <span
+        className='w-1 shrink-0 rounded-full'
+        style={{
+          background:
+            firstToken === null
+              ? durationColors.bar
+              : `linear-gradient(to bottom, ${firstTokenColors.bar} 40%, ${durationColors.bar} 60%)`,
+        }}
+        aria-hidden='true'
+      />
+      <div className='grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs'>
+        <span>{t('首字')}</span>
+        <span
+          className='font-medium tabular-nums'
+          style={{ color: firstTokenColors.text }}
+        >
+          {formatLatency(firstToken)}
+        </span>
+        <span>{t('总耗时')}</span>
+        <span
+          className='font-medium tabular-nums'
+          style={{ color: durationColors.text }}
+        >
+          {formatLatency(duration)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function renderBillingTag(record, t) {
@@ -597,7 +618,7 @@ function getPromptCacheSummary(other) {
     cacheCreationTokens5m > 0 || cacheCreationTokens1h > 0;
   const cacheWriteTokens = hasSplitCacheCreation
     ? cacheCreationTokens5m + cacheCreationTokens1h
-    : cacheCreationTokens;
+    : toTokenNumber(other.cache_write_tokens) || cacheCreationTokens;
 
   if (cacheReadTokens <= 0 && cacheWriteTokens <= 0) {
     return null;
@@ -607,6 +628,24 @@ function getPromptCacheSummary(other) {
     cacheReadTokens,
     cacheWriteTokens,
   };
+}
+
+function getTotalInputTokens(record, other, cacheSummary) {
+  const explicitTotal = toTokenNumber(other?.input_tokens_total);
+  if (explicitTotal > 0) {
+    return explicitTotal;
+  }
+
+  const inputTokens = toTokenNumber(record.prompt_tokens);
+  // Anthropic input tokens exclude both cache reads and cache writes.
+  if (other?.usage_semantic === 'anthropic' || other?.claude) {
+    return (
+      inputTokens +
+      (cacheSummary?.cacheReadTokens || 0) +
+      (cacheSummary?.cacheWriteTokens || 0)
+    );
+  }
+  return inputTokens;
 }
 
 function normalizeDetailText(detail) {
@@ -1088,6 +1127,16 @@ export const getLogsColumns = ({
       },
     },
     {
+      key: COLUMN_KEYS.REQUEST,
+      title: t('请求'),
+      dataIndex: 'is_stream',
+      render: (text, record) => {
+        return record.type === 2 || record.type === 5
+          ? renderIsStream(text, t)
+          : null;
+      },
+    },
+    {
       key: COLUMN_KEYS.MODEL,
       title: t('模型'),
       dataIndex: 'model_name',
@@ -1104,40 +1153,20 @@ export const getLogsColumns = ({
     },
     {
       key: COLUMN_KEYS.USE_TIME,
-      title: t('用时/首字'),
+      title: t('延迟'),
       dataIndex: 'use_time',
       render: (text, record, index) => {
         if (!(record.type === 2 || record.type === 5)) {
           return <></>;
         }
-        if (record.is_stream) {
-          let other = getLogOther(record.other);
-          return (
-            <>
-              <Space>
-                {renderUseTime(text, t)}
-                {renderFirstUseTime(other?.frt, t)}
-                {renderIsStream(record.is_stream, t)}
-              </Space>
-            </>
-          );
-        } else {
-          return (
-            <>
-              <Space>
-                {renderUseTime(text, t)}
-                {renderIsStream(record.is_stream, t)}
-              </Space>
-            </>
-          );
-        }
+        return renderLatency(record, t);
       },
     },
     {
-      key: COLUMN_KEYS.PROMPT,
+      key: COLUMN_KEYS.TOKENS,
       title: (
         <div className='flex items-center gap-1'>
-          {t('输入')}
+          TOKEN
           <Tooltip
             content={t(
               '根据 Anthropic 协定，/v1/messages 的输入 tokens 仅统计非缓存输入，不包含缓存读取与缓存写入 tokens。',
@@ -1153,40 +1182,112 @@ export const getLogsColumns = ({
         const cacheSummary = getPromptCacheSummary(other);
         const hasCacheRead = (cacheSummary?.cacheReadTokens || 0) > 0;
         const hasCacheWrite = (cacheSummary?.cacheWriteTokens || 0) > 0;
-        let cacheText = '';
-        if (hasCacheRead && hasCacheWrite) {
-          cacheText = `${t('缓存读')} ${formatTokenCount(cacheSummary.cacheReadTokens)} · ${t('写')} ${formatTokenCount(cacheSummary.cacheWriteTokens)}`;
-        } else if (hasCacheRead) {
-          cacheText = `${t('缓存读')} ${formatTokenCount(cacheSummary.cacheReadTokens)}`;
-        } else if (hasCacheWrite) {
-          cacheText = `${t('缓存写')} ${formatTokenCount(cacheSummary.cacheWriteTokens)}`;
-        }
 
         return record.type === 0 ||
           record.type === 2 ||
           record.type === 5 ||
           record.type === 6 ? (
-          <div
-            style={{
-              display: 'inline-flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              lineHeight: 1.2,
-            }}
-          >
-            <span>{text}</span>
-            {cacheText ? (
-              <span
-                style={{
-                  marginTop: 2,
-                  fontSize: 11,
-                  color: 'var(--semi-color-text-2)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {cacheText}
-              </span>
-            ) : null}
+          <div className='inline-flex flex-col items-start gap-1 tabular-nums'>
+            <div className='flex items-center gap-2 whitespace-nowrap'>
+              <Tooltip content={t('输入')}>
+                <span className='inline-flex items-center gap-1'>
+                  <svg
+                    className='h-3.5 w-3.5 shrink-0'
+                    style={{ color: '#10b981' }}
+                    fill='none'
+                    viewBox='0 0 24 24'
+                    stroke='currentColor'
+                    strokeWidth={1.5}
+                    aria-hidden='true'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      d='M19 14l-7 7m0 0l-7-7m7 7V3'
+                    />
+                  </svg>
+                  <span className='sr-only'>{t('输入')}: </span>
+                  {formatTokenCount(text)}
+                </span>
+              </Tooltip>
+              <Tooltip content={t('输出')}>
+                <span className='inline-flex items-center gap-1'>
+                  <svg
+                    className='h-3.5 w-3.5 shrink-0'
+                    style={{ color: '#8b5cf6' }}
+                    fill='none'
+                    viewBox='0 0 24 24'
+                    stroke='currentColor'
+                    strokeWidth={1.5}
+                    aria-hidden='true'
+                  >
+                    <path
+                      strokeLinecap='round'
+                      strokeLinejoin='round'
+                      d='M5 10l7-7m0 0l7 7m-7-7v18'
+                    />
+                  </svg>
+                  <span className='sr-only'>{t('输出')}: </span>
+                  {formatTokenCount(record.completion_tokens)}
+                </span>
+              </Tooltip>
+            </div>
+            {(hasCacheRead || hasCacheWrite) && (
+              <div className='flex items-center gap-2 whitespace-nowrap text-xs'>
+                {hasCacheRead && (
+                  <Tooltip content={t('缓存读')}>
+                    <span
+                      className='inline-flex items-center gap-1'
+                      style={{ color: 'var(--semi-color-info)' }}
+                      aria-label={`${t('缓存读')}: ${formatTokenCount(cacheSummary.cacheReadTokens)}`}
+                    >
+                      <svg
+                        className='h-3.5 w-3.5 shrink-0'
+                        style={{ color: '#0ea5e9' }}
+                        fill='none'
+                        viewBox='0 0 24 24'
+                        stroke='currentColor'
+                        strokeWidth={2}
+                        aria-hidden='true'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          d='M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4'
+                        />
+                      </svg>
+                      {formatTokenCount(cacheSummary.cacheReadTokens)}
+                    </span>
+                  </Tooltip>
+                )}
+                {hasCacheWrite && (
+                  <Tooltip content={t('缓存写')}>
+                    <span
+                      className='inline-flex items-center gap-1'
+                      style={{ color: 'var(--semi-color-warning)' }}
+                      aria-label={`${t('缓存写')}: ${formatTokenCount(cacheSummary.cacheWriteTokens)}`}
+                    >
+                      <svg
+                        className='h-3.5 w-3.5 shrink-0'
+                        style={{ color: '#f59e0b' }}
+                        fill='none'
+                        viewBox='0 0 24 24'
+                        stroke='currentColor'
+                        strokeWidth={2}
+                        aria-hidden='true'
+                      >
+                        <path
+                          strokeLinecap='round'
+                          strokeLinejoin='round'
+                          d='M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z'
+                        />
+                      </svg>
+                      {formatTokenCount(cacheSummary.cacheWriteTokens)}
+                    </span>
+                  </Tooltip>
+                )}
+              </div>
+            )}
           </div>
         ) : (
           <></>
@@ -1194,18 +1295,52 @@ export const getLogsColumns = ({
       },
     },
     {
-      key: COLUMN_KEYS.COMPLETION,
-      title: t('输出'),
-      dataIndex: 'completion_tokens',
-      render: (text, record, index) => {
-        return parseInt(text) > 0 &&
-          (record.type === 0 ||
+      key: COLUMN_KEYS.CACHE_HIT_RATE,
+      title: (
+        <div className='flex items-center gap-1'>
+          {t('缓存命中率')}
+          <Tooltip
+            content={t(
+              '缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。',
+            )}
+          >
+            <IconHelpCircle className='text-gray-400 cursor-help' />
+          </Tooltip>
+        </div>
+      ),
+      render: (_, record) => {
+        if (
+          !(
+            record.type === 0 ||
             record.type === 2 ||
             record.type === 5 ||
-            record.type === 6) ? (
-          <>{<span> {text} </span>}</>
-        ) : (
-          <></>
+            record.type === 6
+          )
+        ) {
+          return null;
+        }
+
+        const other = getLogOther(record.other);
+        const cacheSummary = getPromptCacheSummary(other);
+        const totalInputTokens = getTotalInputTokens(
+          record,
+          other,
+          cacheSummary,
+        );
+        if (totalInputTokens <= 0) {
+          return <span style={{ color: 'var(--semi-color-text-2)' }}>-</span>;
+        }
+
+        const cacheReadTokens = cacheSummary?.cacheReadTokens || 0;
+        const hitRate = (cacheReadTokens / totalInputTokens) * 100;
+        return (
+          <Tooltip
+            content={`${t('缓存读')} / ${t('总输入 Tokens')}: ${formatTokenCount(cacheReadTokens)} / ${formatTokenCount(totalInputTokens)} × 100%`}
+          >
+            <Tag color={cacheReadTokens > 0 ? 'green' : 'grey'}>
+              <span className='tabular-nums'>{hitRate.toFixed(1)}%</span>
+            </Tag>
+          </Tooltip>
         );
       },
     },
