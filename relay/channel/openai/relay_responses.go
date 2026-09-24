@@ -114,8 +114,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 						streamErr = types.WithOpenAIError(*upstreamErr, http.StatusBadGateway)
 					}
 				} else if streamResponse.Type == "error" {
+					var envelope struct {
+						Error *types.OpenAIError `json:"error"`
+					}
 					var upstreamErr types.OpenAIError
-					if common.UnmarshalJsonStr(data, &upstreamErr) == nil && upstreamErr.Message != "" {
+					if common.UnmarshalJsonStr(data, &envelope) == nil && envelope.Error != nil && envelope.Error.Message != "" {
+						streamErr = types.WithOpenAIError(*envelope.Error, http.StatusBadGateway)
+					} else if common.UnmarshalJsonStr(data, &upstreamErr) == nil && upstreamErr.Message != "" {
 						streamErr = types.WithOpenAIError(upstreamErr, http.StatusBadGateway)
 					}
 				}

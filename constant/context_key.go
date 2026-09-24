@@ -88,6 +88,10 @@ const (
 	// It is not returned to end users, but can be persisted into consume/error logs for debugging.
 	ContextKeyAdminRejectReason             ContextKey = "admin_reject_reason"
 	ContextKeyResponsesBillableStreamOutput ContextKey = "responses_billable_stream_output"
+	// An encrypted-content rejection/recovery must not re-enter channel rotation.
+	ContextKeyResponsesRecoveryNoRetry ContextKey = "responses_recovery_no_retry"
+	// Small, user-visible diagnostic codes for this Responses relay attempt.
+	ContextKeyResponsesLogBadges ContextKey = "responses_log_badges"
 
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"

@@ -1,5 +1,9 @@
 {
   "translation": {
+    "流式响应已被下游取消": "Le flux a été annulé par le client en aval",
+    "reasoning密文失败后进行的有损重试": "Nouvelle tentative avec perte de contexte après un échec du contenu chiffré de reasoning",
+    "reasoning密文失败，可能需要客户端新开会话窗口重试": "Échec du contenu chiffré de reasoning ; vous devrez peut-être ouvrir une nouvelle conversation dans le client et réessayer",
+    "compaction密文失败，可能需要客户端新开会话窗口重试": "Échec du contenu chiffré de compaction ; vous devrez peut-être ouvrir une nouvelle conversation dans le client et réessayer",
     "缓存命中率": "Taux de cache",
     "缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。": "Taux de cache = lectures du cache / entrée totale × 100 % ; l’entrée totale inclut les lectures et les écritures du cache.",
     "提供商图标": "Icône du fournisseur",

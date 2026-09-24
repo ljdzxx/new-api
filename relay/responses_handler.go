@@ -22,6 +22,9 @@ import (
 )
 
 func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
+	// Error logs are per channel attempt. A later successful channel must not
+	// inherit the previous attempt's encrypted-input failure badges.
+	common.SetContextKey(c, appconstant.ContextKeyResponsesLogBadges, []string(nil))
 	info.InitChannelMeta(c)
 	logger.LogInfo(c, fmt.Sprintf(
 		"responses relay selected channel: request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q pass_through=%t channel_pass_through=%t",
@@ -186,14 +189,14 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			}
 		}
 
-		originalJSONData := append([]byte(nil), jsonData...)
+		originalJSONSize := len(jsonData)
 		jsonData, removed, err := relaycommon.SanitizeInvalidResponsesEncryptedContent(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		if removed > 0 {
 			logger.LogError(c, fmt.Sprintf(
-				"[responses encrypted_content sanitize] fixed=%d request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q before_bytes=%d after_bytes=%d before_body:\n%s\nafter_body:\n%s",
+				"[responses encrypted_content sanitize] fixed=%d request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q before_bytes=%d after_bytes=%d",
 				removed,
 				c.Request.URL.Path,
 				info.RelayMode,
@@ -202,10 +205,8 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 				info.ApiType,
 				info.OriginModelName,
 				info.UpstreamModelName,
-				len(originalJSONData),
+				originalJSONSize,
 				len(jsonData),
-				string(originalJSONData),
-				string(jsonData),
 			))
 		}
 		jsonData, removedIDs, err := relaycommon.SanitizeInvalidResponsesItemIDs(jsonData)
@@ -229,7 +230,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if common.DebugEnabled {
 			println("requestBody: ", string(jsonData))
 		}
-		outboundRequestBody = append([]byte(nil), jsonData...)
+		outboundRequestBody = jsonData
 		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -240,43 +241,16 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		requestBody = body
 	}
 
-	var httpResp *http.Response
-	resp, err := adaptor.DoRequest(c, info, requestBody)
-	if err != nil {
-		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
-	}
-
 	statusCodeMappingStr := c.GetString("status_code_mapping")
-
-	if resp != nil {
-		httpResp = resp.(*http.Response)
-
-		if httpResp.StatusCode != http.StatusOK {
-			newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
-			if isEncryptedContentRelayError(newAPIError) {
-				logger.LogError(c, fmt.Sprintf(
-					"[responses encrypted_content upstream_error] request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q status_code=%d error=%q request_body_bytes=%d request_body:\n%s",
-					c.Request.URL.Path,
-					info.RelayMode,
-					info.ChannelId,
-					info.ChannelType,
-					info.ApiType,
-					info.OriginModelName,
-					info.UpstreamModelName,
-					httpResp.StatusCode,
-					newAPIError.Error(),
-					len(outboundRequestBody),
-					string(outboundRequestBody),
-				))
-			}
-			// reset status code 重置状态码
-			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
-			return newAPIError
-		}
-	}
-
-	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	usage, newAPIError := doResponsesRequestWithReasoningRecovery(c, info, adaptor, requestBody, outboundRequestBody)
 	if newAPIError != nil {
+		if newAPIError.GetErrorCode() != types.ErrorCodeClientDisconnected {
+			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
+		}
+		relaycommon.MarkResponsesEncryptedFailure(c, responsesReq.Input, newAPIError)
+		if isEncryptedContentRelayError(newAPIError) {
+			logger.LogError(c, fmt.Sprintf("responses encrypted_content upstream_error: channel_id=%d status_code=%d error=%q request_body_bytes=%d", info.ChannelId, newAPIError.StatusCode, newAPIError.Error(), len(outboundRequestBody)))
+		}
 		// Preserve partial-stream settlement. The outer error handler's Refund
 		// is idempotent after BillingSession.Settle; no new attempt may follow.
 		if info.IsStream && helper.ResponsesStreamStarted(c) {
@@ -284,10 +258,6 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			if partialUsage, ok := usage.(*dto.Usage); ok && partialUsage != nil {
 				service.PostTextConsumeQuota(c, info, partialUsage, nil)
 			}
-		}
-		// reset status code 重置状态码
-		if newAPIError.GetErrorCode() != types.ErrorCodeClientDisconnected {
-			service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		}
 		return newAPIError
 	}

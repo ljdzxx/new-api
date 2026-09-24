@@ -94,6 +94,18 @@ func appendRequestPath(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, other
 	}
 }
 
+// AppendResponsesLogBadges exposes only diagnostic codes, never request bodies,
+// ciphertext or account identifiers. Keep these outside admin_info so users
+// can see the recovery guidance in their own usage logs.
+func AppendResponsesLogBadges(ctx *gin.Context, other map[string]interface{}) {
+	if ctx == nil || other == nil {
+		return
+	}
+	if badges := common.GetContextKeyStringSlice(ctx, constant.ContextKeyResponsesLogBadges); len(badges) > 0 {
+		other["responses_badges"] = append([]string(nil), badges...)
+	}
+}
+
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
@@ -187,6 +199,10 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	other["admin_info"] = adminInfo
+	AppendResponsesLogBadges(ctx, other)
+	if relayInfo.IsStream && relayInfo.StreamStatus != nil && relayInfo.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
+		other["stream_canceled_by_downstream"] = true
+	}
 	appendRequestPath(ctx, relayInfo, other)
 	appendRequestConversionChain(relayInfo, other)
 	appendFinalRequestFormat(relayInfo, other)

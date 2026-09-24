@@ -33,3 +33,34 @@ body[theme-mode='dark'] .usage-log-latency {
   --latency-critical: #f87171;
   --latency-muted: #6b7280;
 }
+
+.usage-log-type-with-badges {
+  display: inline-flex;
+  padding-top: 8px;
+  white-space: nowrap;
+}
+
+.usage-log-type-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.usage-log-type-badges {
+  position: absolute;
+  top: -8px;
+  left: calc(100% - 8px);
+  display: inline-flex;
+  gap: 2px;
+  z-index: 1;
+}
+
+.usage-log-type-badge-trigger {
+  display: inline-flex;
+  cursor: help;
+  border-radius: 9px;
+}
+
+.usage-log-type-badge-trigger:focus-visible {
+  outline: 2px solid var(--semi-color-primary);
+  outline-offset: 2px;
+}

@@ -39,6 +39,7 @@ import {
 } from '../../../helpers';
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { Route, Sparkles } from 'lucide-react';
+import UsageLogTypeBadges from './UsageLogTypeBadges';
 import './UsageLogsColumnDefs.css';
 
 const colors = [
@@ -1122,8 +1123,17 @@ export const getLogsColumns = ({
       key: COLUMN_KEYS.TYPE,
       title: t('类型'),
       dataIndex: 'type',
-      render: (text, record, index) => {
-        return <>{renderType(text, t)}</>;
+      render: (text, record) => {
+        const other = getLogOther(record.other);
+        return (
+          <UsageLogTypeBadges
+            codes={other?.responses_badges}
+            canceledByDownstream={other?.stream_canceled_by_downstream}
+            t={t}
+          >
+            {renderType(text, t)}
+          </UsageLogTypeBadges>
+        );
       },
     },
     {
@@ -1166,7 +1176,7 @@ export const getLogsColumns = ({
       key: COLUMN_KEYS.TOKENS,
       title: (
         <div className='flex items-center gap-1'>
-          TOKEN
+          {t('Token').toUpperCase()}
           <Tooltip
             content={t(
               '根据 Anthropic 协定，/v1/messages 的输入 tokens 仅统计非缓存输入，不包含缓存读取与缓存写入 tokens。',

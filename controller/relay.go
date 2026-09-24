@@ -537,6 +537,9 @@ func recordGlobalQuotaInsufficientHit(c *gin.Context, channelID int, errText str
 }
 
 func shouldForceRetryForGlobalQuotaInsufficient(c *gin.Context, channelID int, err *types.NewAPIError) (bool, *types.NewAPIError) {
+	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry) {
+		return false, nil
+	}
 	if helper.ResponsesStreamStarted(c) || (c != nil && c.Request != nil && c.Request.Context().Err() != nil) {
 		return false, nil
 	}
@@ -1118,6 +1121,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry) {
+		return false
+	}
 	if helper.ResponsesStreamStarted(c) || (c != nil && c.Request != nil && c.Request.Context().Err() != nil) {
 		return false
 	}
@@ -1185,6 +1191,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["error_type"] = err.GetErrorType()
 		other["error_code"] = err.GetErrorCode()
 		other["status_code"] = err.StatusCode
+		service.AppendResponsesLogBadges(c, other)
 		other["channel_id"] = channelId
 		other["channel_name"] = c.GetString("channel_name")
 		other["channel_type"] = c.GetInt("channel_type")

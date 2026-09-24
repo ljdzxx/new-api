@@ -37,12 +37,38 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	require.Equal(t, "gpt-5.4", parsed["client_model"])
 }
 
+func TestFormatUserLogsPreservesResponsesBadges(t *testing.T) {
+	logs := []*Log{{Other: common.MapToJsonStr(map[string]interface{}{
+		"responses_badges": []string{"R1", "E1", "E2"},
+		"admin_info":       map[string]interface{}{"channel_id": 7},
+	})}}
+	formatUserLogs(logs, 0)
+	parsed, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	require.Equal(t, []interface{}{"R1", "E1", "E2"}, parsed["responses_badges"])
+	require.NotContains(t, parsed, "admin_info")
+}
+
+func TestFormatUserLogsPreservesDownstreamStreamCancellation(t *testing.T) {
+	logs := []*Log{{Other: common.MapToJsonStr(map[string]interface{}{
+		"stream_canceled_by_downstream": true,
+		"responses_badges":              []string{"R1"},
+		"admin_info":                    map[string]interface{}{"channel_id": 7},
+	})}}
+	formatUserLogs(logs, 0)
+	parsed, err := common.StrToMap(logs[0].Other)
+	require.NoError(t, err)
+	require.Equal(t, true, parsed["stream_canceled_by_downstream"])
+	require.Equal(t, []interface{}{"R1"}, parsed["responses_badges"])
+	require.NotContains(t, parsed, "admin_info")
+}
+
 func TestFormatUserLogsPreservesClientEffortAndStripsUpstreamEffort(t *testing.T) {
 	logs := []*Log{{Other: common.MapToJsonStr(map[string]interface{}{
-			"reasoning_effort": "xhigh",
-			"is_model_mapped": true,
-			"upstream_model_name": "gpt-5.6-terra",
-			"admin_info": map[string]interface{}{
+		"reasoning_effort":    "xhigh",
+		"is_model_mapped":     true,
+		"upstream_model_name": "gpt-5.6-terra",
+		"admin_info": map[string]interface{}{
 			"upstream_reasoning_effort": "max",
 			"upstream_model_name":       "gpt-5.6-terra",
 		},

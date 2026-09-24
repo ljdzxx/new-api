@@ -1,5 +1,9 @@
 {
   "translation": {
+    "流式响应已被下游取消": "Luồng đã bị phía hạ nguồn hủy",
+    "reasoning密文失败后进行的有损重试": "Thử lại có mất một phần ngữ cảnh sau lỗi nội dung mã hóa reasoning",
+    "reasoning密文失败，可能需要客户端新开会话窗口重试": "Lỗi nội dung mã hóa reasoning; có thể cần mở cuộc hội thoại mới trong ứng dụng rồi thử lại",
+    "compaction密文失败，可能需要客户端新开会话窗口重试": "Lỗi nội dung mã hóa compaction; có thể cần mở cuộc hội thoại mới trong ứng dụng rồi thử lại",
     "缓存命中率": "Tỷ lệ trúng bộ nhớ đệm",
     "缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。": "Tỷ lệ trúng bộ nhớ đệm = token đọc từ bộ nhớ đệm / tổng token đầu vào × 100%; tổng đầu vào bao gồm token đọc và ghi bộ nhớ đệm.",
     "提供商图标": "Biểu tượng nhà cung cấp",

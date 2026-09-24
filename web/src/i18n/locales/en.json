@@ -1,5 +1,9 @@
 {
   "translation": {
+    "流式响应已被下游取消": "stream canceled by downstream",
+    "reasoning密文失败后进行的有损重试": "Lossy retry after a reasoning encrypted-content failure",
+    "reasoning密文失败，可能需要客户端新开会话窗口重试": "Reasoning encrypted-content failure; you may need to start a new conversation in the client and retry",
+    "compaction密文失败，可能需要客户端新开会话窗口重试": "Compaction encrypted-content failure; you may need to start a new conversation in the client and retry",
     "缓存命中率": "Cache hit rate",
     "缓存命中率 = 缓存读取 / 总输入 × 100%；总输入包含缓存读取和缓存写入。": "Cache hit rate = cache reads / total input × 100%; total input includes cache reads and cache writes.",
     "提供商图标": "Provider icon",
