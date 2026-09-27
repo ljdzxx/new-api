@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
+
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
 
@@ -28,7 +30,11 @@ func DoRelayHTTPRequest(downstream context.Context, client *http.Client, req *ht
 		headerTimer = time.AfterFunc(relaycommon.StreamingTimeout(), func() { cancel(context.DeadlineExceeded) })
 		defer headerTimer.Stop()
 	}
+	common.ObserveUpstreamStatus(downstream, 0)
 	resp, err := client.Do(req.WithContext(ctx))
+	if resp != nil && err == nil {
+		common.ObserveUpstreamStatus(downstream, resp.StatusCode)
+	}
 	if headerTimer != nil {
 		headerTimer.Stop()
 	}

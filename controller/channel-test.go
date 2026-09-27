@@ -75,6 +75,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
+	c.Set("model_health_admin_test", true)
 
 	testModel = strings.TrimSpace(testModel)
 	if testModel == "" {
@@ -795,21 +796,33 @@ func TestChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	channel, err := model.CacheGetChannel(channelId)
+	channel, err := model.GetChannelById(channelId, true)
 	if err != nil {
-		channel, err = model.GetChannelById(channelId, true)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
+		common.ApiError(c, err)
+		return
 	}
 	//defer func() {
 	//	if channel.ChannelInfo.IsMultiKey {
 	//		go func() { _ = channel.SaveChannelInfo() }()
 	//	}
 	//}()
-	testModel := c.Query("model")
+	testModel := strings.TrimSpace(c.Query("model"))
+	if testModel == "" {
+		if channel.TestModel != nil && *channel.TestModel != "" {
+			testModel = *channel.TestModel
+		} else if models := channel.GetModels(); len(models) > 0 {
+			testModel = models[0]
+		}
+	}
 	endpointType := c.Query("endpoint_type")
+	if normalizeChannelTestEndpoint(channel, testModel, endpointType) == string(constant.EndpointTypeOpenAIResponseCompact) {
+		testModel = ratio_setting.WithCompactModelSuffix(testModel)
+	}
+	healthAttempt, healthErr := model.BeginModelHealthAttempt(channel, testModel, true)
+	if healthErr != nil {
+		common.ApiError(c, healthErr)
+		return
+	}
 	isStream, _ := strconv.ParseBool(c.Query("stream"))
 	tik := time.Now()
 	result := testChannel(channel, testModel, endpointType, isStream)
@@ -831,6 +844,10 @@ func TestChannel(c *gin.Context) {
 			"message": result.newAPIError.Error(),
 			"time":    consumedTime,
 		})
+		return
+	}
+	if healthErr := healthAttempt.Recover(c.GetInt("id")); healthErr != nil {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "测试通过，状态恢复失败：" + healthErr.Error(), "time": consumedTime})
 		return
 	}
 	if clearErr := service.ClearChannelQuotaInsufficientDailyMark(channel.Id); clearErr != nil {

@@ -862,6 +862,34 @@ export const useChannelsData = () => {
     }
   };
 
+  const refreshModelHealth = async (record) => {
+    if (!record?.id) return;
+    try {
+      const res = await API.get(`/api/channel/model_health/${record.id}`);
+      if (!res.data.success) throw new Error(res.data.message);
+      const health = res.data.data;
+      setCurrentTestChannel((current) =>
+        current?.id === record.id
+          ? { ...current, model_health: health }
+          : current,
+      );
+      updateChannelProperty(record.id, (channel) => {
+        channel.model_health = health;
+      });
+    } catch (error) {
+      const health = { error: error.message || t('模型状态读取失败') };
+      setCurrentTestChannel((current) =>
+        current?.id === record.id
+          ? { ...current, model_health: health }
+          : current,
+      );
+      updateChannelProperty(record.id, (channel) => {
+        channel.model_health = health;
+      });
+      showError(health.error);
+    }
+  };
+
   // Test channel - 单个模型测试，参考旧版实现
   const testChannel = async (
     record,
@@ -880,7 +908,7 @@ export const useChannelsData = () => {
     setTestingModels((prev) => new Set([...prev, model]));
 
     try {
-      let url = `/api/channel/test/${record.id}?model=${model}`;
+      let url = `/api/channel/test/${record.id}?model=${encodeURIComponent(model || '')}`;
       if (endpointType) {
         url += `&endpoint_type=${endpointType}`;
       }
@@ -895,6 +923,7 @@ export const useChannelsData = () => {
       }
 
       const { success, message, time } = res.data;
+      await refreshModelHealth(record);
 
       // 更新测试结果
       setModelTestResults((prev) => ({
@@ -1238,6 +1267,7 @@ export const useChannelsData = () => {
     fixChannelsAbilities,
     checkOllamaVersion,
     testChannel,
+    refreshModelHealth,
     batchTestModels,
     handleCloseModal,
     getFormValues,

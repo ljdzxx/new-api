@@ -16,6 +16,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -84,6 +85,17 @@ func TestResponsesEncryptedFailureBadgesIncludePassthrough(t *testing.T) {
 					return
 				}
 				require.NotNil(t, apiErr)
+				// Generic gateway failures must reach the ordinary retry policy,
+				// including its mapped-status and retry-budget checks.
+				require.Equal(t, !tc.recoverFirst && operation_setting.ShouldRetryByStatusCode(apiErr.StatusCode), shouldRetry(c, apiErr, 1))
+				require.False(t, shouldRetry(c, apiErr, 0))
+				monitor := operation_setting.GetMonitorSetting()
+				oldKeywords := monitor.GlobalQuotaInsufficientKeywords
+				monitor.GlobalQuotaInsufficientKeywords = []string{"generic upstream failure"}
+				t.Cleanup(func() { monitor.GlobalQuotaInsufficientKeywords = oldKeywords })
+				force, finalErr := shouldForceRetryForGlobalQuotaInsufficient(c, 88, apiErr)
+				require.Equal(t, !tc.recoverFirst, force)
+				require.Nil(t, finalErr)
 				processChannelError(c, *types.NewChannelError(88, constant.ChannelTypeOpenAI, "mock-channel", false, "sk-upstream", false), apiErr)
 				var logs []model.Log
 				require.NoError(t, db.Where("type = ?", model.LogTypeError).Find(&logs).Error)

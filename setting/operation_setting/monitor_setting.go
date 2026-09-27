@@ -11,6 +11,9 @@ import (
 )
 
 type MonitorSetting struct {
+	ModelHealthEnabled              bool     `json:"model_health_enabled"`
+	ModelHealthStatusCodes          string   `json:"model_health_status_codes"`
+	ModelHealthThreshold            int      `json:"model_health_threshold"`
 	AutoTestChannelEnabled          bool     `json:"auto_test_channel_enabled"`
 	AutoTestChannelMinutes          float64  `json:"auto_test_channel_minutes"`
 	GlobalQuotaInsufficientKeywords []string `json:"global_quota_insufficient_keywords"`
@@ -26,6 +29,8 @@ var defaultGlobalQuotaInsufficientKeywords = []string{
 
 // 默认配置
 var monitorSetting = MonitorSetting{
+	ModelHealthStatusCodes:          "429,502,503",
+	ModelHealthThreshold:            2,
 	AutoTestChannelEnabled:          false,
 	AutoTestChannelMinutes:          10,
 	GlobalQuotaInsufficientKeywords: append([]string(nil), defaultGlobalQuotaInsufficientKeywords...),

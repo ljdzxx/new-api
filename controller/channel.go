@@ -150,6 +150,7 @@ func GetAllChannels(c *gin.Context) {
 	if err := model.FillChannelsTodayUsedQuota(channelData); err != nil {
 		common.SysError("failed to fill channels today used quota: " + err.Error())
 	}
+	model.FillChannelModelHealth(channelData)
 	if err := model.FillChannelsQuotaInsufficientMark(channelData); err != nil {
 		common.SysError("failed to fill channels quota insufficient mark: " + err.Error())
 	}
@@ -354,6 +355,7 @@ func SearchChannels(c *gin.Context) {
 	if err := model.FillChannelsTodayUsedQuota(pagedData); err != nil {
 		common.SysError("failed to fill channels today used quota: " + err.Error())
 	}
+	model.FillChannelModelHealth(pagedData)
 	if err := model.FillChannelsQuotaInsufficientMark(pagedData); err != nil {
 		common.SysError("failed to fill channels quota insufficient mark: " + err.Error())
 	}

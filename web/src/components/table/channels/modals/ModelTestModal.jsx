@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
+import ModelHealthStatus from '../ModelHealthStatus';
 import {
   Modal,
   Button,
@@ -46,6 +47,7 @@ const ModelTestModal = ({
   modelTestResults,
   testingModels,
   testChannel,
+  refreshModelHealth,
   modelTablePage,
   setModelTablePage,
   selectedEndpointType,
@@ -57,6 +59,10 @@ const ModelTestModal = ({
   t,
 }) => {
   const hasChannel = Boolean(currentTestChannel);
+  React.useEffect(() => {
+    if (showModelTestModal && currentTestChannel?.id)
+      refreshModelHealth(currentTestChannel);
+  }, [showModelTestModal, currentTestChannel?.id]);
   const streamToggleDisabled = [
     'embeddings',
     'image-generation',
@@ -134,6 +140,17 @@ const ModelTestModal = ({
   };
 
   const columns = [
+    {
+      title: t('模型可用性'),
+      dataIndex: 'model_health',
+      render: (_, record) => (
+        <ModelHealthStatus
+          health={currentTestChannel?.model_health}
+          model={record.model}
+          t={t}
+        />
+      ),
+    },
     {
       title: t('模型名称'),
       dataIndex: 'model',
@@ -275,6 +292,19 @@ const ModelTestModal = ({
     >
       {hasChannel && (
         <div className='model-test-scroll'>
+          <div className='flex items-center gap-2 mb-3'>
+            <Button onClick={() => refreshModelHealth(currentTestChannel)}>
+              {t('刷新模型状态')}
+            </Button>
+            <Typography.Text type='tertiary'>
+              {t('状态更新时间')}：
+              {currentTestChannel.model_health?.read_at
+                ? new Date(
+                    currentTestChannel.model_health.read_at * 1000,
+                  ).toLocaleString()
+                : '—'}
+            </Typography.Text>
+          </div>
           {/* Endpoint toolbar */}
           <div className='flex flex-col sm:flex-row sm:items-center gap-2 w-full mb-2'>
             <div className='flex items-center gap-2 flex-1 min-w-0'>

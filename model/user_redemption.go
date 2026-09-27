@@ -149,7 +149,10 @@ COALESCE(NULLIF(ru.redeemed_time, 0), r.redeemed_time) AS redeemed_time,
 COALESCE(us.start_time, 0) AS subscription_start_time,
 COALESCE(us.end_time, 0) AS subscription_end_time,
 COALESCE(us.status, '') AS subscription_status`).
-		Order("r.redeemed_time desc").
+		// Order by the selected alias so MySQL accepts this DISTINCT query.
+		// The effective time is the per-user usage timestamp when available,
+		// otherwise the redemption timestamp.
+		Order("redeemed_time desc").
 		Order("r.id desc").
 		Limit(pageInfo.GetPageSize()).
 		Offset(pageInfo.GetStartIdx()).

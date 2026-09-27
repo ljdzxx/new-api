@@ -426,6 +426,11 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "monitor_setting.model_health_enabled", "monitor_setting.model_health_status_codes", "monitor_setting.model_health_threshold":
+		if err := operation_setting.ValidateModelHealthOption(option.Key, option.Value.(string)); err != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
+			return
+		}
 	case "monitor_setting.global_quota_insufficient_keywords":
 		err = operation_setting.ValidateGlobalQuotaInsufficientKeywords(option.Value.(string))
 		if err != nil {
@@ -496,6 +501,10 @@ func UpdateOption(c *gin.Context) {
 	err = model.UpdateOption(option.Key, option.Value.(string))
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if err := model.PublishModelHealthOption(option.Key, option.Value.(string)); err != nil {
+		common.ApiError(c, fmt.Errorf("设置已保存，但监控缓存同步失败，请重试保存：%w", err))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

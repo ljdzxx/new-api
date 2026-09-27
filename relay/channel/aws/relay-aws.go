@@ -229,6 +229,10 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
+		var upstreamHTTPError interface{ HTTPStatusCode() int }
+		if errors.As(err, &upstreamHTTPError) {
+			common.ObserveUpstreamStatus(c.Request.Context(), upstreamHTTPError.HTTPStatusCode())
+		}
 		statusCode := getAwsErrorStatusCode(err)
 		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, statusCode), nil
 	}
@@ -271,6 +275,10 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, context.DeadlineExceeded)
 			return types.NewOpenAIError(context.DeadlineExceeded, types.ErrorCodeAwsInvokeError, http.StatusGatewayTimeout, types.ErrOptionWithSkipRetry()), nil
+		}
+		var upstreamHTTPError interface{ HTTPStatusCode() int }
+		if errors.As(err, &upstreamHTTPError) {
+			common.ObserveUpstreamStatus(c.Request.Context(), upstreamHTTPError.HTTPStatusCode())
 		}
 		statusCode := getAwsErrorStatusCode(err)
 		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, statusCode), nil
@@ -352,6 +360,10 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
+		var upstreamHTTPError interface{ HTTPStatusCode() int }
+		if errors.As(err, &upstreamHTTPError) {
+			common.ObserveUpstreamStatus(c.Request.Context(), upstreamHTTPError.HTTPStatusCode())
+		}
 		statusCode := getAwsErrorStatusCode(err)
 		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, statusCode), nil
 	}

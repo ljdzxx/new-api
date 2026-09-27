@@ -19,25 +19,26 @@ import (
 )
 
 type Channel struct {
-	Id                 int     `json:"id"`
-	Type               int     `json:"type" gorm:"default:0"`
-	Key                string  `json:"key" gorm:"not null"`
-	OpenAIOrganization *string `json:"openai_organization"`
-	TestModel          *string `json:"test_model"`
-	Status             int     `json:"status" gorm:"default:1"`
-	Name               string  `json:"name" gorm:"index"`
-	Weight             *uint   `json:"weight" gorm:"default:0"`
-	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
-	TestTime           int64   `json:"test_time" gorm:"bigint"`
-	ResponseTime       int     `json:"response_time"` // in milliseconds
-	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
-	Other              string  `json:"other"`
-	Balance            float64 `json:"balance"` // in USD
-	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
-	Models             string  `json:"models"`
-	Group              string  `json:"group" gorm:"type:varchar(128);default:'default'"`
-	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
-	TodayUsedQuota     int64   `json:"today_used_quota" gorm:"-"`
+	ModelHealth        *ChannelModelHealthView `json:"model_health,omitempty" gorm:"-"`
+	Id                 int                     `json:"id"`
+	Type               int                     `json:"type" gorm:"default:0"`
+	Key                string                  `json:"key" gorm:"not null"`
+	OpenAIOrganization *string                 `json:"openai_organization"`
+	TestModel          *string                 `json:"test_model"`
+	Status             int                     `json:"status" gorm:"default:1"`
+	Name               string                  `json:"name" gorm:"index"`
+	Weight             *uint                   `json:"weight" gorm:"default:0"`
+	CreatedTime        int64                   `json:"created_time" gorm:"bigint"`
+	TestTime           int64                   `json:"test_time" gorm:"bigint"`
+	ResponseTime       int                     `json:"response_time"` // in milliseconds
+	BaseURL            *string                 `json:"base_url" gorm:"column:base_url;default:''"`
+	Other              string                  `json:"other"`
+	Balance            float64                 `json:"balance"` // in USD
+	BalanceUpdatedTime int64                   `json:"balance_updated_time" gorm:"bigint"`
+	Models             string                  `json:"models"`
+	Group              string                  `json:"group" gorm:"type:varchar(128);default:'default'"`
+	UsedQuota          int64                   `json:"used_quota" gorm:"bigint;default:0"`
+	TodayUsedQuota     int64                   `json:"today_used_quota" gorm:"-"`
 	// 当日"额度不足"标记信息，仅用于控制台展示，不落库
 	QuotaInsufficientMark                  *QuotaInsufficientMarkInfo `json:"quota_insufficient_mark,omitempty" gorm:"-"`
 	ModelMapping                           *string                    `json:"model_mapping" gorm:"type:text"`
@@ -484,7 +485,15 @@ func BatchDeleteChannels(ids []int) error {
 			return err
 		}
 	}
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := PruneChannelModelHealth(id, nil); err != nil {
+			common.SysError(err.Error())
+		}
+	}
+	return nil
 }
 
 func (channel *Channel) GetPriority() int64 {
@@ -583,6 +592,11 @@ func (channel *Channel) Update() error {
 	}
 	DB.Model(channel).First(channel, "id = ?", channel.Id)
 	err = channel.UpdateAbilities(nil)
+	if err == nil {
+		if healthErr := PruneChannelModelHealth(channel.Id, channel.GetModels()); healthErr != nil {
+			common.SysError(healthErr.Error())
+		}
+	}
 	return err
 }
 
@@ -613,6 +627,9 @@ func (channel *Channel) Delete() error {
 		return err
 	}
 	err = channel.DeleteAbilities()
+	if healthErr := PruneChannelModelHealth(channel.Id, nil); healthErr != nil {
+		common.SysError(healthErr.Error())
+	}
 	return err
 }
 
@@ -821,6 +838,9 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		if err == nil {
 			for _, channel := range channels {
 				err = channel.UpdateAbilities(nil)
+				if healthErr := PruneChannelModelHealth(channel.Id, channel.GetModels()); healthErr != nil {
+					common.SysError(healthErr.Error())
+				}
 				if err != nil {
 					common.SysLog(fmt.Sprintf("failed to update abilities: channel_id=%d, tag=%s, error=%v", channel.Id, channel.GetTag(), err))
 				}
@@ -851,12 +871,34 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
+	var channels []Channel
+	if err := DB.Select("id").Where("status = ?", status).Find(&channels).Error; err != nil {
+		return 0, err
+	}
 	result := DB.Where("status = ?", status).Delete(&Channel{})
+	if result.Error == nil {
+		for _, ch := range channels {
+			if err := PruneChannelModelHealth(ch.Id, nil); err != nil {
+				common.SysError(err.Error())
+			}
+		}
+	}
 	return result.RowsAffected, result.Error
 }
 
 func DeleteDisabledChannel() (int64, error) {
+	var channels []Channel
+	if err := DB.Select("id").Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Find(&channels).Error; err != nil {
+		return 0, err
+	}
 	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
+	if result.Error == nil {
+		for _, ch := range channels {
+			if err := PruneChannelModelHealth(ch.Id, nil); err != nil {
+				common.SysError(err.Error())
+			}
+		}
+	}
 	return result.RowsAffected, result.Error
 }
 

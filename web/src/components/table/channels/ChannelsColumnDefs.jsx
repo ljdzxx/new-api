@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
+import ModelHealthStatus from './ModelHealthStatus';
 import React from 'react';
 import {
   Button,
@@ -512,6 +513,21 @@ export const getChannelsColumns = ({
           );
         } else {
           statusNode = renderStatus(text, record.channel_info, t);
+        }
+        if (record.children === undefined) {
+          statusNode = (
+            <div className='flex flex-col gap-1'>
+              {statusNode}
+              <ModelHealthStatus
+                health={record.model_health}
+                t={t}
+                onClick={() => {
+                  setCurrentTestChannel(record);
+                  setShowModelTestModal(true);
+                }}
+              />
+            </div>
+          );
         }
         const quotaMark = record.quota_insufficient_mark;
         if (!quotaMark) {

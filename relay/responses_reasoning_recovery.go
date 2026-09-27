@@ -55,10 +55,19 @@ func doResponsesRequestWithReasoningRecovery(c *gin.Context, info *relaycommon.R
 		}
 
 		alreadyHandled := common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry)
-		common.SetContextKey(c, constant.ContextKeyResponsesRecoveryNoRetry, true)
-		if alreadyHandled || recoveryAttempted || info.RelayMode != relayconstant.RelayModeResponses ||
+		// Explicit ciphertext rejection remains terminal across channels. A
+		// generic 502/503 only gets a local recovery attempt; if that fails or
+		// history cannot be rebuilt, the outer retry policy still applies.
+		if apiErr.GetErrorCode() == types.ErrorCodeInvalidEncryptedContent {
+			common.SetContextKey(c, constant.ContextKeyResponsesRecoveryNoRetry, true)
+		}
+		if info.RelayMode != relayconstant.RelayModeResponses ||
 			helper.ResponsesStreamStarted(c) || c.Request.Context().Err() != nil || types.IsSkipRetryError(apiErr) ||
 			common.GetContextKeyBool(c, constant.ContextKeyResponsesBillableStreamOutput) || responsesRecoveryHasUsage(usage) {
+			common.SetContextKey(c, constant.ContextKeyResponsesRecoveryNoRetry, true)
+			return usage, apiErr
+		}
+		if alreadyHandled || recoveryAttempted {
 			return usage, apiErr
 		}
 		rebuilt, removed, rebuildErr := relaycommon.RebuildResponsesInputWithoutReasoning(outboundBody)

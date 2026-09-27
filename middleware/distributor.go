@@ -231,6 +231,15 @@ func Distribute() func(c *gin.Context) {
 							preferred = nil
 						}
 					}
+					if preferred != nil {
+						if healthErr := service.CheckModelHealthForRequest(c, preferred, modelRequest.Model); healthErr != nil {
+							if !errors.Is(healthErr, model.ErrModelUnavailable) {
+								abortWithOpenAiMessage(c, http.StatusServiceUnavailable, healthErr.Error())
+								return
+							}
+							preferred = nil
+						}
+					}
 					if preferred != nil && preferred.Status == common.ChannelStatusEnabled {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
@@ -286,7 +295,10 @@ func Distribute() func(c *gin.Context) {
 			}
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
+		if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
+			abortWithOpenAiMessage(c, setupErr.StatusCode, setupErr.Error())
+			return
+		}
 		c.Next()
 		if shouldRecordChannelAffinityAfterRelay(c, channel) {
 			service.RecordChannelAffinity(c, channel.Id)
@@ -499,6 +511,11 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 }
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
+	if channel != nil {
+		if err := service.CheckModelHealthForRequest(c, channel, modelName); err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeGetChannelFailed, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+		}
+	}
 	c.Set("original_model", modelName) // for retry
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())

@@ -45,12 +45,16 @@ func TestResponsesReasoningRecoveryBoundaries(t *testing.T) {
 		allowRetry, started, billable   bool
 	}{
 		{name: "HTTP rejection", status: 400, response: encryptedErrorJSON, calls: 2},
-		{name: "HTTP 502 with reasoning", status: 502, response: genericUpstreamErrorJSON, calls: 2},
-		{name: "HTTP 503 with reasoning", status: 503, response: genericUpstreamErrorJSON, calls: 2},
-		{name: "HTTP 502 HTML body", status: 502, response: "<html>Bad Gateway</html>", calls: 2},
-		{name: "HTTP 503 empty body", status: 503, calls: 2},
-		{name: "HTTP 502 streaming request", status: 502, response: genericUpstreamErrorJSON, stream: true, calls: 2},
-		{name: "HTTP 503 streaming request", status: 503, response: genericUpstreamErrorJSON, stream: true, calls: 2},
+		{name: "HTTP 502 explicit rejection", status: 502, response: encryptedErrorJSON, repeat: true, calls: 2},
+		{name: "compaction explicit rejection", status: 400, response: encryptedErrorJSON, body: `{"input":[{"type":"compaction","encrypted_content":"opaque"},{"role":"user","content":"hi"}]}`, calls: 1},
+		{name: "HTTP 502 incomplete tool history", status: 502, response: genericUpstreamErrorJSON, body: `{"input":[{"type":"reasoning","encrypted_content":"opaque"},{"type":"function_call_output","call_id":"missing","output":"done"}]}`, calls: 1, allowRetry: true},
+		{name: "HTTP 503 conversation history", status: 503, response: genericUpstreamErrorJSON, body: `{"conversation":"conv_old","input":[{"type":"reasoning","encrypted_content":"opaque"},{"role":"user","content":"hi"}]}`, calls: 1, allowRetry: true},
+		{name: "HTTP 502 with reasoning", status: 502, response: genericUpstreamErrorJSON, calls: 2, allowRetry: true},
+		{name: "HTTP 503 with reasoning", status: 503, response: genericUpstreamErrorJSON, calls: 2, allowRetry: true},
+		{name: "HTTP 502 HTML body", status: 502, response: "<html>Bad Gateway</html>", calls: 2, allowRetry: true},
+		{name: "HTTP 503 empty body", status: 503, calls: 2, allowRetry: true},
+		{name: "HTTP 502 streaming request", status: 502, response: genericUpstreamErrorJSON, stream: true, calls: 2, allowRetry: true},
+		{name: "HTTP 503 streaming request", status: 503, response: genericUpstreamErrorJSON, stream: true, calls: 2, allowRetry: true},
 		{name: "HTTP 500 excluded", status: 500, response: genericUpstreamErrorJSON, calls: 1, allowRetry: true},
 		{name: "HTTP 504 excluded", status: 504, response: genericUpstreamErrorJSON, calls: 1, allowRetry: true},
 		{name: "HTTP 502 without reasoning", status: 502, response: genericUpstreamErrorJSON, body: `{"input":[{"role":"user","content":"hi"}]}`, calls: 1, allowRetry: true},
@@ -61,13 +65,13 @@ func TestResponsesReasoningRecoveryBoundaries(t *testing.T) {
 		{name: "HTTP 503 metadata excluded", status: 503, response: genericUpstreamErrorJSON, body: `{"metadata":{"type":"reasoning","encrypted_content":"opaque"},"input":"hi"}`, calls: 1, allowRetry: true},
 		{name: "HTTP 502 nested tool data excluded", status: 502, response: genericUpstreamErrorJSON, body: `{"input":[{"type":"function_call_output","output":{"type":"reasoning","encrypted_content":"opaque"}}]}`, calls: 1, allowRetry: true},
 		{name: "HTTP 503 compaction only excluded", status: 503, response: genericUpstreamErrorJSON, body: `{"input":[{"type":"compaction","encrypted_content":"opaque"},{"role":"user","content":"hi"}]}`, calls: 1, allowRetry: true},
-		{name: "HTTP 502 compaction is not dropped", status: 502, response: genericUpstreamErrorJSON, body: `{"input":[{"type":"compaction","encrypted_content":"opaque"},{"type":"reasoning","encrypted_content":"reasoning"},{"role":"user","content":"hi"}]}`, calls: 1},
-		{name: "HTTP 503 server history excluded", status: 503, response: genericUpstreamErrorJSON, body: `{"previous_response_id":"resp_old","input":[{"type":"reasoning","encrypted_content":"reasoning"},{"role":"user","content":"hi"}]}`, calls: 1},
+		{name: "HTTP 502 compaction is not dropped", status: 502, response: genericUpstreamErrorJSON, body: `{"input":[{"type":"compaction","encrypted_content":"opaque"},{"type":"reasoning","encrypted_content":"reasoning"},{"role":"user","content":"hi"}]}`, calls: 1, allowRetry: true},
+		{name: "HTTP 503 server history excluded", status: 503, response: genericUpstreamErrorJSON, body: `{"previous_response_id":"resp_old","input":[{"type":"reasoning","encrypted_content":"reasoning"},{"role":"user","content":"hi"}]}`, calls: 1, allowRetry: true},
 		{name: "HTTP 502 already streaming", status: 502, response: genericUpstreamErrorJSON, started: true, calls: 1},
 		{name: "HTTP 503 billable output", status: 503, response: genericUpstreamErrorJSON, billable: true, calls: 1},
 		{name: "HTTP 502 client canceled", status: 502, response: genericUpstreamErrorJSON, cancel: true, calls: 1},
-		{name: "HTTP 502 only one recovery", status: 502, response: genericUpstreamErrorJSON, repeat: true, calls: 2},
-		{name: "HTTP 503 only one recovery", status: 503, response: genericUpstreamErrorJSON, repeat: true, calls: 2},
+		{name: "HTTP 502 only one recovery", status: 502, response: genericUpstreamErrorJSON, repeat: true, calls: 2, allowRetry: true},
+		{name: "HTTP 503 only one recovery", status: 503, response: genericUpstreamErrorJSON, repeat: true, calls: 2, allowRetry: true},
 		{name: "HTTP 503 compact endpoint excluded", status: 503, response: genericUpstreamErrorJSON, compact: true, calls: 1},
 		{name: "200 JSON rejection", status: 200, response: encryptedErrorJSON, calls: 2},
 		{name: "SSE first event", status: 200, response: `data: {"type":"error","code":"invalid_encrypted_content","message":"ciphertext rejected"}` + "\n\n", stream: true, calls: 2},
@@ -153,21 +157,41 @@ func TestResponsesReasoningRecoveryBoundaries(t *testing.T) {
 	}
 }
 
-func TestResponsesReasoningRecoveryStopsOnSecondTransportFailure(t *testing.T) {
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeResponses, ChannelMeta: &relaycommon.ChannelMeta{}}
-	calls := 0
-	a := &reasoningRecoveryAdaptor{request: func(_ *gin.Context, _ *relaycommon.RelayInfo, _ io.Reader) (any, error) {
-		calls++
-		if calls == 2 {
-			return nil, fmt.Errorf("transport failed")
-		}
-		return &http.Response{StatusCode: 400, Body: io.NopCloser(strings.NewReader(encryptedErrorJSON))}, nil
-	}}
-	_, apiErr := doResponsesRequestWithReasoningRecovery(c, info, a, strings.NewReader(reasoningRecoveryBody), []byte(reasoningRecoveryBody))
-	require.Equal(t, 2, calls)
-	require.True(t, types.IsSkipRetryError(apiErr))
-	require.True(t, common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry))
-	require.False(t, helper.ResponsesStreamStarted(c))
+func TestResponsesReasoningRecoverySecondFailurePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		status         int
+		response       string
+		secondResponse string
+		skipRetry      bool
+	}{
+		{"explicit rejection then transport failure", 400, encryptedErrorJSON, "", true},
+		{"502 then transport failure", 502, genericUpstreamErrorJSON, "", false},
+		{"503 then transport failure", 503, genericUpstreamErrorJSON, "", false},
+		{"502 then explicit rejection", 502, genericUpstreamErrorJSON, encryptedErrorJSON, true},
+		{"explicit rejection then generic failure", 400, encryptedErrorJSON, genericUpstreamErrorJSON, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			info := &relaycommon.RelayInfo{RelayMode: relayconstant.RelayModeResponses, ChannelMeta: &relaycommon.ChannelMeta{}}
+			calls := 0
+			a := &reasoningRecoveryAdaptor{request: func(_ *gin.Context, _ *relaycommon.RelayInfo, _ io.Reader) (any, error) {
+				calls++
+				if calls == 2 {
+					if tc.secondResponse == "" {
+						return nil, fmt.Errorf("transport failed")
+					}
+					return &http.Response{StatusCode: 502, Body: io.NopCloser(strings.NewReader(tc.secondResponse))}, nil
+				}
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.response))}, nil
+			}}
+			_, apiErr := doResponsesRequestWithReasoningRecovery(c, info, a, strings.NewReader(reasoningRecoveryBody), []byte(reasoningRecoveryBody))
+			require.Equal(t, 2, calls)
+			require.NotNil(t, apiErr)
+			require.Equal(t, tc.skipRetry, types.IsSkipRetryError(apiErr))
+			require.Equal(t, tc.skipRetry, common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry))
+			require.False(t, helper.ResponsesStreamStarted(c))
+		})
+	}
 }

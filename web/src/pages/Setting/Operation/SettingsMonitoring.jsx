@@ -43,6 +43,9 @@ export default function SettingsMonitoring(props) {
     AutomaticDisableStatusCodes: '401',
     AutomaticRetryStatusCodes:
       '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
+    'monitor_setting.model_health_enabled': false,
+    'monitor_setting.model_health_status_codes': '429,502,503',
+    'monitor_setting.model_health_threshold': 2,
     'monitor_setting.auto_test_channel_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10,
     'monitor_setting.global_quota_insufficient_keywords': JSON.stringify(
@@ -85,6 +88,27 @@ export default function SettingsMonitoring(props) {
           : '';
       return showError(`${t('自动重试状态码格式不正确')}${details}`);
     }
+    const healthCodes = String(
+      inputs['monitor_setting.model_health_status_codes'] || '',
+    ).split(',');
+    const healthThreshold = Number(
+      inputs['monitor_setting.model_health_threshold'],
+    );
+    if (
+      !healthCodes.every(
+        (code) =>
+          /^\d{3}$/.test(code.trim()) &&
+          Number(code) >= 400 &&
+          Number(code) <= 599,
+      ) ||
+      !Number.isInteger(healthThreshold) ||
+      healthThreshold < 1 ||
+      healthThreshold > 1000
+    ) {
+      return showError(
+        t('模型状态码需为逗号分隔的400–599整数，连续失败阈值为1–1000'),
+      );
+    }
     const quotaKeywordRaw =
       inputs['monitor_setting.global_quota_insufficient_keywords'] || '';
     if (!verifyJSON(quotaKeywordRaw)) {
@@ -120,6 +144,11 @@ export default function SettingsMonitoring(props) {
     setLoading(true);
     Promise.all(requestQueue)
       .then((res) => {
+        const failed = res.find((item) => item?.data?.success === false);
+        if (failed) {
+          showError(failed.data.message || t('保存失败，请重试'));
+          return;
+        }
         if (requestQueue.length === 1) {
           if (res.includes(undefined)) return;
         } else if (requestQueue.length > 1) {
@@ -158,6 +187,56 @@ export default function SettingsMonitoring(props) {
           style={{ marginBottom: 15 }}
         >
           <Form.Section text={t('监控设置')}>
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <Form.Switch
+                  field='monitor_setting.model_health_enabled'
+                  label={t('开启模型可用性监控')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.model_health_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Input
+                  field='monitor_setting.model_health_status_codes'
+                  label={t('模型不可用状态码')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.model_health_status_codes': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.InputNumber
+                  field='monitor_setting.model_health_threshold'
+                  label={t('连续相同状态码次数')}
+                  min={1}
+                  max={1000}
+                  precision={0}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.model_health_threshold': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <div className='text-[var(--semi-color-text-2)] mb-4'>
+              {t(
+                '连续命中相同上游状态码后暂停该渠道模型，仅管理员测试通过恢复。视频和任务不参与监控。关闭后保留状态，再次开启继续生效。',
+              )}
+              <br />
+              {t(
+                '状态仅存缓存：未配置Redis时重启清空，多实例请共用Redis。缓存丢失后恢复默认可路由。整渠道自动禁用规则仍独立生效。',
+              )}
+            </div>
             <Row gutter={16}>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.Switch

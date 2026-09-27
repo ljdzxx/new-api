@@ -61,6 +61,13 @@ func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
 }
 
+func (p *RetryParam) SkipChannel(channelID int) {
+	if p.failedChannels == nil {
+		p.failedChannels = make(map[int]struct{})
+	}
+	p.failedChannels[channelID] = struct{}{}
+}
+
 func (p *RetryParam) MarkChannelFailed(channelID int, priority int64) {
 	if channelID <= 0 {
 		return
@@ -129,6 +136,10 @@ func (p *RetryParam) buildRetryCandidates() error {
 
 	appendGroupChannels := func(group string, groupOrder int) error {
 		channels, err := model.ListSatisfiedChannelsWithNameFilter(group, p.ModelName, allowedChannelSet)
+		if err != nil {
+			return err
+		}
+		channels, err = FilterModelHealthForRequest(p.Ctx, channels, p.ModelName)
 		if err != nil {
 			return err
 		}
@@ -206,6 +217,12 @@ func GetNextRetryChannel(param *RetryParam) (*model.Channel, string, error) {
 		}
 		if channel.Status != common.ChannelStatusEnabled {
 			continue
+		}
+		if err := CheckModelHealthForRequest(param.Ctx, channel, param.ModelName); err != nil {
+			if errors.Is(err, model.ErrModelUnavailable) {
+				continue
+			}
+			return nil, param.TokenGroup, err
 		}
 		if param.TokenGroup == "auto" {
 			common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, candidate.Group)
@@ -287,7 +304,10 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
-			channel, _ = model.GetRandomSatisfiedChannelWithNameFilter(autoGroup, param.ModelName, priorityRetry, allowedChannelSet)
+			channel, err = selectChannelWithModelHealth(param.Ctx, autoGroup, param.ModelName, priorityRetry, allowedChannelSet)
+			if err != nil {
+				return nil, autoGroup, err
+			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
 				// 当前分组没有该模型的可用渠道，尝试下一个分组
@@ -328,7 +348,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		if !SubscriptionAllowsGroup(param.TokenGroup, SubscriptionAllowedGroupsFromContext(param.Ctx)) {
 			return nil, param.TokenGroup, nil
 		}
-		channel, err = model.GetRandomSatisfiedChannelWithNameFilter(param.TokenGroup, param.ModelName, param.GetRetry(), allowedChannelSet)
+		channel, err = selectChannelWithModelHealth(param.Ctx, param.TokenGroup, param.ModelName, param.GetRetry(), allowedChannelSet)
 		if err != nil {
 			return nil, param.TokenGroup, err
 		}

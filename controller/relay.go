@@ -368,6 +368,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			logClaudeRelayDebug(c, "channel selected: request_id=%s retry=%d channel_id=%d channel_type=%d channel_name=%q origin_model=%q", requestId, relayInfo.RetryIndex, channel.Id, channel.Type, channel.Name, relayInfo.OriginModelName)
 		}
 
+		var healthAttempt *model.ModelHealthAttempt
+		if service.ModelHealthApplies(c) {
+			healthAttempt, err = model.BeginModelHealthAttempt(channel, relayInfo.OriginModelName, false)
+			if err != nil {
+				if errors.Is(err, model.ErrModelUnavailable) && !isSpecificChannelRequest(c) && common.GetContextKeyInt(c, constant.ContextKeyChannelForwardLockedId) == 0 {
+					relayInfo.InitChannelMeta(c)
+					retryParam.SkipChannel(channel.Id)
+					retryParam.ResetRetryNextTry()
+					continue
+				}
+				newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeGetChannelFailed, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+				break
+			}
+		}
+
 		// Pricing initially runs before distribution to validate the model policy.
 		// Rebuild it after every selection so retries and settlement use the
 		// currently selected channel's immutable multiplier snapshot.
@@ -428,6 +443,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
+		attemptContext, upstreamStatus := common.WithUpstreamObservation(c.Request.Context())
+		c.Request = c.Request.WithContext(attemptContext)
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)
@@ -439,6 +456,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = relayHandler(c, relayInfo)
 		}
 
+		if healthAttempt != nil && c.Request.Context().Err() == nil {
+			status := int(upstreamStatus.Load())
+			if newAPIError == nil {
+				status = http.StatusOK
+			} else if newAPIError.GetErrorCode() == types.ErrorCodeClientDisconnected {
+				status = 0
+			} else if newAPIError.GetErrorCode() == types.ErrorCodeInvalidEncryptedContent && status > 0 {
+				// A request-specific rejection breaks a streak but must never trip it.
+				status = http.StatusOK
+			}
+			if recordErr := healthAttempt.Record(status); recordErr != nil {
+				logger.LogError(c, recordErr.Error())
+			}
+		}
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			if relayFormat == types.RelayFormatClaude {
