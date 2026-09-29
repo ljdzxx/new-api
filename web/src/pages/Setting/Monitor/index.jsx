@@ -104,7 +104,7 @@ export default function MonitorSettings() {
         />
       </label>
       <Typography.Text type='tertiary'>
-        {t('每组单独配置测试模型、协议、测试开关和展示开关。')}
+        {t('每组单独配置测试模型、协议、测试开关和分组启用状态。')}
       </Typography.Text>
       <pre className='overflow-x-auto text-xs'>
         {JSON.stringify(
@@ -127,7 +127,7 @@ export default function MonitorSettings() {
       </pre>
       <Typography.Text type='tertiary'>
         {t(
-          'protocol 填 responses 或 messages；active 仅控制页面展示，不停止后台采集和检测。',
+          'protocol 填 responses 或 messages；active 为 false 时隐藏分组，并停止发起可用性探针、SVG 和逻辑检测。',
         )}
       </Typography.Text>
       <Typography.Text type='tertiary'>

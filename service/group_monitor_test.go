@@ -95,7 +95,11 @@ func TestMonitorDedicatedModelsAndPerGroupSwitches(t *testing.T) {
 	on, off := true, false
 	cfg := monitorconfig.Default()
 	g := monitorconfig.Group{Models: []string{"probe-a", "probe-b"}, SVGModel: "svg-only", LogicModel: "logic-only", SVGTest: &on, LogicTest: &on, Active: &off}
+	require.Empty(t, monitorGroupJobs(cfg, g), "inactive groups must not schedule any probes or tests")
+	g.Active = &on
 	require.Equal(t, []monitorJob{{"probe-a", "probe", 5}, {"probe-b", "probe", 5}, {"svg-only", "svg", 60}, {"logic-only", "logic", 60}}, monitorGroupJobs(cfg, g))
+	g.Active = nil
+	require.Len(t, monitorGroupJobs(cfg, g), 4, "omitting active must keep existing groups enabled")
 	g.SVGTest = &off
 	g.LogicTest = &off
 	require.Equal(t, []monitorJob{{"probe-a", "probe", 5}, {"probe-b", "probe", 5}}, monitorGroupJobs(cfg, g))
@@ -149,4 +153,31 @@ func TestMonitorDistributedTaskDeduplication(t *testing.T) {
 	for _, key := range r.Keys() {
 		require.Positive(t, r.TTL(key), key)
 	}
+}
+
+func TestMonitorInactiveGroupSkipsTaskExecution(t *testing.T) {
+	r := monitorTestRedis(t)
+	var requests atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"type\":\"response.completed\"}\n\n")
+	}))
+	defer upstream.Close()
+	on, off := true, false
+	cfg := monitorconfig.Default()
+	cfg.BaseURL = upstream.URL
+	cfg.SVGOutputDir = t.TempDir()
+	cfg.Groups["g"] = monitorconfig.Group{Models: []string{"m"}, Active: &off, SVGTest: &on, LogicTest: &on}
+	active := make(chan struct{}, 10)
+	for _, kind := range []string{"probe", "svg", "logic"} {
+		tryMonitorJob(active, cfg, "g", "m", "test", kind, 5)
+		require.Eventually(t, func() bool { return len(active) == 0 }, 3*time.Second, 10*time.Millisecond)
+		require.Zero(t, requests.Load(), "inactive %s tasks must not call the model", kind)
+		require.Empty(t, r.Keys(), "inactive tasks must not acquire leases or update schedules/results")
+	}
+	cfg.Groups["g"] = monitorconfig.Group{Models: []string{"m"}, Active: &on}
+	tryMonitorJob(active, cfg, "g", "m", "test", "probe", 5)
+	require.Eventually(t, func() bool { return len(active) == 0 && requests.Load() == 1 }, 3*time.Second, 10*time.Millisecond)
+	require.True(t, r.Exists(groupmonitor.Key("g", "m", "probe:latest")), "reactivating a group must allow probes again")
 }

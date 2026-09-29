@@ -25,7 +25,7 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 - `protocol`：填写 `responses` 或 `messages`，分别使用 OpenAI Responses 或 Anthropic Messages 协议。不要填写 `responses|messages`。
 - `svg_model` / `logic_model`：每组的绘图、逻辑专用模型，可不在 `model` 列表内。
 - `svg_test` / `logic_test`：该组是否执行对应测试；启用时必须填写对应专用模型。
-- `active`：仅控制页面展示。设为 `false` 后，该组从公开页面及其趋势、作品接口隐藏，但继续采集和执行配置的后台检测。
+- `active`：控制分组展示和后台检测。设为 `false` 后，该组从公开页面及其趋势、作品接口隐藏，并停止发起可用性探针、SVG 和逻辑检测；已经发出的检测请求会完成本次执行。真实用户请求的指标仍会采集，历史数据继续遵循保留策略。改回 `true` 后恢复展示和检测，省略时默认为 `true`。调度器每 15 秒读取一次当前节点配置，多节点部署需等待 master 同步设置。
 - `order`：分组展示顺序，整型，越小越靠前；未填写时默认为 `0`，相同值按分组名称排序。页面选择“默认排序”时使用此顺序。
 - `model`：可用性探测及用户请求指标统计的模型列表，不决定绘图、逻辑测试模型。
 

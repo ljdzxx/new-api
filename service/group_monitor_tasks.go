@@ -269,6 +269,9 @@ type monitorJob struct {
 }
 
 func monitorGroupJobs(cfg monitorconfig.Config, g monitorconfig.Group) []monitorJob {
+	if !g.Visible() {
+		return nil
+	}
 	jobs := make([]monitorJob, 0, len(g.Models)+2)
 	for _, m := range g.Models {
 		jobs = append(jobs, monitorJob{m, "probe", cfg.ProbeMinutes})
@@ -313,7 +316,7 @@ func StartGroupMonitorTasks() {
 }
 
 func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model, key, kind string, minutes int) {
-	if len(active) >= cfg.Concurrency {
+	if !cfg.Groups[group].Visible() || len(active) >= cfg.Concurrency {
 		return
 	}
 	// Due jobs alone consume worker slots; otherwise the first two configured
