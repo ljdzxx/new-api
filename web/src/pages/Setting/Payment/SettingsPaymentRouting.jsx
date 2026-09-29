@@ -81,9 +81,7 @@ export default function SettingsPaymentRouting(props) {
           value: inputs.TopupProvider,
         });
       }
-      if (
-        originInputs.SubscriptionProvider !== inputs.SubscriptionProvider
-      ) {
+      if (originInputs.SubscriptionProvider !== inputs.SubscriptionProvider) {
         options.push({
           key: 'payment_route.subscription_provider',
           value: inputs.SubscriptionProvider,
@@ -140,9 +138,7 @@ export default function SettingsPaymentRouting(props) {
             optionList={providerOptions}
             placeholder={t('请选择订阅支付渠道')}
           />
-          <Button onClick={submitPaymentRouting}>
-            {t('更新支付路由')}
-          </Button>
+          <Button onClick={submitPaymentRouting}>{t('更新支付路由')}</Button>
         </Form.Section>
       </Form>
     </Spin>

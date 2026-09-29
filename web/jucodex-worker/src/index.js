@@ -1,189 +1,197 @@
-const CANONICAL_HOST = "jucodex.com"
+const CANONICAL_HOST = 'jucodex.com';
 
 export default {
   async fetch(request, env, ctx) {
-    const incomingUrl = new URL(request.url)
-    const pathname = safeDecodePath(incomingUrl.pathname)
+    const incomingUrl = new URL(request.url);
+    const pathname = safeDecodePath(incomingUrl.pathname);
 
-    if (incomingUrl.hostname === "www." + CANONICAL_HOST) {
-      incomingUrl.hostname = CANONICAL_HOST
-      return Response.redirect(incomingUrl.toString(), 301)
+    if (incomingUrl.hostname === 'www.' + CANONICAL_HOST) {
+      incomingUrl.hostname = CANONICAL_HOST;
+      return Response.redirect(incomingUrl.toString(), 301);
     }
 
     if (shouldServeForbidden(request, pathname, incomingUrl.hostname)) {
-      return serveForbidden(request, env)
+      return serveForbidden(request, env);
     }
 
     if (shouldProxyToBackend(pathname)) {
-      return proxyToBackend(request, env)
+      return proxyToBackend(request, env);
     }
 
-    return serveStatic(request, env)
+    return serveStatic(request, env);
   },
-}
+};
 
 // ---------- 静态文件（R2 自定义域名） ----------
 async function serveStatic(request, env) {
-  const staticOrigin = getStaticOrigin(env)
+  const staticOrigin = getStaticOrigin(env);
   if (!staticOrigin) {
-    return new Response("Missing STATIC_ORIGIN", { status: 500 })
+    return new Response('Missing STATIC_ORIGIN', { status: 500 });
   }
 
-  const pathname = safeDecodePath(new URL(request.url).pathname)
+  const pathname = safeDecodePath(new URL(request.url).pathname);
 
-  const primaryResp = await fetchFromStaticOrigin(request, staticOrigin, pathname)
+  const primaryResp = await fetchFromStaticOrigin(
+    request,
+    staticOrigin,
+    pathname,
+  );
   if (primaryResp.status !== 404 || !shouldSpaFallback(pathname)) {
-    return primaryResp
+    return primaryResp;
   }
 
   // SPA fallback：非静态资源路径（无扩展名）回退到 index.html
-  return fetchFromStaticOrigin(request, staticOrigin, "/index.html")
+  return fetchFromStaticOrigin(request, staticOrigin, '/index.html');
 }
 
 async function serveForbidden(request, env) {
-  const staticOrigin = getStaticOrigin(env)
+  const staticOrigin = getStaticOrigin(env);
   if (!staticOrigin) {
-    return new Response("Missing STATIC_ORIGIN", { status: 500 })
+    return new Response('Missing STATIC_ORIGIN', { status: 500 });
   }
 
   // Always fetch the static page with a body-safe method, including when the
   // original request used POST or another non-idempotent method.
   const pageRequest = new Request(request.url, {
-    method: request.method === "HEAD" ? "HEAD" : "GET",
-  })
+    method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+  });
   const response = await fetchFromStaticOrigin(
     pageRequest,
     staticOrigin,
-    "/forbidden.html",
-  )
+    '/forbidden.html',
+  );
 
   if (!response.ok) {
-    return new Response("Forbidden page not found", { status: 500 })
+    return new Response('Forbidden page not found', { status: 500 });
   }
 
-  const headers = new Headers(response.headers)
-  headers.set("Content-Type", "text/html; charset=utf-8")
-  headers.set("Cache-Control", "private, no-store")
+  const headers = new Headers(response.headers);
+  headers.set('Content-Type', 'text/html; charset=utf-8');
+  headers.set('Cache-Control', 'private, no-store');
 
   return new Response(response.body, {
     status: 451,
     headers,
-  })
+  });
 }
 
 async function fetchFromStaticOrigin(request, staticOrigin, pathname) {
-  const incomingUrl = new URL(request.url)
-  const target = new URL(staticOrigin)
-  target.pathname = pathname
-  target.search = incomingUrl.search
+  const incomingUrl = new URL(request.url);
+  const target = new URL(staticOrigin);
+  target.pathname = pathname;
+  target.search = incomingUrl.search;
 
-  const headers = new Headers(request.headers)
-  headers.set("Host", target.host)
+  const headers = new Headers(request.headers);
+  headers.set('Host', target.host);
 
   const init = {
     method: request.method,
     headers,
-    redirect: "manual",
+    redirect: 'manual',
+  };
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+    init.duplex = 'half';
   }
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = request.body
-    init.duplex = "half"
-  }
-
-  const upstreamReq = new Request(target.toString(), init)
-  return fetch(upstreamReq)
+  const upstreamReq = new Request(target.toString(), init);
+  return fetch(upstreamReq);
 }
 
 function getStaticOrigin(env) {
-  const raw = (env.STATIC_ORIGIN || "").trim()
-  if (!raw) return ""
-  if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, "")
-  return `https://${raw}`.replace(/\/+$/, "")
+  const raw = (env.STATIC_ORIGIN || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '');
+  return `https://${raw}`.replace(/\/+$/, '');
 }
 
 function shouldSpaFallback(pathname) {
-  if (pathname === "/" || pathname === "") return true
-  const last = pathname.split("/").pop() || ""
-  return !last.includes(".")
+  if (pathname === '/' || pathname === '') return true;
+  const last = pathname.split('/').pop() || '';
+  return !last.includes('.');
 }
 
 // ---------- 后端代理 ----------
 async function proxyToBackend(request, env) {
-  const incoming = new URL(request.url)
+  const incoming = new URL(request.url);
 
-  const upstream = new URL(request.url)
-  upstream.hostname = env.BACKEND_HOST
-  upstream.protocol = env.BACKEND_PROTO || "https:"
-  upstream.port = env.BACKEND_PORT || ""
+  const upstream = new URL(request.url);
+  upstream.hostname = env.BACKEND_HOST;
+  upstream.protocol = env.BACKEND_PROTO || 'https:';
+  upstream.port = env.BACKEND_PORT || '';
 
-  const headers = new Headers(request.headers)
-  headers.set("Host", env.BACKEND_HOST)
-  headers.set("X-Forwarded-Host", incoming.host)
-  headers.set("X-Forwarded-Proto", incoming.protocol.replace(":", ""))
+  const headers = new Headers(request.headers);
+  headers.set('Host', env.BACKEND_HOST);
+  headers.set('X-Forwarded-Host', incoming.host);
+  headers.set('X-Forwarded-Proto', incoming.protocol.replace(':', ''));
 
   const init = {
     method: request.method,
     headers,
-    redirect: "manual",
+    redirect: 'manual',
+  };
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body;
+    init.duplex = 'half';
   }
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = request.body
-    init.duplex = "half"
-  }
-
-  const resp = await fetch(new Request(upstream.toString(), init))
-  const outHeaders = new Headers(resp.headers)
+  const resp = await fetch(new Request(upstream.toString(), init));
+  const outHeaders = new Headers(resp.headers);
 
   // 动态接口默认不缓存
-  outHeaders.set("Cache-Control", "no-store, no-cache, must-revalidate")
+  outHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
 
   return new Response(resp.body, {
     status: resp.status,
     statusText: resp.statusText,
     headers: outHeaders,
-  })
+  });
 }
 
 function shouldServeForbidden(request, pathname, hostname) {
-  return hostname.endsWith(CANONICAL_HOST) && request.cf?.country === "CN" && !isPublicApiPath(pathname)
+  return (
+    hostname.endsWith(CANONICAL_HOST) &&
+    request.cf?.country === 'CN' &&
+    !isPublicApiPath(pathname)
+  );
 }
 
 function isPublicApiPath(pathname) {
   return (
-    pathname === "/api" ||
-    pathname.startsWith("/api/") ||
-    pathname === "/v1" ||
-    pathname.startsWith("/v1/")
-  )
+    pathname === '/api' ||
+    pathname.startsWith('/api/') ||
+    pathname === '/v1' ||
+    pathname.startsWith('/v1/')
+  );
 }
 
 function shouldProxyToBackend(pathname) {
-  const prefixes = ["/api/", "/v1/", "/v1beta/", "/pg/", "/mj/", "/suno/"]
+  const prefixes = ['/api/', '/v1/', '/v1beta/', '/pg/', '/mj/', '/suno/'];
 
   if (
-    pathname === "/api" ||
-    pathname === "/v1" ||
-    pathname === "/v1beta" ||
-    pathname === "/pg" ||
-    pathname === "/mj" ||
-    pathname === "/suno"
+    pathname === '/api' ||
+    pathname === '/v1' ||
+    pathname === '/v1beta' ||
+    pathname === '/pg' ||
+    pathname === '/mj' ||
+    pathname === '/suno'
   ) {
-    return true
+    return true;
   }
 
-  if (pathname === "/v1/realtime" || pathname.startsWith("/v1/realtime/")) {
-    return true
+  if (pathname === '/v1/realtime' || pathname.startsWith('/v1/realtime/')) {
+    return true;
   }
 
-  return prefixes.some((p) => pathname.startsWith(p))
+  return prefixes.some((p) => pathname.startsWith(p));
 }
 
 function safeDecodePath(pathname) {
   try {
-    return decodeURIComponent(pathname)
+    return decodeURIComponent(pathname);
   } catch {
-    return pathname
+    return pathname;
   }
 }

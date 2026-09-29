@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { API } from '../../helpers';
+import { useTranslation } from 'react-i18next';
 
-export default function HTMLPreview({ artwork, title }) {
+export default function HTMLPreview({ artwork, title, onExpand }) {
+  const { t } = useTranslation();
   // The parent keys this component by artwork ID. Keep its navigation URL for
   // its lifetime: a new signature from polling is not a different document.
   const [src] = useState(() => {
@@ -11,7 +13,7 @@ export default function HTMLPreview({ artwork, title }) {
       API.defaults.baseURL || window.location.origin,
     ).href;
   });
-  return (
+  const frame = (
     <iframe
       title={title}
       sandbox='allow-scripts'
@@ -20,6 +22,21 @@ export default function HTMLPreview({ artwork, title }) {
       scrolling='no'
       src={src}
       className='monitor-html-preview'
+      tabIndex={onExpand ? -1 : undefined}
+      aria-hidden={onExpand ? true : undefined}
     />
+  );
+  return onExpand ? (
+    <div className='monitor-preview-thumbnail'>
+      {frame}
+      <button
+        type='button'
+        className='monitor-preview-open'
+        aria-label={`${title} · ${t('放大预览')}`}
+        onClick={onExpand}
+      />
+    </div>
+  ) : (
+    frame
   );
 }

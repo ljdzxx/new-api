@@ -206,7 +206,14 @@ export default function GroupTests({ group }) {
             <small>{timeOf((selected || artwork).at)}</small>
           )}
         </div>
-        {preview || (
+        {artwork ? (
+          <HTMLPreview
+            key={artwork.id}
+            artwork={artwork}
+            title={`${group.name} ${t('HTML 预览')}`}
+            onExpand={() => setExpanded(true)}
+          />
+        ) : (
           <div className='monitor-preview-empty'>
             {selected && !selected.ok
               ? t('本次请求未完成，无预览')
@@ -222,11 +229,6 @@ export default function GroupTests({ group }) {
         )}
         <div className='monitor-preview-controls'>
           <small>{t('点击 SVG 状态方块切换预览')}</small>
-          {artwork && (
-            <Button size='small' onClick={() => setExpanded(true)}>
-              {t('放大预览')}
-            </Button>
-          )}
         </div>
       </td>
       <Modal
@@ -234,6 +236,7 @@ export default function GroupTests({ group }) {
         visible={details}
         onCancel={() => setDetails(false)}
         footer={null}
+        bodyStyle={{ marginBottom: 24 }}
         width={820}
       >
         {recordLoading ? (

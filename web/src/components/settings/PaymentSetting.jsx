@@ -71,7 +71,11 @@ const PaymentSetting = () => {
       switch (item.key) {
         case 'TopupGroupRatio':
           try {
-            newInputs[item.key] = JSON.stringify(JSON.parse(item.value), null, 2);
+            newInputs[item.key] = JSON.stringify(
+              JSON.parse(item.value),
+              null,
+              2,
+            );
           } catch (error) {
             console.error('解析 TopupGroupRatio 出错:', error);
             newInputs[item.key] = item.value;
@@ -79,7 +83,11 @@ const PaymentSetting = () => {
           break;
         case 'payment_setting.amount_options':
           try {
-            newInputs.AmountOptions = JSON.stringify(JSON.parse(item.value), null, 2);
+            newInputs.AmountOptions = JSON.stringify(
+              JSON.parse(item.value),
+              null,
+              2,
+            );
           } catch (error) {
             console.error('解析 AmountOptions 出错:', error);
             newInputs.AmountOptions = item.value;
@@ -87,7 +95,11 @@ const PaymentSetting = () => {
           break;
         case 'payment_setting.amount_discount':
           try {
-            newInputs.AmountDiscount = JSON.stringify(JSON.parse(item.value), null, 2);
+            newInputs.AmountDiscount = JSON.stringify(
+              JSON.parse(item.value),
+              null,
+              2,
+            );
           } catch (error) {
             console.error('解析 AmountDiscount 出错:', error);
             newInputs.AmountDiscount = item.value;
@@ -95,7 +107,11 @@ const PaymentSetting = () => {
           break;
         case 'payment_setting.mall_links':
           try {
-            newInputs.MallLinks = JSON.stringify(JSON.parse(item.value), null, 2);
+            newInputs.MallLinks = JSON.stringify(
+              JSON.parse(item.value),
+              null,
+              2,
+            );
           } catch (error) {
             console.error('解析 MallLinks 出错:', error);
             newInputs.MallLinks = item.value;
@@ -125,7 +141,8 @@ const PaymentSetting = () => {
 
     console.log('[payment-debug][PaymentSetting] getOptions parsed values', {
       paymentDisplayType: newInputs['payment_setting.display_currency_type'],
-      paymentDisplaySymbol: newInputs['payment_setting.display_currency_symbol'],
+      paymentDisplaySymbol:
+        newInputs['payment_setting.display_currency_symbol'],
       paymentDisplayRate:
         newInputs['payment_setting.display_currency_exchange_rate'],
       serverAddress: newInputs.ServerAddress,

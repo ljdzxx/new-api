@@ -84,7 +84,8 @@ const resolveStage = (period, now) => {
 const PrizeQuantityGrid = ({ quantity, total, label }) => {
   const safeTotal = Math.max(1, Number(total || 0));
   const safeQuantity = Math.max(0, Math.min(Number(quantity || 0), safeTotal));
-  const cellWidth = safeTotal > 120 ? 2 : safeTotal > 80 ? 3 : safeTotal > 40 ? 5 : 11;
+  const cellWidth =
+    safeTotal > 120 ? 2 : safeTotal > 80 ? 3 : safeTotal > 40 ? 5 : 11;
   const cellGap = safeTotal > 80 ? 1 : 2;
 
   return (
@@ -176,7 +177,13 @@ const ScratchCodeCard = ({ code, scratched, onReveal }) => {
     const ctx = canvas.getContext('2d');
     ctx.globalCompositeOperation = 'destination-out';
     ctx.beginPath();
-    ctx.arc(event.clientX - rect.left, event.clientY - rect.top, 22, 0, Math.PI * 2);
+    ctx.arc(
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+      22,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
   };
 
@@ -253,8 +260,11 @@ const Lottery = () => {
   const period = detail?.period;
   const stage = resolveStage(period, now);
 
-  const countdownTarget = stage === 'pending' ? period?.start_time : period?.end_time;
-  const countdownText = countdownTarget ? formatCountdown(countdownTarget - now) : '--';
+  const countdownTarget =
+    stage === 'pending' ? period?.start_time : period?.end_time;
+  const countdownText = countdownTarget
+    ? formatCountdown(countdownTarget - now)
+    : '--';
   const prizeTotal = detail?.period?.prize_count || 0;
   const entryTotal = detail?.period?.entry_count || 0;
   const winnerTotal = detail?.period?.winner_count || 0;
@@ -357,10 +367,17 @@ const Lottery = () => {
       .filter((group) => group.winners.length > 0);
 
     const knownPrizeIds = new Set(prizes.map((prize) => prize.id));
-    const unknownWinners = winners.filter((winner) => !knownPrizeIds.has(winner.prize_id));
+    const unknownWinners = winners.filter(
+      (winner) => !knownPrizeIds.has(winner.prize_id),
+    );
     if (unknownWinners.length > 0) {
       groups.push({
-        prize: { id: 0, level_name: t('其他奖项'), quantity: unknownWinners.length, sort_order: Number.MAX_SAFE_INTEGER },
+        prize: {
+          id: 0,
+          level_name: t('其他奖项'),
+          quantity: unknownWinners.length,
+          sort_order: Number.MAX_SAFE_INTEGER,
+        },
         rank: groups.length + 1,
         winners: unknownWinners,
       });
@@ -499,9 +516,19 @@ const Lottery = () => {
               disabled={stage !== 'running' || detail?.self_entry}
               loading={joining}
               onClick={joinLottery}
-              icon={detail?.self_entry ? <CheckCircle2 size={18} /> : <Gift size={18} />}
+              icon={
+                detail?.self_entry ? (
+                  <CheckCircle2 size={18} />
+                ) : (
+                  <Gift size={18} />
+                )
+              }
             >
-              {detail?.self_entry ? t('已成功参与') : stage === 'running' ? t('立即参与抽奖') : t('等待活动开始')}
+              {detail?.self_entry
+                ? t('已成功参与')
+                : stage === 'running'
+                  ? t('立即参与抽奖')
+                  : t('等待活动开始')}
             </Button>
           </div>
         </div>
@@ -517,7 +544,11 @@ const Lottery = () => {
           <div className='lottery-countdown'>
             <Clock size={20} />
             <span>{statusCopy[stage]}</span>
-            <strong>{stage === 'drawn' || stage === 'drawing' ? statusCopy[stage] : countdownText}</strong>
+            <strong>
+              {stage === 'drawn' || stage === 'drawing'
+                ? statusCopy[stage]
+                : countdownText}
+            </strong>
           </div>
         </div>
       </section>
@@ -576,7 +607,11 @@ const Lottery = () => {
                   {detail?.self_entry ? (
                     <div className='joined-state'>
                       <CheckCircle2 size={24} />
-                      <span>{stage === 'drawn' ? t('已参与本期抽奖') : t('已成功参与，开奖后查看结果')}</span>
+                      <span>
+                        {stage === 'drawn'
+                          ? t('已参与本期抽奖')
+                          : t('已成功参与，开奖后查看结果')}
+                      </span>
                     </div>
                   ) : (
                     <Button
@@ -617,7 +652,11 @@ const Lottery = () => {
                           total={maxPrizeQuantity}
                           label={`${prize.level_name} ${prize.quantity} ${t('份')}`}
                         />
-                        {prize.paid_only && <Tag className='lottery-paid-tag'>{t('限付费用户')}</Tag>}
+                        {prize.paid_only && (
+                          <Tag className='lottery-paid-tag'>
+                            {t('限付费用户')}
+                          </Tag>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -638,7 +677,10 @@ const Lottery = () => {
               ) : winnerGroups.length > 0 ? (
                 <div className='winner-group-list'>
                   {winnerGroups.map((group) => (
-                    <div className='winner-group' key={group.prize.id || group.prize.level_name}>
+                    <div
+                      className='winner-group'
+                      key={group.prize.id || group.prize.level_name}
+                    >
                       <div className='winner-group-head'>
                         <div className='winner-group-badge'>
                           <Trophy size={20} />
@@ -646,9 +688,14 @@ const Lottery = () => {
                         </div>
                         <div>
                           <strong>{group.prize.level_name}</strong>
-                          <p>{group.prize.description || t('幸运名单已公布')}</p>
+                          <p>
+                            {group.prize.description || t('幸运名单已公布')}
+                          </p>
                         </div>
-                        <Tag color='red'>{group.winners.length} / {group.prize.quantity || group.winners.length}</Tag>
+                        <Tag color='red'>
+                          {group.winners.length} /{' '}
+                          {group.prize.quantity || group.winners.length}
+                        </Tag>
                       </div>
                       <div className='winner-list'>
                         {group.winners.map((winner, index) => (

@@ -60,6 +60,13 @@ func ModelHealthChannelSupported(channelType int) bool {
 	return true
 }
 
+// The channel switch defaults to enabled, including channels saved before it existed.
+// The global switch and supported channel types are checked separately.
+func (ch *Channel) IsModelHealthEnabled() bool {
+	enabled := ch.GetSetting().ModelHealthEnabled
+	return enabled == nil || *enabled
+}
+
 // Positive endpoint list: video, task submission/polling and realtime are excluded.
 func ModelHealthRequestSupported(path string) bool {
 	switch path {
@@ -217,7 +224,7 @@ func mutateModelHealth(op, key, expectedEpoch, receipt string, initial ChannelMo
 }
 
 func BeginModelHealthAttempt(ch *Channel, name string, testing bool) (*ModelHealthAttempt, error) {
-	if (!testing && !operation_setting.GetModelHealthSettings().Enabled) || !ModelHealthChannelSupported(ch.Type) {
+	if (!testing && (!operation_setting.GetModelHealthSettings().Enabled || !ch.IsModelHealthEnabled())) || !ModelHealthChannelSupported(ch.Type) {
 		return nil, nil
 	}
 	name = ChannelModelHealthName(ch, name)
@@ -329,6 +336,20 @@ func FilterModelHealthChannels(channels []*Channel, name string) ([]*Channel, er
 	if !operation_setting.GetModelHealthSettings().Enabled {
 		return channels, nil
 	}
+	keys := make([]string, 0, len(channels))
+	channelKeys := make([]string, len(channels))
+	for i, ch := range channels {
+		if ModelHealthChannelSupported(ch.Type) && ch.IsModelHealthEnabled() {
+			if model := ChannelModelHealthName(ch, name); model != "" {
+				channelKeys[i] = modelHealthKey(ch.Id, model)
+				keys = append(keys, channelKeys[i])
+			}
+		}
+	}
+	// Opted-out channels do not depend on the monitoring cache being available.
+	if len(keys) == 0 {
+		return channels, nil
+	}
 	config, err := loadModelHealthConfig()
 	if err != nil {
 		return nil, err
@@ -336,21 +357,13 @@ func FilterModelHealthChannels(channels []*Channel, name string) ([]*Channel, er
 	if !config.Enabled {
 		return channels, nil
 	}
-	keys := make([]string, 0, len(channels))
-	for _, ch := range channels {
-		if ModelHealthChannelSupported(ch.Type) {
-			if model := ChannelModelHealthName(ch, name); model != "" {
-				keys = append(keys, modelHealthKey(ch.Id, model))
-			}
-		}
-	}
 	states, err := readModelHealth(keys)
 	if err != nil {
 		return nil, err
 	}
 	filtered := make([]*Channel, 0, len(channels))
-	for _, ch := range channels {
-		state, found := states[modelHealthKey(ch.Id, ChannelModelHealthName(ch, name))]
+	for i, ch := range channels {
+		state, found := states[channelKeys[i]]
 		if !found || state.Available {
 			filtered = append(filtered, ch)
 		}
@@ -387,7 +400,7 @@ func FillChannelModelHealth(channels []*Channel) {
 		storage = "redis"
 	}
 	for _, ch := range channels {
-		view := &ChannelModelHealthView{Enabled: config.Enabled,
+		view := &ChannelModelHealthView{Enabled: config.Enabled && ch.IsModelHealthEnabled(),
 			Supported: ModelHealthChannelSupported(ch.Type), Storage: storage, Threshold: config.Threshold,
 			ReadAt: time.Now().Unix(), Models: make(map[string]ChannelModelHealth)}
 		if err != nil && view.Supported {

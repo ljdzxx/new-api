@@ -18,7 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { lazy, Suspense, useContext, useMemo } from 'react';
-import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import { AuthRedirect, PrivateRoute, AdminRoute } from './helpers/auth';
 import { StatusContext } from './context/Status';
@@ -57,14 +63,18 @@ const Order = lazy(() => import('./pages/Order'));
 const Invoice = lazy(() => import('./pages/Invoice'));
 const InvoiceAdmin = lazy(() => import('./pages/InvoiceAdmin'));
 const UserLevelPage = lazy(() => import('./pages/UserLevel'));
-const SubscriptionUsageRank = lazy(() => import('./pages/SubscriptionUsageRank'));
+const SubscriptionUsageRank = lazy(
+  () => import('./pages/SubscriptionUsageRank'),
+);
 const InviteRank = lazy(() => import('./pages/InviteRank'));
 const ConsumptionRank = lazy(() => import('./pages/ConsumptionRank'));
 const Lottery = lazy(() => import('./pages/Lottery'));
 const LotteryAdmin = lazy(() => import('./pages/LotteryAdmin'));
 const RegisterForm = lazy(() => import('./components/auth/RegisterForm'));
 const LoginForm = lazy(() => import('./components/auth/LoginForm'));
-const PasswordResetForm = lazy(() => import('./components/auth/PasswordResetForm'));
+const PasswordResetForm = lazy(
+  () => import('./components/auth/PasswordResetForm'),
+);
 const PasswordResetConfirm = lazy(
   () => import('./components/auth/PasswordResetConfirm'),
 );
@@ -122,13 +132,13 @@ function App() {
     <SetupCheck>
       <Routes>
         <Route path='/' element={withSuspense(<Home />)} />
-        <Route path='/monitor' element={<Navigate to='/availability' replace />} />
+        <Route
+          path='/monitor'
+          element={<Navigate to='/availability' replace />}
+        />
         <Route path='/setup' element={withSuspense(<Setup />)} />
         <Route path='/forbidden' element={withSuspense(<Forbidden />)} />
-        <Route
-          path='/console/models'
-          element={withAdminRoute(<ModelPage />)}
-        />
+        <Route path='/console/models' element={withAdminRoute(<ModelPage />)} />
         <Route
           path='/console/deployment'
           element={withAdminRoute(<ModelDeploymentPage />)}
@@ -137,14 +147,8 @@ function App() {
           path='/console/subscription'
           element={withAdminRoute(<Subscription />)}
         />
-        <Route
-          path='/console/channel'
-          element={withAdminRoute(<Channel />)}
-        />
-        <Route
-          path='/console/token'
-          element={withPrivateRoute(<Token />)}
-        />
+        <Route path='/console/channel' element={withAdminRoute(<Channel />)} />
+        <Route path='/console/token' element={withPrivateRoute(<Token />)} />
         <Route
           path='/console/playground'
           element={withPrivateRoute(<Playground />)}
@@ -165,10 +169,7 @@ function App() {
           path='/console/lottery-admin'
           element={withAdminRoute(<LotteryAdmin />)}
         />
-        <Route
-          path='/console/user'
-          element={withAdminRoute(<User />)}
-        />
+        <Route path='/console/user' element={withAdminRoute(<User />)} />
         <Route
           path='/console/user-subscriptions'
           element={withAdminRoute(<UserSubscriptions />)}
@@ -205,10 +206,7 @@ function App() {
             </AuthRedirect>,
           )}
         />
-        <Route
-          path='/reset'
-          element={withSuspense(<PasswordResetForm />)}
-        />
+        <Route path='/reset' element={withSuspense(<PasswordResetForm />)} />
         <Route
           path='/oauth/github'
           element={withSuspense(<OAuth2Callback type='github' />)}
@@ -229,22 +227,13 @@ function App() {
           path='/oauth/:provider'
           element={withSuspense(<DynamicOAuth2Callback />)}
         />
-        <Route
-          path='/console/setting'
-          element={withAdminRoute(<Setting />)}
-        />
+        <Route path='/console/setting' element={withAdminRoute(<Setting />)} />
         <Route
           path='/console/personal'
           element={withPrivateRoute(<PersonalSetting />)}
         />
-        <Route
-          path='/console/topup'
-          element={withPrivateRoute(<TopUp />)}
-        />
-        <Route
-          path='/console/order'
-          element={withAdminRoute(<Order />)}
-        />
+        <Route path='/console/topup' element={withPrivateRoute(<TopUp />)} />
+        <Route path='/console/order' element={withAdminRoute(<Order />)} />
         <Route
           path='/console/invoice'
           element={withPrivateRoute(<Invoice />)}
@@ -262,38 +251,24 @@ function App() {
           element={withPrivateRoute(<Lottery />)}
         />
         <Route path='/lottery' element={withSuspense(<Lottery />)} />
-        <Route
-          path='/console/log'
-          element={withPrivateRoute(<Log />)}
-        />
-        <Route
-          path='/console'
-          element={withPrivateRoute(<Dashboard />)}
-        />
+        <Route path='/console/log' element={withPrivateRoute(<Log />)} />
+        <Route path='/console' element={withPrivateRoute(<Dashboard />)} />
         <Route
           path='/console/midjourney'
           element={withPrivateRoute(<Midjourney />)}
         />
-        <Route
-          path='/console/task'
-          element={withPrivateRoute(<Task />)}
-        />
+        <Route path='/console/task' element={withPrivateRoute(<Task />)} />
         <Route
           path='/pricing'
           element={
-            pricingRequireAuth ? (
-              withPrivateRoute(<Pricing />)
-            ) : (
-              withSuspense(<Pricing />)
-            )
+            pricingRequireAuth
+              ? withPrivateRoute(<Pricing />)
+              : withSuspense(<Pricing />)
           }
         />
         <Route path='/docs' element={withSuspense(<Docs />)} />
         <Route path='/about' element={withSuspense(<About />)} />
-        <Route
-          path='/availability'
-          element={withSuspense(<Availability />)}
-        />
+        <Route path='/availability' element={withSuspense(<Availability />)} />
         <Route
           path='/user-agreement'
           element={withSuspense(<UserAgreement />)}
@@ -302,15 +277,9 @@ function App() {
           path='/privacy-policy'
           element={withSuspense(<PrivacyPolicy />)}
         />
-        <Route
-          path='/console/chat/:id?'
-          element={withSuspense(<Chat />)}
-        />
+        <Route path='/console/chat/:id?' element={withSuspense(<Chat />)} />
         {/* 方便使用chat2link直接跳转聊天... */}
-        <Route
-          path='/chat2link'
-          element={withPrivateRoute(<Chat2Link />)}
-        />
+        <Route path='/chat2link' element={withPrivateRoute(<Chat2Link />)} />
         <Route path='*' element={withSuspense(<NotFound />)} />
       </Routes>
     </SetupCheck>

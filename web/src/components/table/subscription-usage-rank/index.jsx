@@ -443,102 +443,102 @@ const SubscriptionUsageRankPage = () => {
   return (
     <>
       <CardPro
-      type='type1'
-      descriptionArea={
-        <div className='flex flex-col md:flex-row justify-between items-start md:items-center gap-2 w-full'>
-          <div className='flex items-center text-blue-500'>
-            <BarChart3 size={16} className='mr-2' />
-            <Text>{t('订阅套餐使用量排行榜')}</Text>
-          </div>
+        type='type1'
+        descriptionArea={
+          <div className='flex flex-col md:flex-row justify-between items-start md:items-center gap-2 w-full'>
+            <div className='flex items-center text-blue-500'>
+              <BarChart3 size={16} className='mr-2' />
+              <Text>{t('订阅套餐使用量排行榜')}</Text>
+            </div>
 
-          <CompactModeToggle
-            compactMode={compactMode}
-            setCompactMode={setCompactMode}
-            t={t}
-          />
-        </div>
-      }
-      actionsArea={
-        <div className='flex flex-col gap-3 w-full'>
-          <div className='flex flex-wrap gap-2'>
-            {RANGE_OPTIONS.map((option) => (
-              <Button
-                key={option.key}
-                size='small'
-                theme={rangeKey === option.key ? 'solid' : 'borderless'}
-                type={rangeKey === option.key ? 'primary' : 'tertiary'}
-                icon={option.key === rangeKey ? <Crown size={14} /> : null}
-                onClick={() => handleRangeChange(option.key)}
-              >
-                {t(option.label)}
-              </Button>
-            ))}
-            <Button
-              size='small'
-              icon={<IconRefresh />}
-              onClick={() => refreshRankings()}
-            >
-              {t('刷新')}
-            </Button>
-          </div>
-
-          <div className='flex flex-col md:flex-row gap-2 w-full'>
-            <Input
-              value={keywordInput}
-              onChange={setKeywordInput}
-              onEnterPress={handleSearch}
-              prefix={<IconSearch />}
-              placeholder={t('搜索用户 ID / 用户名 / 显示名')}
-              showClear
+            <CompactModeToggle
+              compactMode={compactMode}
+              setCompactMode={setCompactMode}
+              t={t}
             />
-            <div className='flex gap-2 w-full md:w-auto'>
-              <Button className='flex-1 md:flex-none' onClick={handleSearch}>
-                {t('搜索')}
-              </Button>
+          </div>
+        }
+        actionsArea={
+          <div className='flex flex-col gap-3 w-full'>
+            <div className='flex flex-wrap gap-2'>
+              {RANGE_OPTIONS.map((option) => (
+                <Button
+                  key={option.key}
+                  size='small'
+                  theme={rangeKey === option.key ? 'solid' : 'borderless'}
+                  type={rangeKey === option.key ? 'primary' : 'tertiary'}
+                  icon={option.key === rangeKey ? <Crown size={14} /> : null}
+                  onClick={() => handleRangeChange(option.key)}
+                >
+                  {t(option.label)}
+                </Button>
+              ))}
               <Button
-                className='flex-1 md:flex-none'
-                type='tertiary'
-                onClick={handleReset}
+                size='small'
+                icon={<IconRefresh />}
+                onClick={() => refreshRankings()}
               >
-                {t('重置')}
+                {t('刷新')}
               </Button>
             </div>
-          </div>
-        </div>
-      }
-      paginationArea={createCardProPagination({
-        currentPage: activePage,
-        pageSize: pageSize,
-        total,
-        onPageChange: handlePageChange,
-        onPageSizeChange: handlePageSizeChange,
-        isMobile,
-        t,
-      })}
-      t={t}
-    >
-      <div className='flex flex-col gap-4'>
-        <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3'>
-          {summaryCards.map((card) => (
-            <SummaryCard
-              key={card.key}
-              title={card.title}
-              value={card.value}
-              hint={card.hint}
-            />
-          ))}
-        </div>
 
-        <CardTable
-          columns={columns}
-          dataSource={items}
-          loading={loading}
-          rowKey='user_id'
-          empty={emptyNode}
-          pagination={false}
-          scroll={compactMode ? undefined : { x: 'max-content' }}
-        />
-      </div>
+            <div className='flex flex-col md:flex-row gap-2 w-full'>
+              <Input
+                value={keywordInput}
+                onChange={setKeywordInput}
+                onEnterPress={handleSearch}
+                prefix={<IconSearch />}
+                placeholder={t('搜索用户 ID / 用户名 / 显示名')}
+                showClear
+              />
+              <div className='flex gap-2 w-full md:w-auto'>
+                <Button className='flex-1 md:flex-none' onClick={handleSearch}>
+                  {t('搜索')}
+                </Button>
+                <Button
+                  className='flex-1 md:flex-none'
+                  type='tertiary'
+                  onClick={handleReset}
+                >
+                  {t('重置')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        }
+        paginationArea={createCardProPagination({
+          currentPage: activePage,
+          pageSize: pageSize,
+          total,
+          onPageChange: handlePageChange,
+          onPageSizeChange: handlePageSizeChange,
+          isMobile,
+          t,
+        })}
+        t={t}
+      >
+        <div className='flex flex-col gap-4'>
+          <div className='grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3'>
+            {summaryCards.map((card) => (
+              <SummaryCard
+                key={card.key}
+                title={card.title}
+                value={card.value}
+                hint={card.hint}
+              />
+            ))}
+          </div>
+
+          <CardTable
+            columns={columns}
+            dataSource={items}
+            loading={loading}
+            rowKey='user_id'
+            empty={emptyNode}
+            pagination={false}
+            scroll={compactMode ? undefined : { x: 'max-content' }}
+          />
+        </div>
       </CardPro>
 
       <EditUserModal

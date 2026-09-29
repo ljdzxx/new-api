@@ -54,21 +54,37 @@ export default function Trend({ data }) {
         <path
           d={path(probe)}
           fill='none'
-          stroke='#38bdf8'
+          stroke='var(--monitor-accent)'
           strokeWidth='1.7'
           strokeDasharray='4 3'
         />
-        <path d={path(actual)} fill='none' stroke='#34d399' strokeWidth='2' />
+        <path
+          d={path(actual)}
+          fill='none'
+          stroke='var(--monitor-success)'
+          strokeWidth='2'
+        />
         {probe.map((p, i) => (
-          <circle key={`p${i}`} cx={x(p)} cy={y(p)} r='1.4' fill='#38bdf8' />
+          <circle
+            key={`p${i}`}
+            cx={x(p)}
+            cy={y(p)}
+            r='1.4'
+            fill='var(--monitor-accent)'
+          />
         ))}
         {actual.length === 1 && (
-          <circle cx={x(actual[0])} cy={y(actual[0])} r='2' fill='#34d399' />
+          <circle
+            cx={x(actual[0])}
+            cy={y(actual[0])}
+            r='2'
+            fill='var(--monitor-success)'
+          />
         )}
       </svg>
       <div className='monitor-legend'>
-        <span style={{ color: '#38bdf8' }}>{t('探针')}</span>
-        <span style={{ color: '#34d399' }}>{t('真实请求')}</span>
+        <span style={{ color: 'var(--monitor-accent)' }}>{t('探针')}</span>
+        <span style={{ color: 'var(--monitor-success)' }}>{t('真实请求')}</span>
         <span>
           {Math.round(max).toLocaleString()} {t('毫秒')}
         </span>

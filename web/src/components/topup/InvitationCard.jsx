@@ -147,8 +147,7 @@ const InvitationCard = ({
             )}
             {hasInviterReward && (
               <div>
-                {t('同时您也将获得')}{' '}
-                {t('额度')}{' '}
+                {t('同时您也将获得')} {t('额度')}{' '}
                 <span style={highlightStyle}>${inviterMoneyText}</span>
               </div>
             )}

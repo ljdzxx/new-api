@@ -9,12 +9,14 @@ import {
 } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { Activity, RefreshCw } from 'lucide-react';
 import { UserContext } from '../../context/User';
 import { monitorRequests } from './requests';
 import Trend from './Trend';
 import GroupTests from './GroupTests';
 import { monitorFailureMessage } from './errors';
 import UseGroup from './UseGroup';
+import MonitorTheme from './MonitorTheme';
 import './monitor.css';
 
 function Ring({ value, label, count }) {
@@ -22,14 +24,14 @@ function Ring({ value, label, count }) {
     value == null
       ? 'var(--semi-color-text-3)'
       : value >= 0.95
-        ? '#34d399'
-        : '#38bdf8';
+        ? 'var(--monitor-success)'
+        : 'var(--monitor-accent)';
   return (
     <div className='monitor-ring-wrap' title={`n=${count}`}>
       <div
         className='monitor-ring'
         style={{
-          background: `conic-gradient(${color} ${(value || 0) * 360}deg, var(--semi-color-fill-1) 0)`,
+          background: `conic-gradient(${color} ${(value || 0) * 360}deg, var(--monitor-track) 0)`,
         }}
       >
         <span>{value == null ? '—' : `${(value * 100).toFixed(1)}%`}</span>
@@ -55,7 +57,9 @@ function GroupRow({ group, model, onModelChange, probeMinutes, useGroup }) {
         <div className='monitor-subtitle'>{group.description || '—'}</div>
       </td>
       <td>
-        <strong>{group.ratio == null ? '—' : `${group.ratio}x`}</strong>
+        <strong className='monitor-ratio'>
+          {group.ratio == null ? '—' : `${group.ratio}x`}
+        </strong>
       </td>
       <td>
         <div className='monitor-models'>
@@ -234,13 +238,23 @@ export default function Monitor() {
   const unavailable =
     data?.state === 'redis_unavailable' || data?.state === 'disabled';
   return (
-    <div className='monitor-page'>
+    <MonitorTheme>
       <div className='monitor-heading'>
-        <div>
-          <Typography.Title heading={3}>{t('可用性')}</Typography.Title>
-          <p>{t('最近一小时真实请求统计与主动探测')}</p>
+        <div className='monitor-heading-title'>
+          <span className='monitor-heading-icon' aria-hidden='true'>
+            <Activity size={24} strokeWidth={1.7} />
+          </span>
+          <div>
+            <Typography.Title heading={3}>{t('可用性')}</Typography.Title>
+            <p>{t('最近一小时真实请求统计与主动探测')}</p>
+          </div>
         </div>
-        <Button loading={loading} onClick={() => refresh.current()}>
+        <Button
+          className='monitor-refresh'
+          icon={<RefreshCw size={14} aria-hidden='true' />}
+          loading={loading}
+          onClick={() => refresh.current()}
+        >
           {t('刷新')}
         </Button>
       </div>
@@ -263,15 +277,15 @@ export default function Monitor() {
       {data && !unavailable && (
         <>
           <div className='monitor-summary'>
-            <div>
+            <div className='monitor-stat-total'>
               <strong>{groups.length}</strong>
               {t('监控分组')}
             </div>
-            <div>
+            <div className='monitor-stat-healthy'>
               <strong>{healthy}</strong>
               {t('全部模型可用')}
             </div>
-            <div>
+            <div className='monitor-stat-unavailable'>
               <strong>{groups.length - healthy}</strong>
               {t('异常或未知')}
             </div>
@@ -353,6 +367,6 @@ export default function Monitor() {
         </>
       )}
       {using && <UseGroup group={using} onClose={() => setUsing(null)} />}
-    </div>
+    </MonitorTheme>
   );
 }

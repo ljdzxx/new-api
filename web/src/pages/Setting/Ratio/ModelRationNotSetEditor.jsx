@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Empty, Input, Table, Tag, Typography } from '@douyinfe/semi-ui';
+import {
+  Button,
+  Empty,
+  Input,
+  Table,
+  Tag,
+  Typography,
+} from '@douyinfe/semi-ui';
 import { IconSearch } from '@douyinfe/semi-icons';
 import { API, showError, showSuccess } from '../../../helpers';
 import BillingPolicyVisualEditor from './components/BillingPolicyVisualEditor';
@@ -53,8 +60,10 @@ export default function ModelRatioNotSetEditor({ onBillingPolicyChanged }) {
         API.get('/api/channel/models_enabled'),
         API.get('/api/option/billing_policy'),
       ]);
-      if (!modelsResponse.data?.success) throw new Error(modelsResponse.data?.message);
-      if (!policyResponse.data?.success) throw new Error(policyResponse.data?.message);
+      if (!modelsResponse.data?.success)
+        throw new Error(modelsResponse.data?.message);
+      if (!policyResponse.data?.success)
+        throw new Error(policyResponse.data?.message);
       setModels(modelsResponse.data.data || []);
       setConfig(policyResponse.data.data?.config || null);
     } catch (error) {
@@ -116,7 +125,9 @@ export default function ModelRatioNotSetEditor({ onBillingPolicyChanged }) {
       <div className='rounded-xl border bg-semi-color-fill-0 p-4'>
         <Text strong>{t('未设置价格模型')}</Text>
         <Paragraph type='tertiary' className='mb-0 mt-1'>
-          {t('这里列出已启用但尚未配置新版模型计费策略的模型。设置后会自动从列表移出。')}
+          {t(
+            '这里列出已启用但尚未配置新版模型计费策略的模型。设置后会自动从列表移出。',
+          )}
         </Paragraph>
       </div>
       <Input
@@ -134,9 +145,30 @@ export default function ModelRatioNotSetEditor({ onBillingPolicyChanged }) {
         pagination={{ pageSize: 20 }}
         empty={<Empty description={t('当前没有未设置定价的模型')} />}
         columns={[
-          { title: t('模型名称'), dataIndex: 'name', render: (name) => <Text strong className='font-mono'>{name}</Text> },
-          { title: t('状态'), render: () => <Tag color='orange'>{t('未设置价格')}</Tag> },
-          { title: t('操作'), render: (_, record) => <Button theme='solid' onClick={() => setEditingModel(record.name)}>{t('设置价格')}</Button> },
+          {
+            title: t('模型名称'),
+            dataIndex: 'name',
+            render: (name) => (
+              <Text strong className='font-mono'>
+                {name}
+              </Text>
+            ),
+          },
+          {
+            title: t('状态'),
+            render: () => <Tag color='orange'>{t('未设置价格')}</Tag>,
+          },
+          {
+            title: t('操作'),
+            render: (_, record) => (
+              <Button
+                theme='solid'
+                onClick={() => setEditingModel(record.name)}
+              >
+                {t('设置价格')}
+              </Button>
+            ),
+          },
         ]}
       />
       <BillingPolicyVisualEditor

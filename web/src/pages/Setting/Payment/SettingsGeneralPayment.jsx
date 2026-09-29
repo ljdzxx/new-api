@@ -33,7 +33,8 @@ import { useTranslation } from 'react-i18next';
 
 const PAYMENT_DISPLAY_TYPE_FIELD = 'payment_setting.display_currency_type';
 const PAYMENT_DISPLAY_SYMBOL_FIELD = 'payment_setting.display_currency_symbol';
-const PAYMENT_DISPLAY_RATE_FIELD = 'payment_setting.display_currency_exchange_rate';
+const PAYMENT_DISPLAY_RATE_FIELD =
+  'payment_setting.display_currency_exchange_rate';
 
 const DEFAULT_PAYMENT_DISPLAY_INPUTS = {
   [PAYMENT_DISPLAY_TYPE_FIELD]: 'FOLLOW_QUOTA',
@@ -72,7 +73,10 @@ function syncPaymentDisplayToLocalStorage(values, usdExchangeRate) {
     }
     localStorage.setItem('status', JSON.stringify(status));
   } catch (error) {
-    console.error('failed to sync payment display currency to localStorage', error);
+    console.error(
+      'failed to sync payment display currency to localStorage',
+      error,
+    );
   }
 }
 
@@ -98,18 +102,24 @@ export default function SettingsGeneralPayment(props) {
           : '1',
     };
 
-    console.log('[payment-debug][SettingsGeneralPayment] props.options -> currentInputs', {
-      paymentDisplayType: props.options[PAYMENT_DISPLAY_TYPE_FIELD],
-      paymentDisplaySymbol: props.options[PAYMENT_DISPLAY_SYMBOL_FIELD],
-      paymentDisplayRate: props.options[PAYMENT_DISPLAY_RATE_FIELD],
-      currentInputs,
-    });
+    console.log(
+      '[payment-debug][SettingsGeneralPayment] props.options -> currentInputs',
+      {
+        paymentDisplayType: props.options[PAYMENT_DISPLAY_TYPE_FIELD],
+        paymentDisplaySymbol: props.options[PAYMENT_DISPLAY_SYMBOL_FIELD],
+        paymentDisplayRate: props.options[PAYMENT_DISPLAY_RATE_FIELD],
+        currentInputs,
+      },
+    );
 
     setInputs(currentInputs);
   }, [props.options]);
 
   const handleFormChange = (values) => {
-    console.log('[payment-debug][SettingsGeneralPayment] handleFormChange', values);
+    console.log(
+      '[payment-debug][SettingsGeneralPayment] handleFormChange',
+      values,
+    );
     setInputs((prev) => ({ ...prev, ...values }));
   };
 
@@ -145,12 +155,15 @@ export default function SettingsGeneralPayment(props) {
 
     setLoading(true);
     try {
-      console.log('[payment-debug][SettingsGeneralPayment] submitSettings before PUT', {
-        rawInputs: inputs,
-        displayType,
-        displaySymbol,
-        displayRate,
-      });
+      console.log(
+        '[payment-debug][SettingsGeneralPayment] submitSettings before PUT',
+        {
+          rawInputs: inputs,
+          displayType,
+          displaySymbol,
+          displayRate,
+        },
+      );
       const requestQueue = [
         API.put('/api/option/', {
           key: PAYMENT_DISPLAY_TYPE_FIELD,

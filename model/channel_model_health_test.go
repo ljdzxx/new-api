@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
@@ -36,6 +37,97 @@ func setupModelHealth(t *testing.T, redisMode bool) *miniredis.Miniredis {
 		common.RDB, common.RedisEnabled = rdb, enabled
 	})
 	return server
+}
+
+func TestChannelModelHealthSettingDefaultsAndRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		setting *string
+		enabled bool
+	}{
+		{"legacy nil", nil, true},
+		{"legacy empty", common.GetPointer(""), true},
+		{"legacy settings", common.GetPointer(`{"force_format":true}`), true},
+		{"null", common.GetPointer(`{"model_health_enabled":null}`), true},
+		{"enabled", common.GetPointer(`{"model_health_enabled":true}`), true},
+		{"disabled", common.GetPointer(`{"model_health_enabled":false}`), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := &Channel{Setting: tc.setting}
+			require.NoError(t, ch.ValidateSettings())
+			require.Equal(t, tc.enabled, ch.IsModelHealthEnabled())
+			ch.SetSetting(ch.GetSetting())
+			require.Equal(t, tc.enabled, ch.IsModelHealthEnabled(), "saving must preserve explicit false")
+		})
+	}
+}
+
+func TestChannelModelHealthChannelSwitch(t *testing.T) {
+	for _, redisMode := range []bool{false, true} {
+		t.Run(fmt.Sprintf("redis=%v", redisMode), func(t *testing.T) {
+			setupModelHealth(t, redisMode)
+			ch := &Channel{Id: 11, Type: constant.ChannelTypeOpenAI, Models: "a,b"}
+			other := &Channel{Id: 12, Type: constant.ChannelTypeOpenAI, Models: "a"}
+			channels := []*Channel{ch, other}
+			for _, channel := range channels {
+				for i := 0; i < 2; i++ {
+					attempt, err := BeginModelHealthAttempt(channel, "a", false)
+					require.NoError(t, err)
+					require.NotNil(t, attempt)
+					require.NoError(t, attempt.Record(502))
+				}
+			}
+			ch.SetSetting(dto.ChannelSettings{ModelHealthEnabled: common.GetPointer(false)})
+			allowed, err := FilterModelHealthChannels(channels, "a")
+			require.NoError(t, err)
+			require.Equal(t, []*Channel{ch}, allowed)
+			for _, name := range ch.GetModels() {
+				attempt, err := BeginModelHealthAttempt(ch, name, false)
+				require.NoError(t, err)
+				require.Nil(t, attempt)
+				require.NoError(t, attempt.Record(503))
+			}
+			FillChannelModelHealth(channels)
+			require.False(t, ch.ModelHealth.Enabled)
+			require.True(t, other.ModelHealth.Enabled)
+			require.Equal(t, 2, ch.ModelHealth.Models["a"].Count)
+			require.False(t, ch.ModelHealth.Models["a"].Available)
+			require.False(t, ch.ModelHealth.Models["b"].Observed)
+			states, err := readModelHealth([]string{modelHealthKey(ch.Id, "b")})
+			require.NoError(t, err)
+			require.Empty(t, states, "disabled monitoring must not create runtime state")
+
+			ch.SetSetting(dto.ChannelSettings{ModelHealthEnabled: common.GetPointer(true)})
+			_, err = BeginModelHealthAttempt(ch, "a", false)
+			require.ErrorIs(t, err, ErrModelUnavailable)
+			allowed, err = FilterModelHealthChannels(channels, "a")
+			require.NoError(t, err)
+			require.Empty(t, allowed)
+
+			// The global switch still takes precedence over an enabled channel switch.
+			operation_setting.GetMonitorSetting().ModelHealthEnabled = false
+			require.NoError(t, PublishModelHealthOption("monitor_setting.model_health_enabled", "false"))
+			attempt, err := BeginModelHealthAttempt(ch, "a", false)
+			require.NoError(t, err)
+			require.Nil(t, attempt)
+			allowed, err = FilterModelHealthChannels(channels, "a")
+			require.NoError(t, err)
+			require.Equal(t, channels, allowed)
+			FillChannelModelHealth(channels)
+			require.False(t, ch.ModelHealth.Enabled)
+			require.False(t, other.ModelHealth.Enabled)
+
+			// Admin tests may recover historical state even while monitoring is disabled.
+			ch.SetSetting(dto.ChannelSettings{ModelHealthEnabled: common.GetPointer(false)})
+			attempt, err = BeginModelHealthAttempt(ch, "a", true)
+			require.NoError(t, err)
+			require.NotNil(t, attempt)
+			require.NoError(t, attempt.Recover(99))
+			FillChannelModelHealth(channels)
+			require.True(t, ch.ModelHealth.Models["a"].Available)
+			require.False(t, other.ModelHealth.Models["a"].Available)
+		})
+	}
 }
 
 func TestChannelModelHealthTransitions(t *testing.T) {
@@ -170,6 +262,14 @@ func TestChannelModelHealthScopeAndRedisFailure(t *testing.T) {
 	server.Close()
 	_, err = BeginModelHealthAttempt(&Channel{Id: 1, Type: 1, Models: "a"}, "a", false)
 	require.ErrorIs(t, err, ErrModelHealthStorage)
+	ch := &Channel{Id: 1, Type: 1, Models: "a"}
+	ch.SetSetting(dto.ChannelSettings{ModelHealthEnabled: common.GetPointer(false)})
+	attempt, err := BeginModelHealthAttempt(ch, "a", false)
+	require.NoError(t, err)
+	require.Nil(t, attempt)
+	allowed, err := FilterModelHealthChannels([]*Channel{ch}, "a")
+	require.NoError(t, err)
+	require.Equal(t, []*Channel{ch}, allowed)
 }
 
 func TestChannelModelHealthSharedPolicy(t *testing.T) {

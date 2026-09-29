@@ -17,6 +17,7 @@ type ChannelForwardModelTarget struct {
 }
 
 type ChannelSettings struct {
+	ModelHealthEnabled     *bool                       `json:"model_health_enabled,omitempty"` // nil preserves the default: enabled
 	ForceFormat            bool                        `json:"force_format,omitempty"`
 	ThinkingToContent      bool                        `json:"thinking_to_content,omitempty"`
 	MockTest               bool                        `json:"mock_test,omitempty"`

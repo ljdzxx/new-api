@@ -34,7 +34,12 @@ import {
   Toast,
   Typography,
 } from '@douyinfe/semi-ui';
-import { IconDelete, IconEdit, IconPlus, IconUpload } from '@douyinfe/semi-icons';
+import {
+  IconDelete,
+  IconEdit,
+  IconPlus,
+  IconUpload,
+} from '@douyinfe/semi-icons';
 import { Gift, PlayCircle, RefreshCw, Trophy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { API, timestamp2string } from '../../helpers';
@@ -198,7 +203,9 @@ const LotteryAdmin = () => {
       title: t('手动开奖'),
       content: t('开奖后结果不可重开，请确认兑换码数量已与奖品数量一致。'),
       onOk: async () => {
-        const res = await API.post(`/api/lottery/admin/periods/${period.id}/draw`);
+        const res = await API.post(
+          `/api/lottery/admin/periods/${period.id}/draw`,
+        );
         if (res.data.success) {
           Toast.success({ content: t('开奖完成') });
           await refreshAll();
@@ -304,17 +311,26 @@ const LotteryAdmin = () => {
         title: t('展示'),
         dataIndex: 'display_enabled',
         render: (enabled) =>
-          enabled ? <Tag color='green'>{t('展示')}</Tag> : <Tag>{t('不展示')}</Tag>,
+          enabled ? (
+            <Tag color='green'>{t('展示')}</Tag>
+          ) : (
+            <Tag>{t('不展示')}</Tag>
+          ),
       },
       {
         title: t('参与/中奖'),
-        render: (_, record) => `${record.entry_count || 0}/${record.winner_count || 0}`,
+        render: (_, record) =>
+          `${record.entry_count || 0}/${record.winner_count || 0}`,
       },
       {
         title: t('操作'),
         render: (_, record) => (
           <Space>
-            <Button icon={<IconEdit />} size='small' onClick={() => openEditPeriod(record)} />
+            <Button
+              icon={<IconEdit />}
+              size='small'
+              onClick={() => openEditPeriod(record)}
+            />
             <Button
               icon={<PlayCircle size={16} />}
               size='small'
@@ -353,15 +369,28 @@ const LotteryAdmin = () => {
       {
         title: t('限制'),
         dataIndex: 'paid_only',
-        render: (paidOnly) => (paidOnly ? <Tag color='amber'>{t('仅付费用户')}</Tag> : <Tag>{t('全部用户')}</Tag>),
+        render: (paidOnly) =>
+          paidOnly ? (
+            <Tag color='amber'>{t('仅付费用户')}</Tag>
+          ) : (
+            <Tag>{t('全部用户')}</Tag>
+          ),
       },
       { title: t('奖品描述'), dataIndex: 'description' },
       {
         title: t('操作'),
         render: (_, record) => (
           <Space>
-            <Button icon={<IconUpload />} size='small' onClick={() => openImportCodes(record)} />
-            <Button icon={<IconEdit />} size='small' onClick={() => openEditPrize(record)} />
+            <Button
+              icon={<IconUpload />}
+              size='small'
+              onClick={() => openImportCodes(record)}
+            />
+            <Button
+              icon={<IconEdit />}
+              size='small'
+              onClick={() => openEditPrize(record)}
+            />
             <Button
               icon={<IconDelete />}
               size='small'
@@ -383,7 +412,9 @@ const LotteryAdmin = () => {
           <Title heading={3} style={{ margin: 0 }}>
             {t('抽奖管理')}
           </Title>
-          <Text type='secondary'>{t('配置期数、奖品、兑换码，并在截止后手动开奖')}</Text>
+          <Text type='secondary'>
+            {t('配置期数、奖品、兑换码，并在截止后手动开奖')}
+          </Text>
         </div>
         <Space>
           <Button icon={<RefreshCw size={16} />} onClick={refreshAll}>
@@ -415,12 +446,14 @@ const LotteryAdmin = () => {
                   <div className='flex items-center gap-2'>
                     <Gift size={20} color='#c92130' />
                     <Text strong>
-                      {t('第')} {selectedPeriod.issue} {t('期')} {selectedPeriod.title}
+                      {t('第')} {selectedPeriod.issue} {t('期')}{' '}
+                      {selectedPeriod.title}
                     </Text>
                     {statusTag(selectedPeriod.status, t)}
                   </div>
                   <div className='mt-2 text-sm text-[var(--semi-color-text-2)]'>
-                    {timestamp2string(selectedPeriod.start_time)} - {timestamp2string(selectedPeriod.end_time)}
+                    {timestamp2string(selectedPeriod.start_time)} -{' '}
+                    {timestamp2string(selectedPeriod.end_time)}
                   </div>
                 </div>
                 <Button
@@ -453,34 +486,57 @@ const LotteryAdmin = () => {
         onOk={savePeriod}
         okText={t('保存')}
       >
-        <Space vertical align='start' spacing='medium' style={{ width: '100%' }}>
+        <Space
+          vertical
+          align='start'
+          spacing='medium'
+          style={{ width: '100%' }}
+        >
           <InputNumber
             value={periodForm.issue}
             min={0}
             prefix={t('期数')}
-            onChange={(value) => setPeriodForm((prev) => ({ ...prev, issue: value }))}
+            onChange={(value) =>
+              setPeriodForm((prev) => ({ ...prev, issue: value }))
+            }
             style={{ width: '100%' }}
           />
           <Input
             value={periodForm.title}
             prefix={t('标题')}
-            onChange={(value) => setPeriodForm((prev) => ({ ...prev, title: value }))}
+            onChange={(value) =>
+              setPeriodForm((prev) => ({ ...prev, title: value }))
+            }
           />
           <DatePicker
             type='dateTime'
-            value={periodForm.start_time ? new Date(periodForm.start_time * 1000) : undefined}
+            value={
+              periodForm.start_time
+                ? new Date(periodForm.start_time * 1000)
+                : undefined
+            }
             placeholder={t('启动时间')}
             onChange={(value) =>
-              setPeriodForm((prev) => ({ ...prev, start_time: parseDateToTimestamp(value) }))
+              setPeriodForm((prev) => ({
+                ...prev,
+                start_time: parseDateToTimestamp(value),
+              }))
             }
             style={{ width: '100%' }}
           />
           <DatePicker
             type='dateTime'
-            value={periodForm.end_time ? new Date(periodForm.end_time * 1000) : undefined}
+            value={
+              periodForm.end_time
+                ? new Date(periodForm.end_time * 1000)
+                : undefined
+            }
             placeholder={t('截止时间')}
             onChange={(value) =>
-              setPeriodForm((prev) => ({ ...prev, end_time: parseDateToTimestamp(value) }))
+              setPeriodForm((prev) => ({
+                ...prev,
+                end_time: parseDateToTimestamp(value),
+              }))
             }
             style={{ width: '100%' }}
           />
@@ -503,36 +559,51 @@ const LotteryAdmin = () => {
         onOk={savePrize}
         okText={t('保存')}
       >
-        <Space vertical align='start' spacing='medium' style={{ width: '100%' }}>
+        <Space
+          vertical
+          align='start'
+          spacing='medium'
+          style={{ width: '100%' }}
+        >
           <Input
             value={prizeForm.level_name}
             prefix={t('奖项')}
             placeholder={t('例如：一等奖')}
-            onChange={(value) => setPrizeForm((prev) => ({ ...prev, level_name: value }))}
+            onChange={(value) =>
+              setPrizeForm((prev) => ({ ...prev, level_name: value }))
+            }
           />
           <InputNumber
             value={prizeForm.quantity}
             min={1}
             prefix={t('个数')}
-            onChange={(value) => setPrizeForm((prev) => ({ ...prev, quantity: value }))}
+            onChange={(value) =>
+              setPrizeForm((prev) => ({ ...prev, quantity: value }))
+            }
             style={{ width: '100%' }}
           />
           <InputNumber
             value={prizeForm.sort_order}
             prefix={t('排序')}
-            onChange={(value) => setPrizeForm((prev) => ({ ...prev, sort_order: value }))}
+            onChange={(value) =>
+              setPrizeForm((prev) => ({ ...prev, sort_order: value }))
+            }
             style={{ width: '100%' }}
           />
           <TextArea
             value={prizeForm.description}
             placeholder={t('奖品描述')}
             autosize
-            onChange={(value) => setPrizeForm((prev) => ({ ...prev, description: value }))}
+            onChange={(value) =>
+              setPrizeForm((prev) => ({ ...prev, description: value }))
+            }
           />
           <div className='flex items-center gap-3'>
             <Switch
               checked={prizeForm.paid_only}
-              onChange={(checked) => setPrizeForm((prev) => ({ ...prev, paid_only: checked }))}
+              onChange={(checked) =>
+                setPrizeForm((prev) => ({ ...prev, paid_only: checked }))
+              }
             />
             <Text>{t('仅限付费用户')}</Text>
           </div>
