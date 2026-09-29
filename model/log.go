@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/pkg/groupmonitor"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -155,6 +156,10 @@ type RecordConsumeLogParams struct {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	if c != nil {
+		c.Set(groupmonitor.SuccessKey, true)
+		c.Set(groupmonitor.GroupKey, params.Group)
+	}
 	if !common.LogConsumeEnabled {
 		return
 	}

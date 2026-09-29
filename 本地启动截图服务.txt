@@ -1,0 +1,3 @@
+cd C:\vs_project\new-api\deploy\monitor-screenshot
+$env:CHROMIUM_EXECUTABLE_PATH = 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
+node server.mjs

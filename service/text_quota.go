@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/groupmonitor"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/setting/billing_policy"
@@ -608,6 +609,18 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
 	originUsage := usage
 	usage = effectiveBillingUsage(usage)
+	if usage != nil {
+		input := float64(usage.PromptTokens)
+		if usage.InputTokens > 0 {
+			input = float64(usage.InputTokens)
+		} else if usageSemanticFromUsage(relayInfo, usage) == "anthropic" {
+			input += float64(usage.PromptTokensDetails.CachedTokens) + float64(usage.PromptTokensDetails.CacheWriteTokens)
+		}
+		cached := float64(usage.PromptTokensDetails.CachedTokens)
+		if input > 0 && cached > 0 && cached <= input {
+			ctx.Set(groupmonitor.CacheKey, cached/input)
+		}
+	}
 	if relayInfo != nil && usage != nil {
 		relayInfo.ModelMappingActualInputTokens = usage.PromptTokens
 		if usage.InputTokens > 0 {

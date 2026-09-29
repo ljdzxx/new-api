@@ -15,6 +15,7 @@ func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.DecompressRequestMiddleware())
 	router.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	router.Use(middleware.StatsMiddleware())
+	router.Use(middleware.GroupMonitor())
 	// Balance introspection must remain available when relay quota is exhausted.
 	router.GET("/v1/usage", middleware.RouteTag("relay"), middleware.UsageTokenAuth(), controller.GetUsageCompat)
 	// https://platform.openai.com/docs/api-reference/introduction

@@ -50,6 +50,8 @@ export default defineConfig({
       'stroke',
       'strokeLinecap',
       'strokeLinejoin',
+      'strokeDasharray',
+      'referrerPolicy',
       'variant',
       'wrapperClassName',
       'accept',

@@ -1,0 +1,29 @@
+.monitor-settings {
+  color: var(--semi-color-text-0);
+}
+
+/* Native controls need an explicit, matching foreground and surface in both
+   themes. Keep these rules scoped so other settings pages are unaffected. */
+.monitor-settings .monitor-settings-field {
+  color: var(--semi-color-text-0);
+  -webkit-text-fill-color: var(--semi-color-text-0);
+  caret-color: var(--semi-color-text-0);
+  background-color: var(--semi-color-bg-0);
+  border-color: var(--semi-color-border);
+  color-scheme: light;
+}
+
+body[theme-mode='dark'] .monitor-settings .monitor-settings-field {
+  color-scheme: dark;
+}
+
+.monitor-settings .monitor-settings-field:focus {
+  border-color: var(--semi-color-primary);
+  outline: 2px solid var(--semi-color-primary);
+  outline-offset: 2px;
+}
+
+.monitor-settings .monitor-settings-field::placeholder {
+  color: var(--semi-color-text-2);
+  -webkit-text-fill-color: var(--semi-color-text-2);
+}

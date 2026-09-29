@@ -51,6 +51,7 @@ import PaymentSetting from '../../components/settings/PaymentSetting';
 import ModelDeploymentSetting from '../../components/settings/ModelDeploymentSetting';
 import PerformanceSetting from '../../components/settings/PerformanceSetting';
 import UserLevelSetting from '../../components/settings/UserLevelSetting';
+import MonitorSettings from './Monitor';
 
 const Setting = () => {
   const { t } = useTranslation();
@@ -60,6 +61,11 @@ const Setting = () => {
   let panes = [];
 
   if (isRoot()) {
+    panes.push({
+      tab: t('监控设置'),
+      content: <MonitorSettings />,
+      itemKey: 'monitor',
+    });
     panes.push({
       tab: (
         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>

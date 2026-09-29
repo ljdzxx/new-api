@@ -107,6 +107,7 @@ func main() {
 	service.StartSubscriptionQuotaResetTask()
 	// Channel daily mark cleanup task (quota-insufficient daily mark expiration)
 	service.StartChannelDailyMarkCleanupTask()
+	service.StartGroupMonitorTasks()
 	// Lottery draw task (deadline-based drawing)
 	service.StartLotteryDrawTask()
 

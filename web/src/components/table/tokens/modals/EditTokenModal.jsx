@@ -72,7 +72,7 @@ const EditTokenModal = (props) => {
     model_limits_enabled: false,
     model_limits: [],
     allow_ips: '',
-    group: '',
+    group: props.defaultGroup || '',
     cross_group_retry: false,
     tokenCount: 1,
   });
@@ -187,6 +187,12 @@ const EditTokenModal = (props) => {
     }
   }, [props.visiable, props.editingToken.id]);
 
+  useEffect(() => {
+    if (props.visiable && !isEdit && props.defaultGroup && groups.length) {
+      formApiRef.current?.setValue('group', props.defaultGroup);
+    }
+  }, [props.visiable, props.defaultGroup, groups.length]);
+
   const generateRandomSuffix = () => {
     const characters =
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -252,7 +258,10 @@ const EditTokenModal = (props) => {
         }
         localInputs.model_limits = localInputs.model_limits.join(',');
         localInputs.model_limits_enabled = localInputs.model_limits.length > 0;
-        let res = await API.post(`/api/token/`, localInputs);
+        let res = await API.post(
+          props.createEndpoint || '/api/token/',
+          localInputs,
+        );
         const { success, message } = res.data;
         if (success) {
           successCount++;

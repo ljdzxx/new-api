@@ -308,6 +308,17 @@ func (token *Token) Update() (err error) {
 	return err
 }
 
+// UpdateMonitorGroup changes only routing; concurrent quota updates are preserved.
+func (token *Token) UpdateMonitorGroup(group string) error {
+	if err := DB.Model(&Token{}).Where("id = ? AND user_id = ?", token.Id, token.UserId).Update("group", group).Error; err != nil {
+		return err
+	}
+	if common.RedisEnabled {
+		return cacheDeleteToken(token.Key)
+	}
+	return nil
+}
+
 func (token *Token) SelectUpdate() (err error) {
 	defer func() {
 		if shouldUpdateRedis(true, err) {

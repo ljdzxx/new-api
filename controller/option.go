@@ -142,6 +142,10 @@ func UpdateOption(c *gin.Context) {
 		common.ApiErrorMsg(c, "Redis 状态为只读配置")
 		return
 	}
+	if option.Key == "GroupMonitorConfigSecret" {
+		common.ApiErrorMsg(c, "请使用监控设置接口保存配置")
+		return
+	}
 	if err := common.ValidateRegisterRiskOption(option.Key, option.Value.(string)); err != nil {
 		common.ApiError(c, err)
 		return

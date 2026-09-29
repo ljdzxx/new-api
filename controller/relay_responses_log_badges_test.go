@@ -105,3 +105,47 @@ func TestResponsesEncryptedFailureBadgesIncludePassthrough(t *testing.T) {
 		}
 	}
 }
+
+// A consume log records billable output, not necessarily a completed response.
+// Distinguish a successful terminal event from an HTTP 200 stream that ends early.
+func TestResponsesConsumeBadgesDistinguishCompletedAndTruncatedStreams(t *testing.T) {
+	for _, completed := range []bool{true, false} {
+		t.Run(fmt.Sprintf("completed=%t", completed), func(t *testing.T) {
+			db := setupResponsesRelayBillingTest(t)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, "data: "+`{"type":"response.output_text.delta","delta":"Here is the answer."}`+"\n\n")
+				if completed {
+					fmt.Fprint(w, "data: "+`{"type":"response.completed","response":{"id":"resp_ok","status":"completed","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}}`+"\n\n")
+				}
+			}))
+			defer server.Close()
+			service.InitHttpClient()
+			body := `{"model":"gpt-4o-mini","stream":true,"input":[{"type":"reasoning","encrypted_content":"gAAAAAB_encrypted_reasoning_1234567890"},{"role":"user","content":"continue"}]}`
+			var request dto.OpenAIResponsesRequest
+			require.NoError(t, common.Unmarshal([]byte(body), &request))
+			c, recorder, _ := newRelayMockContext(true)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, server.URL)
+			common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{})
+			common.SetContextKey(c, constant.ContextKeyResponsesLogBadges, []string{"E1", "E2"})
+			info := &relaycommon.RelayInfo{UserId: 42, TokenId: 77, OriginModelName: "gpt-4o-mini", RelayMode: relayconstant.RelayModeResponses, Request: &request, IsStream: true, DisablePing: true}
+			apiErr := relay.ResponsesHelper(c, info)
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Contains(t, recorder.Body.String(), "Here is the answer.")
+			var logs []model.Log
+			require.NoError(t, db.Where("type = ?", model.LogTypeConsume).Find(&logs).Error)
+			require.Len(t, logs, 1)
+			if completed {
+				require.Nil(t, apiErr)
+				require.False(t, gjson.Get(logs[0].Other, "responses_badges").Exists())
+			} else {
+				require.NotNil(t, apiErr)
+				require.Equal(t, http.StatusBadGateway, apiErr.StatusCode)
+				require.Contains(t, apiErr.Error(), "before response.completed")
+				require.Equal(t, `["E1"]`, gjson.Get(logs[0].Other, "responses_badges").Raw)
+			}
+		})
+	}
+}

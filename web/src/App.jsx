@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { lazy, Suspense, useContext, useMemo } from 'react';
-import { Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Loading from './components/common/ui/Loading';
 import { AuthRedirect, PrivateRoute, AdminRoute } from './helpers/auth';
 import { StatusContext } from './context/Status';
@@ -122,6 +122,7 @@ function App() {
     <SetupCheck>
       <Routes>
         <Route path='/' element={withSuspense(<Home />)} />
+        <Route path='/monitor' element={<Navigate to='/availability' replace />} />
         <Route path='/setup' element={withSuspense(<Setup />)} />
         <Route path='/forbidden' element={withSuspense(<Forbidden />)} />
         <Route
