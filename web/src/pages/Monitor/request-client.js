@@ -5,13 +5,14 @@ const STORAGE_PREFIX = 'new-api:monitor-reads:v1:';
 export const monitorCancelled = () =>
   Object.assign(new Error('Monitor read cancelled'), { name: 'AbortError' });
 
-// One paced queue for every monitor read. Web Locks + a short-lived public-data
+// One paced queue for every monitor read. Web Locks + a short-lived summary
 // cache share this budget across tabs, remounts and development hot reloads.
 export function createMonitorClient({
   request,
   storage,
   lock,
   scope = '',
+  cacheScope = () => '',
   now = Date.now,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   visible = () => true,
@@ -28,7 +29,7 @@ export function createMonitorClient({
     }
   };
   const saveState = (state) => {
-    // Cache only background public summaries, never record bodies or credentials.
+    // Cache only background summaries, never record bodies or credentials.
     state.entries = Object.fromEntries(
       Object.entries(state.entries)
         .filter(([, entry]) => entry.until > now())
@@ -47,8 +48,10 @@ export function createMonitorClient({
       }
     }
   };
-  const execute = async (path, params, key, controller) => {
-    if (controller.signal.aborted || !visible()) throw monitorCancelled();
+  const execute = async (path, params, key, userScope, controller) => {
+    const cancelled = () =>
+      controller.signal.aborted || !visible() || cacheScope(path) !== userScope;
+    if (cancelled()) throw monitorCancelled();
     let state = readState();
     if (state.entries[key]?.until > now())
       return { data: state.entries[key].data };
@@ -58,7 +61,7 @@ export function createMonitorClient({
       });
     }
     if (state.nextStart > now()) await sleep(state.nextStart - now());
-    if (controller.signal.aborted || !visible()) throw monitorCancelled();
+    if (cancelled()) throw monitorCancelled();
     state.nextStart = now() + 1000;
     saveState(state);
     try {
@@ -69,6 +72,7 @@ export function createMonitorClient({
         skipErrorHandler: true,
         disableDuplicate: true,
       });
+      if (cancelled()) throw monitorCancelled();
       if (!response.data?.success)
         throw new Error(response.data?.message || 'Monitor read failed');
       state = readState();
@@ -82,7 +86,7 @@ export function createMonitorClient({
       saveState(state);
       return response;
     } catch (error) {
-      if (controller.signal.aborted) throw monitorCancelled();
+      if (cancelled()) throw monitorCancelled();
       state = readState();
       state.failures = Math.min((state.failures || 0) + 1, 5);
       const retry = error.response?.headers?.['retry-after'];
@@ -106,13 +110,19 @@ export function createMonitorClient({
   function get(path, { params = {}, signal } = {}) {
     if (signal?.aborted || !visible())
       return Promise.reject(monitorCancelled());
-    const key = path + '?' + JSON.stringify(Object.entries(params).sort());
+    // Personalized summaries share pacing, but never cached data or pending reads.
+    const userScope = cacheScope(path);
+    const key = JSON.stringify([
+      path,
+      Object.entries(params).sort(),
+      userScope,
+    ]);
     let entry = pending.get(key);
     if (!entry || entry.controller.signal.aborted) {
       const controller = new AbortController();
       entry = { controller, users: 0 };
       const task = () => {
-        const run = () => execute(path, params, key, controller);
+        const run = () => execute(path, params, key, userScope, controller);
         return lock ? lock(storageKey, controller.signal, run) : run();
       };
       entry.promise = tail.then(task);

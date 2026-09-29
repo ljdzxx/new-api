@@ -30,7 +30,7 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
 		apiRouter.GET("/availability", controller.GetAvailability)
-		apiRouter.GET("/monitor", controller.GetGroupMonitor)
+		apiRouter.GET("/monitor", middleware.TryUserAuth(), controller.GetGroupMonitor)
 		apiRouter.GET("/monitor/trend", controller.GetGroupMonitorTrend)
 		apiRouter.GET("/monitor/artworks", controller.GetGroupMonitorArtworks)
 		apiRouter.GET("/monitor/preview", controller.GetGroupMonitorPreview)

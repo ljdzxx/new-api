@@ -85,6 +85,7 @@ func monitorLatest(ctx context.Context, group, model, kind string) (*service.Mon
 }
 
 func GetGroupMonitor(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
 	cfg, ok := monitorReady(c)
 	if !ok {
 		return
@@ -112,6 +113,17 @@ func GetGroupMonitor(c *gin.Context) {
 	now := time.Now()
 	descs := setting.GetUserUsableGroupsCopy()
 	ratios := ratio_setting.GetGroupRatioCopy()
+	if userID := c.GetInt("id"); userID > 0 {
+		userGroup, err := model.GetUserGroup(userID, false)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for group := range ratios {
+			ratios[group] = service.GetUserGroupRatio(userGroup, group)
+		}
+	}
+	// Include effective ratios so cached snapshots stay specific to the user's pricing.
 	cacheKey := groupmonitor.Key("snapshot", common.GetJsonString(cfg)+common.GetJsonString(descs)+common.GetJsonString(ratios)+strconv.Itoa(hours)+common.GetJsonString(selectedModels), "page-view-v2")
 	if raw, err := common.RDB.Get(ctx, cacheKey).Result(); err == nil {
 		var cached gin.H

@@ -56,6 +56,78 @@ test('12 tabs repeatedly mounting the aggregate monitor share one page request',
   assert.equal(h.calls[0].config.skipErrorHandler, true);
 });
 
+test('account and group changes isolate cached page reads while sharing pacing', async () => {
+  let responseNumber = 0;
+  let userScope;
+  const h = harness(async () => ({
+    data: { success: true, data: { ratio: ++responseNumber } },
+  }));
+  const options = { ...h.options, cacheScope: () => userScope };
+  const firstTab = createMonitorClient(options);
+  const secondTab = createMonitorClient(options);
+  const scopes = ['[null,null]', '[1,"vip"]', '[2,"svip"]', '[1,"svip"]'];
+  const responses = [];
+  for (const scope of scopes) {
+    userScope = scope;
+    responses.push(await firstTab.get('/api/monitor'));
+  }
+  assert.equal(h.calls.length, scopes.length);
+  assert.deepEqual(
+    responses.map((res) => res.data.data.ratio),
+    [1, 2, 3, 4],
+  );
+  for (let i = 0; i < scopes.length; i++) {
+    userScope = scopes[i];
+    const cached = await secondTab.get('/api/monitor');
+    assert.deepEqual(cached.data, responses[i].data);
+    assert.equal(h.calls[i].config.cacheScope, undefined);
+    if (i > 0) assert.ok(h.calls[i].at - h.calls[i - 1].at >= 1000);
+  }
+  assert.equal(h.calls.length, scopes.length);
+});
+
+test('account changes cancel queued reads without merging them with the new account', async () => {
+  const h = harness();
+  let userScope = 'guest';
+  const client = createMonitorClient({
+    ...h.options,
+    cacheScope: () => userScope,
+  });
+  const previous = client.get('/api/monitor');
+  const rejected = assert.rejects(previous, { name: 'AbortError' });
+  userScope = 'vip';
+  await Promise.all([rejected, client.get('/api/monitor')]);
+  assert.equal(h.calls.length, 1);
+  assert.equal(client.pauseRemaining(), 0);
+});
+
+test('account changes discard in-flight responses before caching or displaying them', async () => {
+  let done;
+  const h = harness(
+    () =>
+      new Promise((resolve) => {
+        done = resolve;
+      }),
+  );
+  let userScope = 'guest';
+  const client = createMonitorClient({
+    ...h.options,
+    cacheScope: () => userScope,
+  });
+  const previous = client.get('/api/monitor');
+  const rejected = assert.rejects(previous, { name: 'AbortError' });
+  for (let i = 0; i < 10 && !done; i++) await Promise.resolve();
+  assert.equal(h.calls.length, 1);
+  userScope = 'vip';
+  done({ data: { success: true, data: { ratio: 2 } } });
+  await rejected;
+  assert.equal(client.pauseRemaining(), 0);
+  const state = JSON.parse(
+    h.options.storage.getItem('new-api:monitor-reads:v1:'),
+  );
+  assert.deepEqual(state.entries, {});
+});
+
 test('429 clears queued demand and shares a three minute pause across tabs/reloads', async () => {
   let failing = true;
   const h = harness(async () => {

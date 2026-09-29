@@ -12,6 +12,15 @@ export const monitorRequests = createMonitorClient({
   request: (path, config) => API.get(path, config),
   storage,
   scope: API.defaults.baseURL || window.location.origin,
+  cacheScope: (path) => {
+    if (path !== '/api/monitor') return '';
+    try {
+      const user = JSON.parse(storage?.getItem('user') || 'null');
+      return JSON.stringify([user?.id ?? null, user?.group ?? null]);
+    } catch {
+      return '';
+    }
+  },
   visible: () => document.visibilityState !== 'hidden',
   lock: navigator.locks
     ? (name, signal, run) => navigator.locks.request(name, { signal }, run)

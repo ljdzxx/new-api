@@ -73,7 +73,7 @@ export default function UseGroup({ group, onClose }) {
     <>
       <Modal
         title={`${t('使用分组')}：${group.name}`}
-        visible
+        visible={!creating}
         onCancel={onClose}
         width={850}
         footer={
@@ -157,11 +157,12 @@ export default function UseGroup({ group, onClose }) {
       </Modal>
       {creating && (
         <EditTokenModal
+          displayMode='modal'
           editingToken={{}}
           defaultGroup={group.name}
           createEndpoint='/api/monitor/token'
           visiable
-          handleClose={() => setCreating(false)}
+          handleClose={onClose}
           refresh={onClose}
         />
       )}

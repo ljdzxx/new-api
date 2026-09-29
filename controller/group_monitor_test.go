@@ -4,14 +4,17 @@ import (
 	"context"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/groupmonitor"
 	"github.com/QuantumNous/new-api/service"
 	monitorconfig "github.com/QuantumNous/new-api/setting/group_monitor"
 	"github.com/QuantumNous/new-api/setting/image_storage_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -90,6 +93,94 @@ func TestMonitorPublicSnapshotUsesRedisSamples(t *testing.T) {
 	for _, key := range r.Keys() {
 		require.Positive(t, r.TTL(key))
 	}
+}
+
+func TestMonitorSnapshotUsesUserGroupRatiosAndIsolatesCache(t *testing.T) {
+	cfg := installMonitorTestConfig(t)
+	for _, group := range []string{"fallback", "free", "unpriced"} {
+		cfg.Groups[group] = monitorconfig.Group{Models: []string{"model"}}
+	}
+	raw, err := common.Marshal(cfg)
+	require.NoError(t, err)
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap[monitorconfig.OptionKey] = string(raw)
+	common.OptionMapRWMutex.Unlock()
+
+	r := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: r.Addr()})
+	defer client.Close()
+	old, enabled := common.RDB, common.RedisEnabled
+	common.RDB, common.RedisEnabled = client, true
+	baseRatios := ratio_setting.GroupRatio2JSONString()
+	specialRatios := ratio_setting.GroupGroupRatio2JSONString()
+	t.Cleanup(func() {
+		common.RDB, common.RedisEnabled = old, enabled
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(baseRatios))
+		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(specialRatios))
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"monitor-test":2,"fallback":3,"free":1}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"vip":{"monitor-test":0.5,"free":0},"svip":{"monitor-test":0.2}}`))
+	setUserGroup := func(id int, group string) {
+		t.Helper()
+		require.NoError(t, common.RedisHSetObj("user:"+strconv.Itoa(id), &model.UserBase{
+			Id: id, Group: group, Role: common.RoleCommonUser, Status: common.UserStatusEnabled,
+		}, time.Hour))
+	}
+	setUserGroup(1, "vip")
+	setUserGroup(2, "svip")
+	setUserGroup(3, "default")
+
+	read := func(userID int, expectedRatio, expectedFreeRatio float64) string {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/api/monitor", nil)
+		if userID > 0 {
+			c.Set("id", userID)
+			c.Set("group", "stale-session-group")
+		}
+		GetGroupMonitor(c)
+		require.Equal(t, 200, w.Code)
+		require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+		var response struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Groups []struct {
+					Name  string   `json:"name"`
+					Ratio *float64 `json:"ratio"`
+				} `json:"groups"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+		require.True(t, response.Success)
+		require.Len(t, response.Data.Groups, 4)
+		ratios := map[string]*float64{}
+		for _, group := range response.Data.Groups {
+			ratios[group.Name] = group.Ratio
+		}
+		for group, expected := range map[string]float64{"monitor-test": expectedRatio, "free": expectedFreeRatio, "fallback": 3} {
+			require.NotNil(t, ratios[group], group)
+			require.Equal(t, expected, *ratios[group], group)
+		}
+		require.Nil(t, ratios["unpriced"])
+		return w.Body.String()
+	}
+
+	guest := read(0, 2, 1)
+	vip := read(1, 0.5, 0)
+	svip := read(2, 0.2, 1)
+	read(3, 2, 1)
+	require.JSONEq(t, guest, read(0, 2, 1))
+	require.JSONEq(t, vip, read(1, 0.5, 0))
+	require.JSONEq(t, svip, read(2, 0.2, 1))
+	require.Equal(t, 2.0, ratio_setting.GetGroupRatio("monitor-test"))
+
+	// Pricing changes and user group changes must bypass the previous snapshot.
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"vip":{"monitor-test":0.25,"free":0},"svip":{"monitor-test":0.2}}`))
+	read(1, 0.25, 0)
+	setUserGroup(1, "svip")
+	read(1, 0.2, 1)
+	read(0, 2, 1)
 }
 
 func TestMonitorHiddenGroupsAreNotPublic(t *testing.T) {

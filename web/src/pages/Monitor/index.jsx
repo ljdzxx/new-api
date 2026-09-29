@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -9,6 +9,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { UserContext } from '../../context/User';
 import { monitorRequests } from './requests';
 import Trend from './Trend';
 import GroupTests from './GroupTests';
@@ -134,6 +135,11 @@ function GroupRow({ group, model, onModelChange, probeMinutes, useGroup }) {
 export default function Monitor() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [userState] = useContext(UserContext);
+  const userCacheScope = JSON.stringify([
+    userState.user?.id ?? null,
+    userState.user?.group ?? null,
+  ]);
   const [data, setData] = useState(null),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(false);
@@ -149,6 +155,10 @@ export default function Monitor() {
         .sort(),
     ),
   );
+  useEffect(() => {
+    setData(null);
+    setUsing(null);
+  }, [userCacheScope]);
   useEffect(() => {
     let disposed = false,
       busy = false,
@@ -203,7 +213,7 @@ export default function Monitor() {
       refresh.current = () => {};
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [hours, selectedModels]);
+  }, [hours, selectedModels, userCacheScope]);
   const groups = [...(data?.groups || [])];
   if (sort !== 'default')
     groups.sort((a, b) => {
