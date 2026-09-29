@@ -17,7 +17,7 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 监控分组 JSON 示例：
 
 ```json
-{"codex-pro":{"model":["gpt-5.5","gpt-5.6-sol"],"svg_model":"gpt-6-astra","logic_model":"gpt-6-astra","key":"sk-example","protocol":"responses","svg_test":true,"logic_test":false,"active":true}}
+{"codex-pro":{"model":["gpt-5.5","gpt-5.6-sol"],"svg_model":"gpt-6-astra","logic_model":"gpt-6-astra","key":"sk-example","protocol":"responses","svg_test":true,"logic_test":false,"active":true,"order":0}}
 ```
 
 密钥必须是绑定相应分组的本站令牌，在 root 管理员的监控设置中明文展示和编辑；公开监控接口不返回密钥。探测地址可以是站点根地址、`/v1` 或完整 `/v1/responses`、`/v1/messages`；最终路径根据分组协议自动选择。所有检测经过正常计费和请求统计。
@@ -26,6 +26,7 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 - `svg_model` / `logic_model`：每组的绘图、逻辑专用模型，可不在 `model` 列表内。
 - `svg_test` / `logic_test`：该组是否执行对应测试；启用时必须填写对应专用模型。
 - `active`：仅控制页面展示。设为 `false` 后，该组从公开页面及其趋势、作品接口隐藏，但继续采集和执行配置的后台检测。
+- `order`：分组展示顺序，整型，越小越靠前；未填写时默认为 `0`，相同值按分组名称排序。页面选择“默认排序”时使用此顺序。
 - `model`：可用性探测及用户请求指标统计的模型列表，不决定绘图、逻辑测试模型。
 
 旧配置自动兼容：缺省协议为 `responses`，缺省 `active` 为 `true`；旧全局 SVG 开关和模型迁入各组，旧逻辑开关迁入各组并使用该组第一个模型作为专用模型。显式的 `false` 优先于旧开关。保存后采用新格式；全局界面保留题目、频率、超时、并发及存储配置。

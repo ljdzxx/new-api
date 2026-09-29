@@ -118,6 +118,7 @@ export default function MonitorSettings() {
               svg_test: true,
               logic_test: false,
               active: true,
+              order: 0,
             },
           },
           null,
@@ -127,6 +128,11 @@ export default function MonitorSettings() {
       <Typography.Text type='tertiary'>
         {t(
           'protocol 填 responses 或 messages；active 仅控制页面展示，不停止后台采集和检测。',
+        )}
+      </Typography.Text>
+      <Typography.Text type='tertiary'>
+        {t(
+          'order 为展示顺序（整数），默认排序时越小越靠前；未填写时为 0，相同值按分组名称排序。',
         )}
       </Typography.Text>
       <div className='grid md:grid-cols-2 gap-4'>

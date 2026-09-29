@@ -139,7 +139,13 @@ func GetGroupMonitor(c *gin.Context) {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	sort.Slice(names, func(i, j int) bool {
+		left, right := cfg.Groups[names[i]].Order, cfg.Groups[names[j]].Order
+		if left != right {
+			return left < right
+		}
+		return names[i] < names[j]
+	})
 	for _, group := range names {
 		g := cfg.Groups[group]
 		all := []groupmonitor.Sample{}

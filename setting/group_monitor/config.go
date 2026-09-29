@@ -20,6 +20,7 @@ type Group struct {
 	SVGTest    *bool    `json:"svg_test"`
 	LogicTest  *bool    `json:"logic_test"`
 	Active     *bool    `json:"active"`
+	Order      int      `json:"order"`
 }
 
 func (g Group) Visible() bool   { return g.Active == nil || *g.Active }

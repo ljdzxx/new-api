@@ -479,6 +479,10 @@ body .monitor-overlays .token-group-heading {
   white-space: nowrap;
 }
 .monitor-ring {
+  --monitor-ring-green: #43d39e;
+  --monitor-ring-blue: #38bdf8;
+  --monitor-ring-orange: #ef7a68;
+  --monitor-ring-grey: #263244;
   padding: 5px;
   border-radius: 50%;
   width: 60px;

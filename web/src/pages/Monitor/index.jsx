@@ -21,17 +21,19 @@ import './monitor.css';
 
 function Ring({ value, label, count }) {
   const color =
-    value == null
-      ? 'var(--semi-color-text-3)'
-      : value >= 0.95
-        ? 'var(--monitor-success)'
-        : 'var(--monitor-accent)';
+    value >= 0.9
+      ? 'var(--monitor-ring-green)'
+      : value >= 0.8
+        ? 'var(--monitor-ring-blue)'
+        : value >= 0.7
+          ? 'var(--monitor-ring-orange)'
+          : 'var(--monitor-ring-grey)';
   return (
     <div className='monitor-ring-wrap' title={`n=${count}`}>
       <div
         className='monitor-ring'
         style={{
-          background: `conic-gradient(${color} ${(value || 0) * 360}deg, var(--monitor-track) 0)`,
+          background: `conic-gradient(${color} ${(value || 0) * 360}deg, var(--monitor-ring-grey) 0)`,
         }}
       >
         <span>{value == null ? '—' : `${(value * 100).toFixed(1)}%`}</span>
@@ -96,9 +98,6 @@ function GroupRow({ group, model, onModelChange, probeMinutes, useGroup }) {
             }}
           />
         </div>
-        <small>
-          {t('样本数')} {metrics.ttft_count}
-        </small>
       </td>
       <td>
         <Ring

@@ -1,5 +1,6 @@
 {
   "translation": {
+    "order 为展示顺序（整数），默认排序时越小越靠前；未填写时为 0，相同值按分组名称排序。": "order sets the display order (integer): lower values appear first with default sorting. Defaults to 0; ties are sorted by group name.",
     "监控读取已暂停，稍后自动重试": "Monitor updates paused; retrying automatically later",
     "每组每类测试历史最多记录数": "Maximum history records per group and test type",
     "测试历史保留天数": "Test history retention in days",

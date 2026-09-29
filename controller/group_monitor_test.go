@@ -385,4 +385,29 @@ func TestMonitorPageIncludesAllGroupsAndSectionsInOneResponse(t *testing.T) {
 	groups, _ = read("?hours=24")
 	require.Equal(t, "artworks_unavailable", groups[0].ArtworksError)
 	require.Len(t, groups[0].History["svg"], 1, "R2 configuration errors must not hide tests or other groups")
+
+	for _, tc := range []struct {
+		name                  string
+		alphaOrder, betaOrder int
+		want                  []string
+	}{
+		{"numeric ascending", 10, 2, []string{"beta", "alpha"}},
+		{"zero before positive", 0, 2, []string{"alpha", "beta"}},
+		{"negative before zero", 0, -1, []string{"beta", "alpha"}},
+		{"equal orders use names", 2, 2, []string{"alpha", "beta"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			alpha, beta := cfg.Groups["alpha"], cfg.Groups["beta"]
+			alpha.Order, beta.Order = tc.alphaOrder, tc.betaOrder
+			cfg.Groups["alpha"], cfg.Groups["beta"] = alpha, beta
+			raw, err := common.Marshal(cfg)
+			require.NoError(t, err)
+			common.OptionMapRWMutex.Lock()
+			common.OptionMap[monitorconfig.OptionKey] = string(raw)
+			common.OptionMapRWMutex.Unlock()
+			groups, _ := read("")
+			require.Len(t, groups, 2)
+			require.Equal(t, tc.want, []string{groups[0].Name, groups[1].Name}, "order changes must take effect without waiting for the snapshot cache to expire")
+		})
+	}
 }

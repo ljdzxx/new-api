@@ -1,5 +1,6 @@
 {
   "translation": {
+    "order 为展示顺序（整数），默认排序时越小越靠前；未填写时为 0，相同值按分组名称排序。": "order définit l’ordre d’affichage (entier) : les valeurs les plus petites apparaissent en premier avec le tri par défaut. La valeur par défaut est 0 ; les égalités sont triées par nom de groupe.",
     "监控读取已暂停，稍后自动重试": "Actualisation suspendue ; nouvelle tentative automatique ultérieure",
     "每组每类测试历史最多记录数": "Nombre maximal de résultats par groupe et type de test",
     "测试历史保留天数": "Conservation des résultats en jours",
