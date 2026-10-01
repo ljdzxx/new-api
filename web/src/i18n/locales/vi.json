@@ -133,6 +133,7 @@
     "缓存率仅统计读缓存 token 大于 0 的请求；首字包含空 SSE 事件。无样本显示 —，过期探测显示未知。": "Chỉ tính tỷ lệ bộ nhớ đệm cho yêu cầu có token đọc lớn hơn 0. TTFT gồm sự kiện SSE rỗng. Không có mẫu: —; thăm dò hết hạn: chưa xác định.",
     "格式：{\"分组名\":{\"model\":[\"模型名\"],\"key\":\"本站令牌\"}}。": "Định dạng: {\"nhóm\":{\"model\":[\"mô-hình\"],\"key\":\"token-trang\"}}.",
     "流式响应已被下游取消": "Luồng đã bị phía hạ nguồn hủy",
+    "已开启Fast模式": "Đã bật chế độ Fast",
     "reasoning密文失败后进行的有损重试": "Thử lại có mất một phần ngữ cảnh sau lỗi nội dung mã hóa reasoning",
     "reasoning密文失败，可能需要客户端新开会话窗口重试": "Lỗi nội dung mã hóa reasoning; có thể cần mở cuộc hội thoại mới trong ứng dụng rồi thử lại",
     "compaction密文失败，可能需要客户端新开会话窗口重试": "Lỗi nội dung mã hóa compaction; có thể cần mở cuộc hội thoại mới trong ứng dụng rồi thử lại",

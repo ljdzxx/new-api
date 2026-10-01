@@ -137,6 +137,7 @@
     "缓存率仅统计读缓存 token 大于 0 的请求；首字包含空 SSE 事件。无样本显示 —，过期探测显示未知。": "Le cache ne compte que les lectures positives. Le TTFT inclut les événements SSE vides. Sans données : — ; sonde expirée : inconnu.",
     "格式：{\"分组名\":{\"model\":[\"模型名\"],\"key\":\"本站令牌\"}}。": "Format : {\"groupe\":{\"model\":[\"modèle\"],\"key\":\"jeton\"}}.",
     "流式响应已被下游取消": "Le flux a été annulé par le client en aval",
+    "已开启Fast模式": "Mode Fast activé",
     "reasoning密文失败后进行的有损重试": "Nouvelle tentative avec perte de contexte après un échec du contenu chiffré de reasoning",
     "reasoning密文失败，可能需要客户端新开会话窗口重试": "Échec du contenu chiffré de reasoning ; vous devrez peut-être ouvrir une nouvelle conversation dans le client et réessayer",
     "compaction密文失败，可能需要客户端新开会话窗口重试": "Échec du contenu chiffré de compaction ; vous devrez peut-être ouvrir une nouvelle conversation dans le client et réessayer",

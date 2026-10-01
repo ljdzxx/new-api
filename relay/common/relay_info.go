@@ -507,6 +507,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		isStream = request.IsStream(c)
 	}
 	c.Set(string(constant.ContextKeyIsStream), isStream)
+	common.SetContextKey(c, constant.ContextKeyClientFastMode, clientRequestedFastMode(request))
 
 	// firstResponseTime = time.Now() - 1 second
 

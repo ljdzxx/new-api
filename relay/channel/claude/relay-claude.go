@@ -1,7 +1,6 @@
 package claude
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -1107,7 +1106,7 @@ func logClaudePassThroughDetail(c *gin.Context, format string, args ...any) {
 }
 
 // ClaudeStreamPassThroughHandler 以字节级保真的方式转发上游 Anthropic 的 SSE 流。
-// 与共享扫描器不同，它逐行原样写回（保留 event:/ping/空行/签名/帧顺序），
+// 按每次 Read 返回的字节立即写回（保留 event:/ping/空行/签名/帧顺序），
 // 仅旁路解析 usage 用于计费，绝不重建协议。仅用于原生 RelayFormatClaude 的透传渠道。
 func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
@@ -1134,17 +1133,17 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 	streamingTimeout := relaycommon.StreamingTimeout()
 
 	var (
-		stopChan = make(chan bool, 3)
-		lineChan = make(chan []byte, 16)
-		ticker   = time.NewTicker(streamingTimeout)
-		wg       sync.WaitGroup
+		stopChan  = make(chan bool, 3)
+		chunkChan = make(chan []byte, 16)
+		ticker    = time.NewTicker(streamingTimeout)
+		wg        sync.WaitGroup
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	defer func() {
 		common.SafeSendBool(stopChan, true)
-		// 关闭 body 以唤醒阻塞在 ReadBytes 的 reader goroutine。
+		// 关闭 body 以唤醒阻塞在 Read 的 reader goroutine。
 		_ = resp.Body.Close()
 		ticker.Stop()
 		cancel()
@@ -1161,8 +1160,7 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 		}
 	}()
 
-	// reader goroutine：逐行读取上游字节并送入 lineChan，保留行尾换行；
-	// 自带 panic 恢复，结束时关闭 lineChan 以通知主循环 EOF。
+	// 转发每次读到的字节，不等待换行或下一帧；计费行在写回后单独拼接。
 	wg.Add(1)
 	common.RelayCtxGo(ctx, func() {
 		defer func() {
@@ -1171,11 +1169,11 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 				logger.LogError(c, fmt.Sprintf("claude passthrough reader panic: %v", r))
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("reader panic: %v", r))
 			}
-			close(lineChan)
+			close(chunkChan)
 			common.SafeSendBool(stopChan, true)
 		}()
 
-		reader := bufio.NewReaderSize(resp.Body, helper.InitialScannerBufferSize)
+		readBuffer := make([]byte, helper.InitialScannerBufferSize)
 		for {
 			select {
 			case <-ctx.Done():
@@ -1185,13 +1183,11 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 			default:
 			}
 
-			line, err := reader.ReadBytes('\n')
-			if len(line) > 0 {
-				// 复制一份，避免 reader 复用底层缓冲导致数据竞争。
-				buf := make([]byte, len(line))
-				copy(buf, line)
+			n, err := resp.Body.Read(readBuffer)
+			if n > 0 {
+				buf := bytes.Clone(readBuffer[:n])
 				select {
-				case lineChan <- buf:
+				case chunkChan <- buf:
 				case <-ctx.Done():
 					return
 				case <-stopChan:
@@ -1210,6 +1206,13 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 		}
 	})
 
+	usageLines := claudePassThroughUsageLines{maxLineSize: helper.DefaultMaxScannerBufferSize}
+	if constant.StreamScannerMaxBufferMB > 0 {
+		usageLines.maxLineSize = max(helper.InitialScannerBufferSize, constant.StreamScannerMaxBufferMB<<20)
+	}
+	consumeUsageLine := func(line []byte) {
+		updateClaudePassThroughUsage(c, info, claudeInfo, line)
+	}
 	firstByteSeen := false
 	for {
 		select {
@@ -1221,9 +1224,10 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
 			HandleStreamFinalResponse(c, info, claudeInfo)
 			return claudeInfo.Usage, nil
-		case line, ok := <-lineChan:
+		case chunk, ok := <-chunkChan:
 			if !ok {
 				// 上游 EOF，正常结束。
+				usageLines.finish(consumeUsageLine)
 				HandleStreamFinalResponse(c, info, claudeInfo)
 				return claudeInfo.Usage, nil
 			}
@@ -1234,18 +1238,25 @@ func ClaudeStreamPassThroughHandler(c *gin.Context, resp *http.Response, info *r
 			}
 			info.ReceivedResponseCount++
 			// 原样写回，绝不经 CustomEvent/ClaudeChunkData，杜绝二次格式化。
-			if _, werr := c.Writer.Write(line); werr != nil {
+			helper.ExtendWriteDeadline(c)
+			if _, werr := c.Writer.Write(chunk); werr != nil {
 				// 写回失败（客户端断开等）：字节已部分发送，无法返错，记录后结束。
 				logger.LogError(c, "claude passthrough write error: "+werr.Error())
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, werr)
 				HandleStreamFinalResponse(c, info, claudeInfo)
 				return claudeInfo.Usage, nil
 			}
-			_ = helper.FlushWriter(c)
-			// 排查日志：逐行记录上游原始字节（开关关闭时零开销）。
-			logClaudePassThroughDetail(c, "upstream sse line bytes=%d: %s", len(line), strings.TrimRight(string(line), "\r\n"))
+			if err := helper.FlushWriter(c); err != nil {
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
+				HandleStreamFinalResponse(c, info, claudeInfo)
+				return claudeInfo.Usage, nil
+			}
+			// 排查日志在 flush 后记录，避免当前分片等待日志写入。
+			logClaudePassThroughDetail(c, "upstream sse chunk bytes=%d: %s", len(chunk), string(chunk))
 			// 旁路解析用于计费，不影响已写回的字节。
-			updateClaudePassThroughUsage(c, info, claudeInfo, line)
+			if usageLines.feed(chunk, consumeUsageLine) {
+				logger.LogWarn(c, "claude passthrough: oversized SSE line skipped for usage parsing")
+			}
 		}
 	}
 }

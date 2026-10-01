@@ -190,12 +190,17 @@ func setupResponsesRelayBillingTest(t *testing.T) *gorm.DB {
 	return db
 }
 
-func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
+func TestResponsesRelayFailureSettlesUsageBeforeClientRetry(t *testing.T) {
 	db := setupResponsesRelayBillingTest(t)
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+		attempt := calls.Add(1)
 		w.Header().Set("Content-Type", "text/event-stream")
+		if attempt == 2 {
+			fmt.Fprint(w, "data: "+`{"type":"response.created","sequence_number":0,"response":{"id":"resp_attempt_two"}}`+"\n\n")
+			fmt.Fprint(w, "data: "+`{"type":"response.completed","sequence_number":1,"response":{"id":"resp_attempt_two","status":"completed","output":[],"usage":{"input_tokens":80,"output_tokens":10,"total_tokens":90}}}`+"\n\n")
+			return
+		}
 		fmt.Fprint(w, "data: "+`{"type":"response.created","sequence_number":0,"response":{"id":"resp_attempt_one"}}`+"\n\n")
 		fmt.Fprint(w, "data: "+`{"type":"response.output_item.added","sequence_number":1,"item":{"id":"call_one","type":"function_call","name":"test_tool","call_id":"call_one","arguments":""}}`+"\n\n")
 		fmt.Fprint(w, "data: "+`{"type":"response.failed","response":{"id":"resp_attempt_one","error":{"code":"server_error","message":"upstream failed"},"usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120}}}`+"\n\n")
@@ -217,7 +222,10 @@ func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
 	require.EqualValues(t, 1, calls.Load(), recorder.Body.String())
 	require.Equal(t, 200, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"id":"resp_attempt_one"`)
-	require.Contains(t, recorder.Body.String(), `"code":"invalid_prompt"`)
+	require.Contains(t, recorder.Body.String(), `"code":"server_error"`)
+	require.NotContains(t, recorder.Body.String(), "invalid_prompt")
+	require.NotContains(t, recorder.Body.String(), "must not be replayed automatically")
+	require.Empty(t, recorder.Header().Get("x-should-retry"))
 	require.Contains(t, recorder.Body.String(), "upstream failed")
 	require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: response.failed\n"))
 	require.NotContains(t, recorder.Body.String(), "[DONE]")
@@ -231,6 +239,31 @@ func TestResponsesRelayFailureKeepsSingleAttemptAndSettlesUsage(t *testing.T) {
 	var user model.User
 	require.NoError(t, db.First(&user, 42).Error)
 	require.Equal(t, 1000000-logs[0].Quota, user.Quota)
+	firstQuota := logs[0].Quota
+	retryContext, retryRecorder, _ := newRelayMockContext(true)
+	retryContext.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-4o-mini","input":"hello","stream":true}`))
+	retryContext.Request.Header.Set("Content-Type", "application/json")
+	common.SetContextKey(retryContext, constant.ContextKeyChannelSetting, dto.ChannelSettings{})
+	common.SetContextKey(retryContext, constant.ContextKeyChannelBaseUrl, upstream.URL)
+	common.SetContextKey(retryContext, constant.ContextKeyUserQuota, user.Quota)
+	Relay(retryContext, types.RelayFormatOpenAIResponses)
+	require.EqualValues(t, 2, calls.Load(), retryRecorder.Body.String())
+	require.Equal(t, http.StatusOK, retryRecorder.Code)
+	require.Contains(t, retryRecorder.Body.String(), `"id":"resp_attempt_two"`)
+	require.Contains(t, retryRecorder.Body.String(), "event: response.completed\n")
+	require.NotContains(t, retryRecorder.Body.String(), "event: response.failed\n")
+	require.NotContains(t, retryRecorder.Body.String(), "resp_attempt_one")
+	require.NoError(t, db.Where("type = ?", model.LogTypeConsume).Order("id").Find(&logs).Error)
+	require.Len(t, logs, 2)
+	require.Equal(t, firstQuota, logs[0].Quota)
+	require.Equal(t, 80, logs[1].PromptTokens)
+	require.Equal(t, 10, logs[1].CompletionTokens)
+	require.Positive(t, logs[1].Quota)
+	require.NoError(t, db.First(&user, 42).Error)
+	require.Equal(t, 1000000-firstQuota-logs[1].Quota, user.Quota)
+	var token model.Token
+	require.NoError(t, db.First(&token, 77).Error)
+	require.Equal(t, user.Quota, token.RemainQuota)
 }
 
 type responsesCancelWriter struct {

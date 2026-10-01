@@ -190,10 +190,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				logClaudeRelayError(c, "relay finished with error: request_id=%s status=%d err=%s %s", requestId, newAPIError.StatusCode, newAPIError.Error(), summarizeClaudeRelayHTTPForLog(c))
 			}
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
-			if types.IsSkipRetryError(newAPIError) || newAPIError.StatusCode < http.StatusInternalServerError {
-				c.Header("x-should-retry", "false")
-			}
-			if !applyChannelErrorInterceptIfNeeded(c, newAPIError, requestId) {
+			errorIntercepted := applyChannelErrorInterceptIfNeeded(c, newAPIError, requestId)
+			if !errorIntercepted {
 				if !c.GetBool(contextKeyFixedErrorMessage) {
 					newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 				}
@@ -203,6 +201,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					logger.LogWarn(c, "failed to write responses terminal error: "+err.Error())
 				}
 				return
+			}
+			if types.IsSkipRetryError(newAPIError) || newAPIError.StatusCode < http.StatusInternalServerError {
+				c.Header("x-should-retry", "false")
 			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
@@ -1223,6 +1224,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["error_code"] = err.GetErrorCode()
 		other["status_code"] = err.StatusCode
 		service.AppendResponsesLogBadges(c, other)
+		service.AppendClientFastMode(c, other)
 		other["channel_id"] = channelId
 		other["channel_name"] = c.GetString("channel_name")
 		other["channel_type"] = c.GetInt("channel_type")

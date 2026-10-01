@@ -2,6 +2,7 @@ package helper
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -59,7 +60,26 @@ func getScannerBufferSize() int {
 func NewStreamScanner(reader io.Reader) *bufio.Scanner {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, InitialScannerBufferSize), getScannerBufferSize())
+	scanner.Split(scanSSELines)
 	return scanner
+}
+
+// SSE accepts LF, CRLF and CR line endings. A CR already terminates a line;
+// waiting for the next byte would hold a complete event behind the next write.
+// If CRLF is split across reads, its LF becomes an empty line, which the SSE
+// data scanner ignores just like other empty lines.
+func scanSSELines(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+		advance = i + 1
+		if data[i] == '\r' && advance < len(data) && data[advance] == '\n' {
+			advance++
+		}
+		return advance, data[:i], nil
+	}
+	if atEOF && len(data) > 0 {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }
 
 // ExtendWriteDeadline prevents a slow client from blocking stream cleanup forever.
@@ -153,7 +173,6 @@ func StreamScannerHandlerWithOptions(c *gin.Context, resp *http.Response, info *
 	}
 	defer cleanup()
 
-	scanner.Split(bufio.ScanLines)
 	copyCodexSSEHeaders(c, resp)
 	SetEventStreamHeaders(c)
 

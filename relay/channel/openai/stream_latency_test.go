@@ -32,8 +32,11 @@ func TestStreamForwardsContentBeforeNextUpstreamEvent(t *testing.T) {
 		thinking        bool
 		terminalContent bool
 		completions     bool
+		lineEnding      string
 	}{
 		{name: "chat", format: types.RelayFormatOpenAI},
+		{name: "chat CRLF", format: types.RelayFormatOpenAI, lineEnding: "\r\n"},
+		{name: "chat CR", format: types.RelayFormatOpenAI, lineEnding: "\r"},
 		{name: "chat force format", format: types.RelayFormatOpenAI, forceFormat: true},
 		{name: "reasoning", format: types.RelayFormatOpenAI, deltaTemplate: `{"reasoning_content":%q}`},
 		{name: "thinking to content", format: types.RelayFormatOpenAI, deltaTemplate: `{"reasoning_content":%q}`, thinking: true},
@@ -44,6 +47,7 @@ func TestStreamForwardsContentBeforeNextUpstreamEvent(t *testing.T) {
 		{name: "terminal content to claude", format: types.RelayFormatClaude, terminalContent: true},
 		{name: "chat to gemini", format: types.RelayFormatGemini},
 		{name: "responses", format: types.RelayFormatOpenAIResponses, responses: true},
+		{name: "responses CR", format: types.RelayFormatOpenAIResponses, responses: true, lineEnding: "\r"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			contents := []string{"first", "second"}
@@ -69,7 +73,11 @@ func TestStreamForwardsContentBeforeNextUpstreamEvent(t *testing.T) {
 					if tc.responses {
 						data = fmt.Sprintf(`{"type":"response.output_text.delta","delta":%q}`, content)
 					}
-					fmt.Fprintf(w, "data: %s\n\n", data)
+					lineEnding := tc.lineEnding
+					if lineEnding == "" {
+						lineEnding = "\n"
+					}
+					fmt.Fprintf(w, "data: %s%s%s", data, lineEnding, lineEnding)
 					w.(http.Flusher).Flush()
 					select {
 					case <-next:

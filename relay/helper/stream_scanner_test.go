@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -93,6 +94,21 @@ func TestStreamScannerHandler_EmptyBody(t *testing.T) {
 	})
 
 	assert.False(t, called.Load(), "handler should not be called for empty body")
+}
+
+func TestStreamScannerHandler_FragmentedLineEndings(t *testing.T) {
+	t.Parallel()
+	// One-byte reads split both CRLF and UTF-8. Mixed line endings must not
+	// merge events, duplicate them, or lose the final unterminated line.
+	body := "event: delta\r\ndata: 首字\r\n\r\n: ping\rdata: second\r\rdata: third\n\ndata: last"
+	c, resp, info := setupStreamTest(t, iotest.OneByteReader(strings.NewReader(body)))
+	info.DisablePing = true
+	var received []string
+	StreamScannerHandler(c, resp, info, func(data string) bool {
+		received = append(received, data)
+		return true
+	})
+	require.Equal(t, []string{"首字", "second", "third", "last"}, received)
 }
 
 func TestCopyCodexSSEHeaders(t *testing.T) {

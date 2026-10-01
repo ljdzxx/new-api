@@ -93,6 +93,9 @@ const (
 	// Small, user-visible diagnostic codes for this Responses relay attempt.
 	ContextKeyResponsesLogBadges ContextKey = "responses_log_badges"
 
+	// Fast mode requested by the downstream client, before channel overrides.
+	ContextKeyClientFastMode ContextKey = "client_fast_mode"
+
 	// ContextKeyLanguage stores the user's language preference for i18n
 	ContextKeyLanguage ContextKey = "language"
 	ContextKeyIsStream ContextKey = "is_stream"

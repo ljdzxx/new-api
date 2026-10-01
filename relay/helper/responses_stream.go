@@ -101,17 +101,13 @@ func WriteResponsesStreamFailure(c *gin.Context, apiErr *types.NewAPIError) erro
 	if sequence < math.MaxInt64 {
 		sequence++
 	}
-	// Codex treats arbitrary response.failed codes (including server_error) as
-	// retryable. invalid_prompt maps to InvalidRequest and stops the current turn.
-	// Keep the actual cause in the message; this is a replay-safety rejection,
-	// not an assertion that the original prompt was malformed.
-	message := fmt.Sprintf("The response could not be completed and this request must not be replayed automatically. %s", apiErr.ToOpenAIError().Message)
+	responseError := apiErr.ToOpenAIError()
 	data, err := common.Marshal(gin.H{
 		"type": "response.failed", "sequence_number": sequence,
 		"response": gin.H{
 			"id": state.ID, "object": "response", "created_at": state.CreatedAt,
 			"model": state.Model, "status": "failed", "output": []any{}, "usage": nil,
-			"error": gin.H{"type": "invalid_request_error", "code": "invalid_prompt", "message": message},
+			"error": gin.H{"type": responseError.Type, "code": responseError.Code, "message": responseError.Message},
 		},
 	})
 	if err != nil {

@@ -84,6 +84,13 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 		return nil, fmt.Errorf("n>1 is not supported in responses compatibility mode")
 	}
 
+	var serviceTier string
+	if len(req.ServiceTier) > 0 {
+		if err := common.Unmarshal(req.ServiceTier, &serviceTier); err != nil {
+			return nil, fmt.Errorf("invalid service_tier: %w", err)
+		}
+	}
+
 	var instructionsParts []string
 	inputItems := make([]map[string]any, 0, len(req.Messages))
 
@@ -384,6 +391,7 @@ func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*d
 		TopP:              topP,
 		User:              req.User,
 		ParallelToolCalls: parallelToolCallsRaw,
+		ServiceTier:       serviceTier,
 		Store:             req.Store,
 		Metadata:          req.Metadata,
 	}

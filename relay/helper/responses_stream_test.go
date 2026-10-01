@@ -43,12 +43,37 @@ func TestResponsesFailurePreservesIdentityAndTerminatesOnce(t *testing.T) {
 	require.Equal(t, "resp_original", event.Response.ID)
 	require.Equal(t, "test-model", event.Response.Model)
 	require.Equal(t, "failed", event.Response.Status)
-	// Codex's Responses SSE parser maps this code to non-retryable InvalidRequest.
-	require.Equal(t, "invalid_prompt", event.Response.Error.Code)
-	require.Contains(t, event.Response.Error.Message, "upstream disconnected")
-	require.Contains(t, event.Response.Error.Message, "must not be replayed automatically")
+	require.Equal(t, string(types.ErrorCodeBadResponse), event.Response.Error.Code)
+	require.Equal(t, string(types.ErrorCodeBadResponse), event.Response.Error.Type)
+	require.Equal(t, "upstream disconnected (request id: test)", event.Response.Error.Message)
 	require.True(t, strings.HasSuffix(r.Body.String(), "\n\n"))
 	require.NotContains(t, r.Body.String(), "[DONE]")
+}
+
+func TestResponsesFailurePreservesUpstreamError(t *testing.T) {
+	for _, upstreamError := range []types.OpenAIError{
+		{Type: "server_error", Code: "server_error", Message: "upstream unavailable"},
+		{Type: "rate_limit_error", Code: "rate_limit_exceeded", Message: "too many requests"},
+		{Type: "invalid_request_error", Code: "invalid_prompt", Message: "prompt rejected"},
+	} {
+		t.Run(upstreamError.Type, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			SetEventStreamHeaders(ctx)
+			apiErr := types.WithOpenAIError(upstreamError, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+			require.NoError(t, WriteResponsesStreamFailure(ctx, apiErr))
+			parts := strings.SplitN(recorder.Body.String(), "event: response.failed\ndata: ", 2)
+			require.Len(t, parts, 2)
+			var event struct {
+				Response struct {
+					Error types.OpenAIError `json:"error"`
+				} `json:"response"`
+			}
+			require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(parts[1]), &event))
+			require.Equal(t, upstreamError, event.Response.Error)
+		})
+	}
 }
 
 type partialResponsesWriter struct{ *httptest.ResponseRecorder }

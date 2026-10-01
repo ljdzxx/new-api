@@ -106,6 +106,12 @@ func AppendResponsesLogBadges(ctx *gin.Context, other map[string]interface{}) {
 	}
 }
 
+func AppendClientFastMode(ctx *gin.Context, other map[string]interface{}) {
+	if ctx != nil && other != nil && common.GetContextKeyBool(ctx, constant.ContextKeyClientFastMode) {
+		other["fast_mode"] = true
+	}
+}
+
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
@@ -200,6 +206,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 
 	other["admin_info"] = adminInfo
 	AppendResponsesLogBadges(ctx, other)
+	AppendClientFastMode(ctx, other)
 	if relayInfo.IsStream && relayInfo.StreamStatus != nil && relayInfo.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
 		other["stream_canceled_by_downstream"] = true
 	}
