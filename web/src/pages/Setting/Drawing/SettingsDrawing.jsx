@@ -44,6 +44,8 @@ const defaultDrawingInputs = {
   'image_storage_setting.r2_secret': '',
   'image_storage_setting.r2_object_prefix': 'generated-images/',
   'image_storage_setting.r2_url_expire_hours': 24,
+  'image_storage_setting.r2_worker_url': '',
+  'image_storage_setting.r2_worker_secret': '',
   'image_storage_setting.image_edits_base_url': '',
   'image_storage_setting.edit_reference_image_compression_enabled': true,
   'image_storage_setting.edit_reference_image_compress_threshold_mb': 8,
@@ -65,7 +67,8 @@ export default function SettingsDrawing(props) {
     const requestQueue = updateArray
       .map((item) => {
         if (
-          item.key === 'image_storage_setting.r2_secret' &&
+          (item.key === 'image_storage_setting.r2_secret' ||
+            item.key === 'image_storage_setting.r2_worker_secret') &&
           !inputs[item.key]
         ) {
           return null;
@@ -397,7 +400,7 @@ export default function SettingsDrawing(props) {
             <Banner
               type='info'
               description={t(
-                '开启后，图片生成接口会将上游返回的 b64_json 图片上传到 Cloudflare R2 并返回临时 URL；上游已经返回 URL 时会直接透传。',
+                '开启后，生成和编辑接口的流式、非流式图片会尝试转存到 R2；Base64 直接上传，远程 URL 由 Worker 抓取，URL 转存失败时保留原地址。',
               )}
               style={{ marginBottom: 16 }}
             />
@@ -480,6 +483,35 @@ export default function SettingsDrawing(props) {
                     setInputs({
                       ...inputs,
                       'image_storage_setting.r2_secret': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Input
+                  field={'image_storage_setting.r2_worker_url'}
+                  label={t('R2 Worker 地址')}
+                  placeholder={'https://<worker-host>/import'}
+                  extraText={t('填写已部署 Worker 的 /import HTTPS 地址')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.r2_worker_url': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Input
+                  field={'image_storage_setting.r2_worker_secret'}
+                  label={t('R2 Worker 密钥')}
+                  mode='password'
+                  placeholder={t('敏感信息不会发送到前端显示')}
+                  extraText={t('与 Worker 的 IMPORT_SECRET 一致，至少 32 字符')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'image_storage_setting.r2_worker_secret': value,
                     })
                   }
                 />

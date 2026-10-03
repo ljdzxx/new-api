@@ -160,12 +160,28 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		}
 	}
 
-	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	originalWriter := c.Writer
+	storageWriter := service.NewImageStorageResponseWriter(c, info)
+	if storageWriter != nil {
+		c.Writer = storageWriter
+	}
+	usage, newAPIError := func() (usage any, relayError *types.NewAPIError) {
+		defer func() { c.Writer = originalWriter }()
+		return adaptor.DoResponse(c, httpResp, info)
+	}()
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		service.MarkImageRecordFailure(c, newAPIError)
+		if storageWriter != nil && !originalWriter.Written() {
+			originalWriter.Header().Del("Content-Length")
+		}
 		return newAPIError
+	}
+	if storageWriter != nil {
+		if storageErr := storageWriter.Finish(); storageErr != nil {
+			logger.LogError(c, "image R2 storage failed: "+storageErr.Error())
+		}
 	}
 
 	imageN := uint(1)

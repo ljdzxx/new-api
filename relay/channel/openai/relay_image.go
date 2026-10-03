@@ -51,14 +51,6 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 
 	updateOpenAIImageCount(info, gjson.GetBytes(responseBody, "data.#").Int())
 
-	// 写入新的 response body
-	rewrittenBody, rewriteErr := service.StoreImageResultsToR2(c, info, responseBody)
-	if rewriteErr != nil {
-		logger.LogError(c, "image R2 storage failed, falling back to upstream response: "+rewriteErr.Error())
-	} else {
-		responseBody = rewrittenBody
-	}
-	service.MarkImageRecordSuccess(c, responseBody)
 	clientBody := responseBody
 	if helper.ShouldScaleResponseUsage(info) {
 		clientBody, err = helper.PatchResponseUsageJSONForRelay(clientBody, types.RelayFormatOpenAI, info)

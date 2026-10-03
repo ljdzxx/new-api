@@ -40,3 +40,6 @@ tmp_run_*.txt
 __pycache__/
 sync_r2.*
 web/jucodex-worker/node_modules
+deploy/image-r2-worker/wrangler.toml
+deploy/image-r2-worker/.env
+deploy/image-r2-worker/.wrangler/

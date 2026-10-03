@@ -1,5 +1,10 @@
 {
   "translation": {
+    "R2 Worker 地址": "URL du Worker R2",
+    "R2 Worker 密钥": "Secret du Worker R2",
+    "填写已部署 Worker 的 /import HTTPS 地址": "Saisissez le point de terminaison HTTPS /import du Worker déployé",
+    "与 Worker 的 IMPORT_SECRET 一致，至少 32 字符": "Utilisez le même IMPORT_SECRET que le Worker, au moins 32 caractères",
+    "开启后，生成和编辑接口的流式、非流式图片会尝试转存到 R2；Base64 直接上传，远程 URL 由 Worker 抓取，URL 转存失败时保留原地址。": "Les images générées ou modifiées, en flux ou non, tentent un stockage dans R2. Base64 est envoyé directement ; les URL distantes sont téléchargées par le Worker. Si le transfert URL échoue, son adresse initiale est conservée.",
     "order 为展示顺序（整数），默认排序时越小越靠前；未填写时为 0，相同值按分组名称排序。": "order définit l’ordre d’affichage (entier) : les valeurs les plus petites apparaissent en premier avec le tri par défaut. La valeur par défaut est 0 ; les égalités sont triées par nom de groupe.",
     "监控读取已暂停，稍后自动重试": "Actualisation suspendue ; nouvelle tentative automatique ultérieure",
     "每组每类测试历史最多记录数": "Nombre maximal de résultats par groupe et type de test",

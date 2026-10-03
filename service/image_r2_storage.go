@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -28,6 +29,10 @@ import (
 const imageR2UploadTimeout = 5 * time.Minute
 
 func StoreImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, responseBody []byte) ([]byte, error) {
+	return storeImageResultsToR2(c, info, responseBody, 0)
+}
+
+func storeImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, responseBody []byte, firstIndex int) ([]byte, error) {
 	setting := image_storage_setting.GetImageStorageSetting()
 	if setting == nil || !setting.R2Enabled {
 		return responseBody, nil
@@ -37,20 +42,20 @@ func StoreImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, response
 	if err := common.Unmarshal(responseBody, &root); err != nil {
 		return nil, fmt.Errorf("parse image response for r2 storage failed: %w", err)
 	}
-	dataRaw, ok := root["data"]
-	if !ok || len(dataRaw) == 0 {
-		return responseBody, nil
-	}
-
 	var imageData []map[string]json.RawMessage
-	if err := common.Unmarshal(dataRaw, &imageData); err != nil {
-		return nil, fmt.Errorf("parse image response data for r2 storage failed: %w", err)
+	dataRaw, hasData := root["data"]
+	if hasData && len(dataRaw) > 0 {
+		if err := common.Unmarshal(dataRaw, &imageData); err != nil {
+			return nil, fmt.Errorf("parse image response data for r2 storage failed: %w", err)
+		}
+	} else {
+		imageData = []map[string]json.RawMessage{root}
 	}
 	if len(imageData) == 0 {
 		return responseBody, nil
 	}
 
-	changed := false
+	storedCount := 0
 	for i := range imageData {
 		item := imageData[i]
 		payload := jsonStringValue(item["b64_json"])
@@ -58,53 +63,110 @@ func StoreImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, response
 		if payload == "" && isImageDataURL(urlValue) {
 			payload = urlValue
 		}
-		if payload == "" && urlValue != "" {
+		if payload == "" && urlValue == "" {
 			continue
 		}
-
-		if payload == "" {
-			continue
+		ctx := context.Background()
+		if c != nil && c.Request != nil {
+			ctx = c.Request.Context()
 		}
-
-		imageBytes, err := decodeImageBase64(payload)
-		if err != nil {
-			return nil, fmt.Errorf("decode image payload failed: %w", err)
-		}
-
-		contentType := http.DetectContentType(imageBytes)
-		objectKey := buildR2ImageObjectKey(setting.ObjectPrefix(), requestIDForObjectKey(c, info), userIDForObjectKey(c, info), i, contentType)
-		uploadCtx, cancel := context.WithTimeout(context.Background(), imageR2UploadTimeout)
-		url, err := uploadImageToR2(uploadCtx, setting, objectKey, imageBytes, contentType)
+		uploadCtx, cancel := context.WithTimeout(ctx, imageR2UploadTimeout)
+		storedURL, err := storeImagePayloadToR2(uploadCtx, c, info, setting, payload, urlValue, firstIndex+i)
 		cancel()
 		if err != nil {
+			if payload == "" && urlValue != "" {
+				logger.LogWarn(c, fmt.Sprintf("[image r2] remote image transfer failed; returning upstream URL: index=%d err=%s", firstIndex+i, err.Error()))
+				continue
+			}
 			return nil, err
 		}
 
-		urlRaw, err := common.Marshal(url)
+		urlRaw, err := common.Marshal(storedURL)
 		if err != nil {
 			return nil, fmt.Errorf("marshal R2 image URL failed: %w", err)
 		}
 		item["url"] = urlRaw
 		delete(item, "b64_json")
-		changed = true
+		storedCount++
 	}
 
-	if !changed {
+	if storedCount == 0 {
 		return responseBody, nil
 	}
 
-	newDataRaw, err := common.Marshal(imageData)
-	if err != nil {
-		return nil, fmt.Errorf("marshal r2 image response data failed: %w", err)
+	if hasData {
+		newDataRaw, err := common.Marshal(imageData)
+		if err != nil {
+			return nil, fmt.Errorf("marshal r2 image response data failed: %w", err)
+		}
+		root["data"] = newDataRaw
 	}
-	root["data"] = newDataRaw
 
 	rewritten, err := common.Marshal(root)
 	if err != nil {
 		return nil, fmt.Errorf("marshal r2 image response failed: %w", err)
 	}
-	logger.LogInfo(c, fmt.Sprintf("[image r2] stored image result(s) to R2: count=%d", len(imageData)))
+	logger.LogInfo(c, fmt.Sprintf("[image r2] stored image result(s) to R2: count=%d", storedCount))
 	return rewritten, nil
+}
+
+func storeImagePayloadToR2(ctx context.Context, c *gin.Context, info *relaycommon.RelayInfo, setting *image_storage_setting.ImageStorageSetting, payload, sourceURL string, index int) (string, error) {
+	requestID := requestIDForObjectKey(c, info) + "-" + common.GetRandomString(12)
+	if payload != "" {
+		imageBytes, err := decodeImageBase64(payload)
+		if err != nil {
+			return "", fmt.Errorf("decode image payload failed: %w", err)
+		}
+		contentType := http.DetectContentType(imageBytes)
+		if !strings.HasPrefix(contentType, "image/") {
+			return "", fmt.Errorf("image payload is not a supported image")
+		}
+		objectKey := buildR2ImageObjectKey(setting.ObjectPrefix(), requestID, userIDForObjectKey(c, info), index, contentType)
+		return uploadImageToR2(ctx, setting, objectKey, imageBytes, contentType)
+	}
+	objectKey := buildR2ImageObjectKey(setting.ObjectPrefix(), requestID, userIDForObjectKey(c, info), index, "image/png")
+	return importRemoteImageToR2(ctx, setting, sourceURL, objectKey)
+}
+
+func importRemoteImageToR2(ctx context.Context, setting *image_storage_setting.ImageStorageSetting, sourceURL, objectKey string) (string, error) {
+	parsed, err := url.Parse(sourceURL)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		return "", fmt.Errorf("invalid remote image URL")
+	}
+	workerURL, err := url.Parse(strings.TrimSpace(setting.R2WorkerURL))
+	if err != nil || workerURL.Scheme != "https" || workerURL.Host == "" || workerURL.User != nil || len(strings.TrimSpace(setting.R2WorkerSecret)) < 32 {
+		return "", fmt.Errorf("R2 remote image storage requires an HTTPS Worker URL and a Worker secret of at least 32 characters")
+	}
+	client, err := newR2S3Client(setting)
+	if err != nil {
+		return "", err
+	}
+	body, err := common.Marshal(map[string]string{"source_url": sourceURL, "object_key": objectKey, "bucket": setting.R2Bucket})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, workerURL.String(), bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(setting.R2WorkerSecret))
+	req.Header.Set("Content-Type", "application/json")
+	workerClient := &http.Client{Timeout: imageR2UploadTimeout, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := workerClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("R2 Worker request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("R2 Worker import failed: status %d", resp.StatusCode)
+	}
+	var result struct {
+		ObjectKey string `json:"object_key"`
+	}
+	if err := common.DecodeJson(io.LimitReader(resp.Body, 64*1024), &result); err != nil || result.ObjectKey != objectKey {
+		return "", fmt.Errorf("invalid R2 Worker import response")
+	}
+	return presignR2Image(ctx, client, setting, objectKey)
 }
 
 func isImageDataURL(value string) bool {
@@ -214,6 +276,10 @@ func uploadImageToR2(ctx context.Context, setting *image_storage_setting.ImageSt
 		return "", fmt.Errorf("upload image to R2 failed: %w", err)
 	}
 
+	return presignR2Image(ctx, client, setting, objectKey)
+}
+
+func presignR2Image(ctx context.Context, client *s3.Client, setting *image_storage_setting.ImageStorageSetting, objectKey string) (string, error) {
 	presignClient := s3.NewPresignClient(client)
 	presigned, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(setting.R2Bucket),

@@ -16,6 +16,8 @@ type ImageStorageSetting struct {
 	R2SecretAccessKey                     string `json:"r2_secret"`
 	R2ObjectPrefix                        string `json:"r2_object_prefix"`
 	R2URLExpireHours                      int    `json:"r2_url_expire_hours"`
+	R2WorkerURL                           string `json:"r2_worker_url"`
+	R2WorkerSecret                        string `json:"r2_worker_secret"`
 	ImageEditsBaseURL                     string `json:"image_edits_base_url"`
 	EditReferenceImageCompressionEnabled  bool   `json:"edit_reference_image_compression_enabled"`
 	EditReferenceImageCompressThresholdMB int    `json:"edit_reference_image_compress_threshold_mb"`

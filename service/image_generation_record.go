@@ -78,6 +78,11 @@ func GetImageRecordID(c *gin.Context) string {
 }
 
 func MarkImageRecordSuccess(c *gin.Context, responseBody []byte) {
+	if c != nil {
+		if _, pending := c.Writer.(*ImageStorageResponseWriter); pending {
+			return
+		}
+	}
 	recordID := GetImageRecordID(c)
 	if recordID == "" {
 		return

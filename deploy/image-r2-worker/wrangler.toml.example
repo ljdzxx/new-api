@@ -1,0 +1,13 @@
+name = "new-api-image-r2-import"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "replace-with-your-image-bucket"
+
+[vars]
+R2_BUCKET_NAME = "replace-with-your-image-bucket"
+OBJECT_PREFIX = "generated-images/"
+ALLOWED_SOURCE_HOSTS = ""
+MAX_IMAGE_BYTES = "33554432"
