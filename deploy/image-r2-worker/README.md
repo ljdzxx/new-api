@@ -36,6 +36,37 @@
 - 动态域名模式不是无鉴权的任意 URL 代理：只有持有 `IMPORT_SECRET` 的后端可调用，鉴权密钥不能发给客户端，也不要暴露绕过后端的 URL 导入入口。
 - DNS 检查是防御加固，不是对 DNS rebinding 的完全防护：检查与 Worker `fetch()` 解析不是同一次操作，且对外部域名不能用 `resolveOverride` 固定解析地址。来源域名恶意变化时仍有 DNS 检查和使用之间的竞态。如果部署环境要求严格防御任意恶意来源，使用能固定已验证连接 IP、并强制公网出口 ACL 的独立抓取代理；不要给此 Worker 添加内网访问绑定。
 
+## 排查 Worker 错误
+
+先进行无需密钥、不会上传图片的探测。在 Windows PowerShell 中执行：
+
+```powershell
+curl.exe -i -X POST "https://<worker-host>/import"
+```
+
+- 返回 `401 Unauthorized`：请求已到达本项目 Worker 的 `/import` 路由。该探测没有发送密钥，401 是预期结果。
+- 返回 `404 Not found`：检查地址是否为完整的 `/import`，不能遗漏路径或写成 `/import/`，并确认部署的是当前 `worker.mjs`。
+- 返回 `404` 且响应正文为 `error code: 1042`：这是 Cloudflare 平台返回的错误，不是本脚本的图片下载失败。先在 Cloudflare 的 Worker 设置 → 域名与路由中确认生产 `workers.dev` 路由已启用、指向正确的已发布 Worker，不能只检查部署上传是否成功或预览地址是否启用。再检查生产服务器的网络出口是否经过另一个 Worker 代理；如果存在 Worker 到 Worker 的调用限制，需要在实际发起 `fetch()` 的代理 Worker 上配置 `global_fetch_strictly_public` 兼容标志并重新部署，而不是直接修改图片 Worker 的密钥或 bucket。应从生产服务器网络和本地网络分别进行无密钥探测，不能仅凭本地探测推断生产服务器的出网方式。
+- 返回 `500` / `error code: 1101`，异常为 `Callback returned incorrect type; expected 'Promise'`：检查实际已发布版本的入口和构建产物，而不是先修改 R2 参数。本项目的模块入口为 `export default { async fetch(request, env) { ... } }`，必须保留异步返回值；额外包装入口时也必须返回内部处理函数的 Promise，不能遗漏 `return`。如果无密钥 GET `/import` 也报这个异常（本项目应返回 405），优先核对生产版本是否确实使用本目录的 `worker.mjs`。在本目录执行 `bun x wrangler deploy --config wrangler.toml` 发布当前源码后，再分别验证 GET 返回 405、无密钥 POST 返回 401。日志本身不能证明具体是哪段回调有问题，需要对照已发布源码；重新发布后仍异常时，应检查该新版本的异常日志和调用栈。不要在排查时粘贴 `IMPORT_SECRET`、生产配置或带签名的图片 URL。
+- 返回 `502`：已进入请求解析、来源检查、下载或 R2 上传失败的分支。新版 Worker 会返回安全的 JSON 诊断，并在 Worker 日志中输出 `[image r2] import failed`，包含 `stage`、`reason`，以及可选的 `upstream_status`（来源服务或 DoH 的 HTTP 状态码）。旧版只有 `502 Image import failed`，无法仅凭请求汇总日志定位原因，需要重新发布新版 Worker 后重试。
+
+502 的常见诊断：
+
+| stage / reason | 检查事项 |
+| --- | --- |
+| `source_validation / source_host_not_allowed` | 动态上游是否仍配置了旧的 `ALLOWED_SOURCE_HOSTS`；需要动态模式时将其留空并重新发布。重定向被名单拒绝时 stage 为 `redirect_validation`。 |
+| `source_validation / invalid_source_url` 或 `source_not_allowed` | 上游 URL 格式是否正确；允许 HTTP/HTTPS 默认端口域名，不允许 IP 字面量、内网域名、用户名密码或非默认端口。 |
+| `dns_lookup / dns_http_error`、`dns_lookup_failed`、`dns_fetch_failed` 或 `invalid_dns_response` | Worker 能否访问 Cloudflare DoH，域名解析是否成功；HTTP 错误会附带状态码。 |
+| `dns_lookup / non_public_dns` | 域名没有 A/AAAA 地址或包含非公网地址，不能通过关闭公网地址验证解决。 |
+| `source_download / source_http_error` | 根据 `upstream_status` 检查图片来源，例如 403 权限/防盗链、404 文件不存在；不要把 Worker 鉴权密钥转发给图片来源。 |
+| `source_download / source_fetch_failed` 或 `image_read / image_read_failed` | 来源连接、TLS 或响应读取失败。 |
+| `redirect_validation / invalid_redirect` | 重定向地址无效或超过 5 次。 |
+| `image_read / image_too_large` 或 `image_validation / unsupported_image` | 图片超过配置大小或硬上限，或者实际文件不是 PNG/JPEG/GIF/WebP（可能是 HTML 错误页）。 |
+| `r2_upload / r2_put_failed` | R2 写入失败，检查 `IMAGES` 绑定、目标 bucket 及 Cloudflare R2 状态。 |
+| 任意 stage / `source_timeout` | 下载计时器已触发；检查来源响应速度和项目请求超时。 |
+
+Worker 更新后无需更新项目就能在 Cloudflare 日志看到诊断；要在项目 WARN 中看到这些字段，需要同时更新 Go 后端。后端只接受名单内的阶段、原因和合法 HTTP 状态码，继续保留上游 URL 兜底，并区分 `cloudflare_error=1042` 与 `/import` 路径不匹配。不会把任意异常消息、远程响应正文、源图片 URL 或鉴权密钥写入日志。排查时需要查看与失败请求同一 `scriptVersion.id` 的日志，不能混用部署前后的错误。
+
 ## 测试
 
 ```sh

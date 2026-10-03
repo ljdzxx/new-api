@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -122,6 +123,45 @@ func TestImageR2WorkerFailuresReturnOriginalURL(t *testing.T) {
 		worker.Close()
 		require.NoError(t, err)
 		require.Equal(t, body, rewritten)
+	}
+}
+
+func TestImageR2WorkerResponseErrorDiagnostics(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{name: "Cloudflare routing error", status: 404, body: "error code: 1042", want: "cloudflare_error=1042"},
+		{name: "Worker path mismatch", status: 404, body: "Not found", want: "expected /import"},
+		{name: "Other response is not logged", status: 502, body: "secret-sensitive-upstream-response", want: "status 502"},
+		{name: "Worker source validation", status: 502, body: `{"error":"image_import_failed","stage":"source_validation","reason":"source_host_not_allowed"}`, want: "stage=source_validation, reason=source_host_not_allowed"},
+		{name: "Worker upstream status", status: 502, body: `{"error":"image_import_failed","stage":"source_download","reason":"source_http_error","upstream_status":403}`, want: "stage=source_download, reason=source_http_error, upstream_status=403"},
+		{name: "Worker R2 upload", status: 502, body: `{"error":"image_import_failed","stage":"r2_upload","reason":"r2_put_failed","message":"secret-sensitive-upstream-response"}`, want: "stage=r2_upload, reason=r2_put_failed"},
+		{name: "Unknown stage is not logged", status: 502, body: `{"error":"image_import_failed","stage":"secret-sensitive-upstream-response","reason":"r2_put_failed"}`, want: "status 502"},
+		{name: "Unknown reason is not logged", status: 502, body: `{"error":"image_import_failed","stage":"r2_upload","reason":"secret-sensitive-upstream-response"}`, want: "status 502"},
+		{name: "Unknown error is not logged", status: 502, body: `{"error":"secret-sensitive-upstream-response","stage":"r2_upload","reason":"r2_put_failed"}`, want: "status 502"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			response := &http.Response{StatusCode: testCase.status, Body: io.NopCloser(strings.NewReader(testCase.body))}
+			err := imageR2WorkerResponseError(response)
+			require.ErrorContains(t, err, testCase.want)
+			require.NotContains(t, err.Error(), "secret-sensitive-upstream-response")
+		})
+	}
+}
+
+func TestImageR2WorkerDiagnosticsIgnoreInvalidUpstreamStatus(t *testing.T) {
+	for _, status := range []int{-1, 0, 99, 600, 999999} {
+		body, err := common.Marshal(map[string]any{
+			"error": "image_import_failed", "stage": "source_download", "reason": "source_http_error", "upstream_status": status,
+		})
+		require.NoError(t, err)
+		response := &http.Response{StatusCode: 502, Body: io.NopCloser(bytes.NewReader(body))}
+		err = imageR2WorkerResponseError(response)
+		require.ErrorContains(t, err, "stage=source_download, reason=source_http_error")
+		require.NotContains(t, err.Error(), "upstream_status=")
 	}
 }
 

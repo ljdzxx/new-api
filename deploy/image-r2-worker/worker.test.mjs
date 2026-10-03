@@ -41,6 +41,22 @@ function request(payload = {}, auth = secret) {
   });
 }
 
+test('fetch returns a Promise of Response for early route and authentication exits', async () => {
+  const { env } = environment();
+  for (const [incoming, expectedStatus] of [
+    [new Request('https://worker.example.com/other'), 404],
+    [new Request('https://worker.example.com/import'), 405],
+    [new Request('https://worker.example.com/import', { method: 'POST' }), 401],
+    [request({}, 'wrong'), 401],
+  ]) {
+    const pending = worker.fetch(incoming, env);
+    assert.ok(pending instanceof Promise);
+    const response = await pending;
+    assert.ok(response instanceof Response);
+    assert.equal(response.status, expectedStatus);
+  }
+});
+
 test('downloads a URL into the configured bucket with the actual content type', async () => {
   const { env, writes } = environment();
   const originalFetch = globalThis.fetch;
@@ -50,7 +66,9 @@ test('downloads a URL into the configured bucket with the actual content type', 
     return new Response(image, { headers: { 'Content-Type': 'application/octet-stream' } });
   });
   try {
-    const response = await worker.fetch(request(), env);
+    const pending = worker.fetch(request(), env);
+    assert.ok(pending instanceof Promise);
+    const response = await pending;
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { object_key: objectKey });
     assert.equal(writes.length, 1);
@@ -145,6 +163,125 @@ test('reports storage failures and limits import request size', async () => {
     assert.equal((await worker.fetch(new Request('https://worker.example.com/import'), env)).status, 405);
     assert.equal((await worker.fetch(new Request('https://worker.example.com/other'), env)).status, 404);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test('reports safe failure stages and reasons without logging source URLs or exception messages', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const logs = [];
+  const sensitive = `https://sensitive.vendor.com/private.png?token=${secret}`;
+  console.error = (...args) => logs.push(args);
+  try {
+    for (const scenario of [
+      {
+        payload: { source_url: 'not a URL' },
+        expected: { stage: 'source_validation', reason: 'invalid_source_url' },
+      },
+      {
+        payload: { source_url: sensitive },
+        expected: { stage: 'source_validation', reason: 'source_host_not_allowed' },
+      },
+      {
+        fetch: async () => new Response('forbidden', { status: 403 }),
+        expected: { stage: 'dns_lookup', reason: 'dns_http_error', upstream_status: 403 },
+      },
+      {
+        fetch: async () => Response.json({ Status: 3 }),
+        expected: { stage: 'dns_lookup', reason: 'dns_lookup_failed' },
+      },
+      {
+        fetch: async () => new Response('<html>not DNS JSON</html>'),
+        expected: { stage: 'dns_lookup', reason: 'invalid_dns_response' },
+      },
+      {
+        fetch: mockImageFetch(async () => new Response(image), { A: ['10.0.0.1'], AAAA: [] }),
+        expected: { stage: 'dns_lookup', reason: 'non_public_dns' },
+      },
+      {
+        fetch: async () => { throw new TypeError(sensitive); },
+        expected: { stage: 'dns_lookup', reason: 'dns_fetch_failed' },
+      },
+      {
+        fetch: mockImageFetch(async () => { throw new TypeError(sensitive); }),
+        expected: { stage: 'source_download', reason: 'source_fetch_failed' },
+      },
+      {
+        fetch: mockImageFetch(async () => new Response('forbidden', { status: 403 })),
+        expected: { stage: 'source_download', reason: 'source_http_error', upstream_status: 403 },
+      },
+      {
+        fetch: mockImageFetch(async () => new Response(null, { status: 302 })),
+        expected: { stage: 'redirect_validation', reason: 'invalid_redirect' },
+      },
+      {
+        fetch: mockImageFetch(async () => new Response(null, { status: 302, headers: { Location: sensitive } })),
+        expected: { stage: 'redirect_validation', reason: 'source_host_not_allowed' },
+      },
+      {
+        fetch: mockImageFetch(async () => new Response(image)),
+        overrides: { MAX_IMAGE_BYTES: '8' },
+        expected: { stage: 'image_read', reason: 'image_too_large' },
+      },
+      {
+        fetch: mockImageFetch(async () => new Response('<html>not an image</html>')),
+        expected: { stage: 'image_validation', reason: 'unsupported_image' },
+      },
+      {
+        overrides: { IMAGES: { async put() { throw new Error(sensitive); } } },
+        expected: { stage: 'r2_upload', reason: 'r2_put_failed' },
+      },
+      {
+        incoming: new Request('https://worker.example.com/import', {
+          method: 'POST', headers: { Authorization: `Bearer ${secret}` }, body: '{invalid',
+        }),
+        expected: { stage: 'request_parse', reason: 'invalid_request_json' },
+      },
+    ]) {
+      const { env } = environment(scenario.overrides);
+      globalThis.fetch = scenario.fetch || mockImageFetch(async () => new Response(image));
+      const response = await worker.fetch(scenario.incoming || request(scenario.payload), env);
+      assert.equal(response.status, 502);
+      assert.equal(response.headers.get('Cache-Control'), 'no-store');
+      const details = { error: 'image_import_failed', ...scenario.expected };
+      assert.deepEqual(await response.json(), details);
+      assert.deepEqual(logs.at(-1), ['[image r2] import failed', details]);
+    }
+    const serialized = JSON.stringify(logs);
+    assert.ok(!serialized.includes(secret));
+    assert.ok(!serialized.includes('sensitive.vendor.com'));
+    assert.ok(!serialized.includes('private.png'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
+
+test('reports download timeouts safely and keeps the failure response at 502', async () => {
+  const { env } = environment();
+  const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalError = console.error;
+  globalThis.setTimeout = (callback, milliseconds) => {
+    assert.equal(milliseconds, 120000);
+    return originalSetTimeout(callback, 0);
+  };
+  console.error = () => {};
+  globalThis.fetch = mockImageFetch(async (url, { signal }) => {
+    await new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('request aborted', 'AbortError')), { once: true });
+    });
+  });
+  try {
+    const response = await worker.fetch(request(), env);
+    assert.equal(response.status, 502);
+    assert.deepEqual(await response.json(), {
+      error: 'image_import_failed', stage: 'source_download', reason: 'source_timeout',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+    console.error = originalError;
+  }
 });
 
 test('empty or omitted host list accepts changing public hosts and cross-host redirects', async () => {

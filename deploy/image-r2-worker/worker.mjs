@@ -1,5 +1,39 @@
 const maximumImageBytes = 32 * 1024 * 1024;
 
+class ImageImportError extends Error {
+  constructor(reason, upstreamStatus) {
+    super(reason);
+    this.reason = reason;
+    this.upstreamStatus = upstreamStatus;
+  }
+}
+
+function importFailure(error, diagnostic) {
+  const reasons = {
+    request_body: 'request_read_failed',
+    request_parse: 'invalid_request_json',
+    source_validation: 'source_validation_failed',
+    dns_lookup: 'dns_fetch_failed',
+    source_download: 'source_fetch_failed',
+    redirect_validation: 'invalid_redirect',
+    image_read: 'image_read_failed',
+    image_validation: 'image_validation_failed',
+    r2_upload: 'r2_put_failed',
+  };
+  const details = {
+    error: 'image_import_failed',
+    stage: diagnostic.stage,
+    reason: diagnostic.signal?.aborted ? 'source_timeout' :
+      error instanceof ImageImportError ? error.reason : reasons[diagnostic.stage],
+  };
+  if (error instanceof ImageImportError && Number.isInteger(error.upstreamStatus) &&
+      error.upstreamStatus >= 100 && error.upstreamStatus <= 599) {
+    details.upstream_status = error.upstreamStatus;
+  }
+  console.error('[image r2] import failed', details);
+  return Response.json(details, { status: 502, headers: { 'Cache-Control': 'no-store' } });
+}
+
 async function authorized(request, secret) {
   if (typeof secret !== 'string' || secret.length < 32) return false;
   const encoder = new TextEncoder();
@@ -18,17 +52,24 @@ async function authorized(request, secret) {
 }
 
 function validateSource(value, allowedHosts) {
-  if (typeof value !== 'string') throw new Error('Invalid source URL');
-  const source = new URL(value);
+  if (typeof value !== 'string') throw new ImageImportError('invalid_source_url');
+  let source;
+  try {
+    source = new URL(value);
+  } catch {
+    throw new ImageImportError('invalid_source_url');
+  }
   const hostname = source.hostname.toLowerCase().replace(/\.$/, '');
   if (!['http:', 'https:'].includes(source.protocol) || source.username || source.password ||
       source.port ||
       !hostname.includes('.') || hostname.length > 253 ||
       !hostname.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) ||
       /^\d+(?:\.\d+){3}$/.test(hostname) ||
-      /\.(?:localhost|local|internal|lan|home|test|invalid|example)$/.test(hostname) ||
-      (allowedHosts.size > 0 && !allowedHosts.has(hostname))) {
-    throw new Error('Source URL is not allowed');
+      /\.(?:localhost|local|internal|lan|home|test|invalid|example)$/.test(hostname)) {
+    throw new ImageImportError('source_not_allowed');
+  }
+  if (allowedHosts.size > 0 && !allowedHosts.has(hostname)) {
+    throw new ImageImportError('source_host_not_allowed');
   }
   return source;
 }
@@ -73,39 +114,51 @@ async function validateSourceDNS(source, signal) {
     const response = await fetch(resolver.toString(), {
       headers: { Accept: 'application/dns-json' }, redirect: 'error', signal,
     });
-    if (!response.ok) throw new Error('Source DNS lookup failed');
-    const result = await response.json();
-    if (result.Status !== 0 || result.TC === true) throw new Error('Source DNS lookup failed');
+    if (!response.ok) throw new ImageImportError('dns_http_error', response.status);
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw new ImageImportError('invalid_dns_response');
+    }
+    if (!result || result.Status !== 0 || result.TC === true) throw new ImageImportError('dns_lookup_failed');
     const answers = result.Answer ?? [];
-    if (!Array.isArray(answers)) throw new Error('Invalid source DNS response');
+    if (!Array.isArray(answers) || answers.some((answer) => !answer || typeof answer !== 'object')) {
+      throw new ImageImportError('invalid_dns_response');
+    }
     return answers.filter((answer) => answer.type === 1 || answer.type === 28);
   }));
   const addresses = results.flat();
   if (!addresses.length || addresses.some((answer) =>
     answer.type === 1 ? typeof answer.data !== 'string' || !publicIPv4(answer.data) : !publicIPv6(answer.data))) {
-    throw new Error('Source DNS does not resolve exclusively to public addresses');
+    throw new ImageImportError('non_public_dns');
   }
 }
 
-async function downloadImage(source, allowedHosts, signal, limit) {
+async function downloadImage(source, allowedHosts, signal, limit, diagnostic) {
   let current = validateSource(source, allowedHosts);
   let response;
   for (let redirects = 0; redirects <= 5; redirects++) {
+    diagnostic.stage = 'dns_lookup';
     await validateSourceDNS(current, signal);
+    diagnostic.stage = 'source_download';
     response = await fetch(current.toString(), { redirect: 'manual', signal });
     if (![301, 302, 303, 307, 308].includes(response.status)) break;
     const location = response.headers.get('Location');
     await response.body?.cancel();
-    if (!location || redirects === 5) throw new Error('Invalid source redirect');
+    diagnostic.stage = 'redirect_validation';
+    if (!location || redirects === 5) throw new ImageImportError('invalid_redirect');
     current = validateSource(new URL(location, current).toString(), allowedHosts);
   }
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
     await response.body?.cancel();
-    throw new Error('Source download failed');
+    throw new ImageImportError('source_http_error', response.status);
   }
+  if (!response.body) throw new ImageImportError('empty_source_body');
+  diagnostic.stage = 'image_read';
   if (Number(response.headers.get('Content-Length')) > limit) {
     await response.body.cancel();
-    throw new Error('Image is too large');
+    throw new ImageImportError('image_too_large');
   }
   const reader = response.body.getReader();
   const chunks = [];
@@ -115,7 +168,7 @@ async function downloadImage(source, allowedHosts, signal, limit) {
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > limit) throw new Error('Image is too large');
+      if (size > limit) throw new ImageImportError('image_too_large');
       chunks.push(value);
     }
   } catch (error) {
@@ -128,8 +181,9 @@ async function downloadImage(source, allowedHosts, signal, limit) {
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
+  diagnostic.stage = 'image_validation';
   const contentType = imageContentType(bytes);
-  if (!contentType) throw new Error('Source is not a supported image');
+  if (!contentType) throw new ImageImportError('unsupported_image');
   return { bytes, contentType };
 }
 
@@ -159,6 +213,7 @@ export default {
     let requestText = '';
     let requestSize = 0;
     const decoder = new TextDecoder();
+    const diagnostic = { stage: 'request_body' };
     try {
       while (true) {
         const { value, done } = await requestReader.read();
@@ -171,6 +226,7 @@ export default {
         requestText += decoder.decode(value, { stream: true });
       }
       requestText += decoder.decode();
+      diagnostic.stage = 'request_parse';
       const { source_url: sourceUrl, object_key: objectKey, bucket } = JSON.parse(requestText);
       const prefix = String(env.OBJECT_PREFIX || 'generated-images/').replace(/^\/+|\/+$/g, '') + '/';
       if (bucket !== env.R2_BUCKET_NAME || typeof objectKey !== 'string' ||
@@ -179,21 +235,24 @@ export default {
           objectKey.split('/').some((part) => !part || part === '.' || part === '..')) {
         return new Response('Invalid object key or bucket', { status: 400 });
       }
+      diagnostic.stage = 'source_validation';
       validateSource(sourceUrl, allowedHosts);
       const configuredLimit = Number(env.MAX_IMAGE_BYTES || maximumImageBytes);
       const limit = Number.isSafeInteger(configuredLimit) && configuredLimit > 0
         ? Math.min(configuredLimit, maximumImageBytes) : maximumImageBytes;
       const controller = new AbortController();
+      diagnostic.signal = controller.signal;
       const timeout = setTimeout(() => controller.abort(), 120000);
       try {
-        const { bytes, contentType } = await downloadImage(sourceUrl, allowedHosts, controller.signal, limit);
+        const { bytes, contentType } = await downloadImage(sourceUrl, allowedHosts, controller.signal, limit, diagnostic);
+        diagnostic.stage = 'r2_upload';
         await env.IMAGES.put(objectKey, bytes, { httpMetadata: { contentType } });
         return Response.json({ object_key: objectKey }, { headers: { 'Cache-Control': 'no-store' } });
       } finally {
         clearTimeout(timeout);
       }
-    } catch {
-      return new Response('Image import failed', { status: 502 });
+    } catch (error) {
+      return importFailure(error, diagnostic);
     }
   },
 };

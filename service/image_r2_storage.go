@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ import (
 )
 
 const imageR2UploadTimeout = 5 * time.Minute
+
+var imageR2CloudflareErrorPattern = regexp.MustCompile(`(?i)\berror code:\s*([0-9]{3,5})\b`)
 
 func StoreImageResultsToR2(c *gin.Context, info *relaycommon.RelayInfo, responseBody []byte) ([]byte, error) {
 	return storeImageResultsToR2(c, info, responseBody, 0)
@@ -158,7 +161,7 @@ func importRemoteImageToR2(ctx context.Context, setting *image_storage_setting.I
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("R2 Worker import failed: status %d", resp.StatusCode)
+		return "", imageR2WorkerResponseError(resp)
 	}
 	var result struct {
 		ObjectKey string `json:"object_key"`
@@ -167,6 +170,45 @@ func importRemoteImageToR2(ctx context.Context, setting *image_storage_setting.I
 		return "", fmt.Errorf("invalid R2 Worker import response")
 	}
 	return presignR2Image(ctx, client, setting, objectKey)
+}
+
+func imageR2WorkerResponseError(resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	var diagnostic struct {
+		Error          string `json:"error"`
+		Stage          string `json:"stage"`
+		Reason         string `json:"reason"`
+		UpstreamStatus int    `json:"upstream_status"`
+	}
+	if resp.StatusCode == http.StatusBadGateway && common.Unmarshal(body, &diagnostic) == nil && diagnostic.Error == "image_import_failed" {
+		stages := map[string]bool{
+			"request_body": true, "request_parse": true, "source_validation": true,
+			"dns_lookup": true, "source_download": true, "redirect_validation": true,
+			"image_read": true, "image_validation": true, "r2_upload": true,
+		}
+		reasons := map[string]bool{
+			"request_read_failed": true, "invalid_request_json": true, "source_validation_failed": true,
+			"invalid_source_url": true, "source_not_allowed": true, "source_host_not_allowed": true,
+			"dns_fetch_failed": true, "dns_http_error": true, "invalid_dns_response": true,
+			"dns_lookup_failed": true, "non_public_dns": true, "source_fetch_failed": true,
+			"invalid_redirect": true, "source_http_error": true, "empty_source_body": true,
+			"image_read_failed": true, "image_too_large": true, "image_validation_failed": true,
+			"unsupported_image": true, "r2_put_failed": true, "source_timeout": true,
+		}
+		if stages[diagnostic.Stage] && reasons[diagnostic.Reason] {
+			if diagnostic.UpstreamStatus >= 100 && diagnostic.UpstreamStatus <= 599 {
+				return fmt.Errorf("R2 Worker import failed: status 502, stage=%s, reason=%s, upstream_status=%d", diagnostic.Stage, diagnostic.Reason, diagnostic.UpstreamStatus)
+			}
+			return fmt.Errorf("R2 Worker import failed: status 502, stage=%s, reason=%s", diagnostic.Stage, diagnostic.Reason)
+		}
+	}
+	if match := imageR2CloudflareErrorPattern.FindSubmatch(body); len(match) == 2 {
+		return fmt.Errorf("R2 Worker import failed: status %d, cloudflare_error=%s", resp.StatusCode, match[1])
+	}
+	if resp.StatusCode == http.StatusNotFound && bytes.Equal(bytes.TrimSpace(body), []byte("Not found")) {
+		return fmt.Errorf("R2 Worker import failed: status 404, Worker endpoint not found (expected /import)")
+	}
+	return fmt.Errorf("R2 Worker import failed: status %d", resp.StatusCode)
 }
 
 func isImageDataURL(value string) bool {
