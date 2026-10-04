@@ -362,7 +362,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				logClaudeRelayError(c, "channel selection failed: request_id=%s retry=%d status=%d err=%s origin_model=%q", requestId, relayInfo.RetryIndex, channelErr.StatusCode, channelErr.Error(), relayInfo.OriginModelName)
 			}
 			logger.LogError(c, channelErr.Error())
-			newAPIError = channelErr
+			// Exhausting retry candidates must not hide the last upstream failure.
+			if newAPIError == nil || !errors.Is(channelErr.Err, errRetryChannelsExhausted) {
+				newAPIError = channelErr
+			}
 			break
 		}
 		if relayFormat == types.RelayFormatClaude {
@@ -1100,6 +1103,8 @@ func maybeApplyChannelForward(c *gin.Context, info *relaycommon.RelayInfo, chann
 	return targetChannel, nil
 }
 
+var errRetryChannelsExhausted = errors.New("可用渠道不存在（retry）")
+
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
 	if lockedChannelID := common.GetContextKeyInt(c, constant.ContextKeyChannelForwardLockedId); lockedChannelID > 0 {
 		targetChannel, err := model.CacheGetChannel(lockedChannelID)
@@ -1142,7 +1147,7 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
-		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return nil, types.NewErrorWithStatusCode(fmt.Errorf("分组 %s 下模型 %s 的%w", selectGroup, info.OriginModelName, errRetryChannelsExhausted), types.ErrorCodeGetChannelFailed, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
 	}
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
@@ -1378,7 +1383,9 @@ func RelayTask(c *gin.Context) {
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				if taskErr == nil || !errors.Is(channelErr.Err, errRetryChannelsExhausted) {
+					taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", channelErr.StatusCode)
+				}
 				break
 			}
 		}
