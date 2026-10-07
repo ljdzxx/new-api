@@ -258,11 +258,11 @@ export default function SettingsDrawing(props) {
             </Row>
           </Form.Section>
 
-          <Form.Section text={t('图片编辑直连域名')}>
+          <Form.Section text={t('图片接口直连域名')}>
             <Banner
               type='info'
               description={t(
-                '用于图像生成页面的 generations 和 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。',
+                '用于图像生成页面的 generations 和 edits 请求。如需绕过 Cloudflare 橙云超时，请填写指向本站同一服务且未开启 Cloudflare 代理的基础地址，例如 https://image-api.example.com。',
               )}
               style={{ marginBottom: 16 }}
             />
@@ -273,7 +273,7 @@ export default function SettingsDrawing(props) {
                   label={t('图片接口直连域名')}
                   placeholder='https://image-api.example.com'
                   extraText={t(
-                    '填写域名即可，系统会自动拼接 /v1/images/generations 或 /v1/images/edits；留空使用同源接口',
+                    '填写带协议的基础地址，例如 https://image-api.example.com，也支持末尾带 /v1；不要只填裸域名或完整接口路径。系统会自动拼接图片接口路径；留空使用默认接口地址。保存后请刷新图像生成页面。',
                   )}
                   onChange={(value) =>
                     setInputs({

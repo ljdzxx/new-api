@@ -1,5 +1,7 @@
 {
   "translation": {
+    "logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。": "logic_prompt, logic_answer et logic_match_mode remplacent indépendamment les paramètres logiques globaux. Une valeur omise, null, vide ou composée uniquement d’espaces hérite de la valeur globale. Modes : exact ou contains.",
+    "以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。": "La question, la réponse et le mode de correspondance ci-dessous sont les valeurs globales par défaut ; les paramètres du groupe sont prioritaires. La question et la réponse globales peuvent rester vides si chaque groupe avec les tests logiques activés fournit les siennes.",
     "R2 Worker 地址": "URL du Worker R2",
     "R2 Worker 密钥": "Secret du Worker R2",
     "填写已部署 Worker 的 /import HTTPS 地址": "Saisissez le point de terminaison HTTPS /import du Worker déployé",
@@ -3170,7 +3172,7 @@
     "填写音频补全价格前，需要先填写音频输入价格。": "Renseignez d'abord le prix d'entrée audio avant de définir le prix de complétion audio.",
     "填写隐私政策内容后，用户注册时将被要求勾选已阅读隐私政策": "Après avoir rempli le contenu de la politique de confidentialité, les utilisateurs devront cocher avoir lu la politique de confidentialité lors de l'inscription",
     "填写用户协议内容后，用户注册时将被要求勾选已阅读用户协议": "Après avoir rempli le contenu de l'accord utilisateur, les utilisateurs devront cocher avoir lu l'accord utilisateur lors de l'inscription",
-    "填写域名即可，系统会自动拼接 /v1/images/generations 或 /v1/images/edits；留空使用同源接口": "",
+    "填写带协议的基础地址，例如 https://image-api.example.com，也支持末尾带 /v1；不要只填裸域名或完整接口路径。系统会自动拼接图片接口路径；留空使用默认接口地址。保存后请刷新图像生成页面。": "Saisissez une URL de base avec son protocole, par exemple https://image-api.example.com ; le suffixe /v1 est aussi accepté. Ne saisissez ni un domaine seul ni le chemin complet d’un endpoint. Les chemins des endpoints d’images sont ajoutés automatiquement. Laissez vide pour utiliser l’adresse API par défaut. Actualisez la page de génération d’images après l’enregistrement.",
     "填写注意事项": "",
     "填写Gotify服务器的完整URL地址": "Remplir l'adresse URL complète du serveur Gotify",
     "条": "éléments",
@@ -3873,7 +3875,7 @@
     "用以支持系统的邮件发送": "Pour prendre en charge l'envoi d'e-mails système",
     "用以支持用户校验": "Pour prendre en charge la vérification des utilisateurs",
     "用于配置网络代理，支持 socks5 协议": "Utilisé pour configurer le proxy réseau, prend en charge le protocole socks5",
-    "用于图像生成页面的 generations 和 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。": "",
+    "用于图像生成页面的 generations 和 edits 请求。如需绕过 Cloudflare 橙云超时，请填写指向本站同一服务且未开启 Cloudflare 代理的基础地址，例如 https://image-api.example.com。": "Utilisé pour les requêtes generations et edits de la page de génération d’images. Pour éviter les délais d’expiration du proxy Cloudflare, saisissez une URL de base pointant vers le même service que ce site, sans proxy Cloudflare, par exemple https://image-api.example.com.",
     "用于唯一标识用户的字段路径": "",
     "用于验证回调 new-api 的 webhook 请求的密钥，敏感信息不显示": "Clé utilisée pour vérifier les requêtes webhook de rappel de new-api, les informations sensibles ne sont pas affichées.",
     "用于API调用的身份验证令牌，请妥善保管": "Jeton d'authentification pour les appels d'API, veuillez le conserver en lieu sûr",

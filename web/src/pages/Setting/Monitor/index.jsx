@@ -113,6 +113,9 @@ export default function MonitorSettings() {
               model: ['gpt-5.5', 'gpt-5.6-sol'],
               svg_model: 'gpt-6-astra',
               logic_model: 'gpt-6-astra',
+              logic_prompt: '2, 4, 8, 16, ?',
+              logic_answer: '32',
+              logic_match_mode: 'exact',
               key: '{your-key}',
               protocol: 'responses',
               svg_test: true,
@@ -125,6 +128,11 @@ export default function MonitorSettings() {
           2,
         )}
       </pre>
+      <Typography.Text type='tertiary'>
+        {t(
+          'logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。',
+        )}
+      </Typography.Text>
       <Typography.Text type='tertiary'>
         {t(
           'protocol 填 responses 或 messages；active 为 false 时隐藏分组，并停止发起可用性探针、SVG 和逻辑检测。',
@@ -187,6 +195,11 @@ export default function MonitorSettings() {
       </Typography.Text>
       {area('svg_prompt', t('SVG 绘图题目'))}
       <Typography.Title heading={5}>{t('逻辑题检测')}</Typography.Title>
+      <Typography.Text type='tertiary'>
+        {t(
+          '以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。',
+        )}
+      </Typography.Text>
       {field('logic_minutes', t('逻辑检测频率（分钟）'), 'number', 1, 10080)}
       {area('logic_prompt', t('逻辑题目'))}
       {area('logic_answer', t('预期答案'))}

@@ -1,5 +1,7 @@
 {
   "translation": {
+    "logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。": "logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。",
+    "以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。": "以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。",
     "R2 Worker 地址": "R2 Worker 地址",
     "R2 Worker 密钥": "R2 Worker 密钥",
     "填写已部署 Worker 的 /import HTTPS 地址": "填写已部署 Worker 的 /import HTTPS 地址",
@@ -3186,7 +3188,7 @@
     "填写音频补全价格前，需要先填写音频输入价格。": "填写音频补全价格前，需要先填写音频输入价格。",
     "填写隐私政策内容后，用户注册时将被要求勾选已阅读隐私政策": "填写隐私政策内容后，用户注册时将被要求勾选已阅读隐私政策",
     "填写用户协议内容后，用户注册时将被要求勾选已阅读用户协议": "填写用户协议内容后，用户注册时将被要求勾选已阅读用户协议",
-    "填写域名即可，系统会自动拼接 /v1/images/generations 或 /v1/images/edits；留空使用同源接口": "填写域名即可，系统会自动拼接 /v1/images/generations 或 /v1/images/edits；留空使用同源接口",
+    "填写带协议的基础地址，例如 https://image-api.example.com，也支持末尾带 /v1；不要只填裸域名或完整接口路径。系统会自动拼接图片接口路径；留空使用默认接口地址。保存后请刷新图像生成页面。": "填写带协议的基础地址，例如 https://image-api.example.com，也支持末尾带 /v1；不要只填裸域名或完整接口路径。系统会自动拼接图片接口路径；留空使用默认接口地址。保存后请刷新图像生成页面。",
     "填写注意事项": "填写注意事项",
     "填写Gotify服务器的完整URL地址": "填写Gotify服务器的完整URL地址",
     "条": "条",
@@ -3877,7 +3879,7 @@
     "用以支持系统的邮件发送": "用以支持系统的邮件发送",
     "用以支持用户校验": "用以支持用户校验",
     "用于配置网络代理，支持 socks5 协议": "用于配置网络代理，支持 socks5 协议",
-    "用于图像生成页面的 generations 和 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。": "用于图像生成页面的 generations 和 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。",
+    "用于图像生成页面的 generations 和 edits 请求。如需绕过 Cloudflare 橙云超时，请填写指向本站同一服务且未开启 Cloudflare 代理的基础地址，例如 https://image-api.example.com。": "用于图像生成页面的 generations 和 edits 请求。如需绕过 Cloudflare 橙云超时，请填写指向本站同一服务且未开启 Cloudflare 代理的基础地址，例如 https://image-api.example.com。",
     "用于唯一标识用户的字段路径": "用于唯一标识用户的字段路径",
     "用于验证回调 new-api 的 webhook 请求的密钥，敏感信息不显示": "用于验证回调 new-api 的 webhook 请求的密钥，敏感信息不显示",
     "用于API调用的身份验证令牌，请妥善保管": "用于API调用的身份验证令牌，请妥善保管",

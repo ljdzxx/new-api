@@ -1,5 +1,7 @@
 {
   "translation": {
+    "logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。": "logic_prompt, logic_answer and logic_match_mode override the global logic settings independently. Omitted, null, empty or whitespace-only values inherit the global value. Matching modes: exact or contains.",
+    "以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。": "The question, answer and matching mode below are global defaults; group settings take precedence. The global question and answer may be empty when every group with logic tests enabled supplies its own.",
     "R2 Worker 地址": "R2 Worker URL",
     "R2 Worker 密钥": "R2 Worker secret",
     "填写已部署 Worker 的 /import HTTPS 地址": "Enter the deployed Worker HTTPS /import endpoint",
@@ -3210,7 +3212,7 @@
     "填写音频补全价格前，需要先填写音频输入价格。": "Fill in the audio input price before setting the audio completion price.",
     "填写隐私政策内容后，用户注册时将被要求勾选已阅读隐私政策": "After filling in the privacy policy content, users will be required to check that they have read the privacy policy during registration",
     "填写用户协议内容后，用户注册时将被要求勾选已阅读用户协议": "After filling in the user agreement content, users will be required to check that they have read the user agreement during registration",
-    "填写域名即可，系统会自动拼接 /v1/images/generations 或 /v1/images/edits；留空使用同源接口": "",
+    "填写带协议的基础地址，例如 https://image-api.example.com，也支持末尾带 /v1；不要只填裸域名或完整接口路径。系统会自动拼接图片接口路径；留空使用默认接口地址。保存后请刷新图像生成页面。": "Enter a base URL with a scheme, such as https://image-api.example.com; a trailing /v1 is also supported. Do not enter a bare domain or a full endpoint path. Image endpoint paths are appended automatically. Leave empty to use the default API address. Refresh the image generation page after saving.",
     "填写注意事项": "",
     "填写Gotify服务器的完整URL地址": "Fill in the complete URL address of the Gotify server",
     "条": "items",
@@ -3919,7 +3921,7 @@
     "用以支持系统的邮件发送": "To support the system email sending",
     "用以支持用户校验": "To support user verification",
     "用于配置网络代理，支持 socks5 协议": "Used to configure network proxy, supports socks5 protocol",
-    "用于图像生成页面的 generations 和 edits 请求。留空时走当前同源域名；如需绕过 Cloudflare 橙云超时，可填写不走代理的新域名，例如 https://image-api.example.com。": "",
+    "用于图像生成页面的 generations 和 edits 请求。如需绕过 Cloudflare 橙云超时，请填写指向本站同一服务且未开启 Cloudflare 代理的基础地址，例如 https://image-api.example.com。": "Used for generations and edits requests on the image generation page. To avoid Cloudflare proxy timeouts, enter a base URL pointing to this site’s same service with Cloudflare proxying disabled, such as https://image-api.example.com.",
     "用于唯一标识用户的字段路径": "",
     "用于验证回调 new-api 的 webhook 请求的密钥，敏感信息不显示": "The key used to validate webhook requests for the callback new-api, sensitive information is not displayed.",
     "用于API调用的身份验证令牌，请妥善保管": "Authentication token for API calls, please keep it safe",

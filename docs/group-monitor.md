@@ -17,7 +17,32 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 监控分组 JSON 示例：
 
 ```json
-{"codex-pro":{"model":["gpt-5.5","gpt-5.6-sol"],"svg_model":"gpt-6-astra","logic_model":"gpt-6-astra","key":"sk-example","protocol":"responses","svg_test":true,"logic_test":false,"active":true,"order":0}}
+{
+  "codex-pro": {
+    "model": ["gpt-5.5", "gpt-5.6-sol"],
+    "svg_model": "gpt-6-astra",
+    "logic_model": "gpt-6-astra",
+    "logic_prompt": "数列 2、4、8、16 的下一项是什么？只输出数字。",
+    "logic_answer": "32",
+    "logic_match_mode": "exact",
+    "key": "sk-example",
+    "protocol": "responses",
+    "svg_test": true,
+    "logic_test": true,
+    "active": true,
+    "order": 0
+  },
+  "default-logic": {
+    "model": ["gpt-5.5"],
+    "logic_model": "gpt-5.5",
+    "key": "sk-example-default",
+    "protocol": "responses",
+    "svg_test": false,
+    "logic_test": true,
+    "active": true,
+    "order": 1
+  }
+}
 ```
 
 密钥必须是绑定相应分组的本站令牌，在 root 管理员的监控设置中明文展示和编辑；公开监控接口不返回密钥。探测地址可以是站点根地址、`/v1` 或完整 `/v1/responses`、`/v1/messages`；最终路径根据分组协议自动选择。所有检测经过正常计费和请求统计。
@@ -25,13 +50,16 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 - `protocol`：填写 `responses` 或 `messages`，分别使用 OpenAI Responses 或 Anthropic Messages 协议。不要填写 `responses|messages`。
 - `svg_model` / `logic_model`：每组的绘图、逻辑专用模型，可不在 `model` 列表内。
 - `svg_test` / `logic_test`：该组是否执行对应测试；启用时必须填写对应专用模型。
+- `logic_prompt` / `logic_answer` / `logic_match_mode`：该组的逻辑题目、预期答案和匹配方式，逐字段覆盖“逻辑题检测”中的全局默认值。每个字段省略、为 `null`、空字符串或仅含空白时，继承对应全局值；可只覆盖其中一项。匹配方式为 `exact` 或 `contains`，全局匹配方式也为空时默认 `exact`。上例中 `codex-pro` 使用自己的三个字段，`default-logic` 全部继承全局设置。
 - `active`：控制分组展示和后台检测。设为 `false` 后，该组从公开页面及其趋势、作品接口隐藏，并停止发起可用性探针、SVG 和逻辑检测；已经发出的检测请求会完成本次执行。真实用户请求的指标仍会采集，历史数据继续遵循保留策略。改回 `true` 后恢复展示和检测，省略时默认为 `true`。调度器每 15 秒读取一次当前节点配置，多节点部署需等待 master 同步设置。
 - `order`：分组展示顺序，整型，越小越靠前；未填写时默认为 `0`，相同值按分组名称排序。页面选择“默认排序”时使用此顺序。
 - `model`：可用性探测及用户请求指标统计的模型列表，不决定绘图、逻辑测试模型。
 
 旧配置自动兼容：缺省协议为 `responses`，缺省 `active` 为 `true`；旧全局 SVG 开关和模型迁入各组，旧逻辑开关迁入各组并使用该组第一个模型作为专用模型。显式的 `false` 优先于旧开关。保存后采用新格式；全局界面保留题目、频率、超时、并发及存储配置。
 
-可用性逐个检测 `model` 中的模型。逻辑题仅调用 `logic_model`，答案去除首尾空白后按 `logic_match_mode` 匹配：`exact`（完全相等，默认）或 `contains`（包含指定字符串）；两种方式都区分大小写。SVG 仅调用 `svg_model`，每组执行一次。三类任务频率互相独立，各组测试均使用自身 `protocol`。
+保存配置时不会把继承值复制到分组；修改全局默认值后，继承相应字段的分组会使用新值。启用逻辑检测的每组，合并后的题目和答案必须非空；所有启用组都自行提供题目和答案时，全局这两项可留空。分组题目最多 32000 字节、答案最多 16000 字节，与全局限制一致；非法匹配方式及超长文本会提示具体分组。旧 JSON 无需添加这三个字段即可继续使用全局设置。
+
+可用性逐个检测 `model` 中的模型。逻辑题仅调用 `logic_model`，采用分组与全局合并后的题目、预期答案和 `logic_match_mode`；回复与预期答案去除首尾空白后匹配：`exact`（完全相等，默认）或 `contains`（包含指定字符串）；两种方式都区分大小写。历史详情保存当次实际使用的三个字段，不随后续配置修改而变化。SVG 仅调用 `svg_model`，每组执行一次。三类任务频率互相独立，逻辑检测频率仍由全局 `logic_minutes` 控制，各组测试均使用自身 `protocol`。
 
 每次 SVG 测试在本地 `<输出目录>/<分组哈希>/<时间戳-记录ID>/` 保存 `prompt.txt`、`response.txt`、`result.json`；模型完成应答时额外保存 `artwork.html`。文件保存后上传到 R2 `<对象前缀>/<分组哈希>/<时间戳-记录ID>/` 的对应路径。未完成的请求也保留原始部分应答，便于排查；上传失败会留存本地文件及错误码。
 

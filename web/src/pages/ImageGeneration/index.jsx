@@ -182,6 +182,9 @@ function buildImageEndpoint(baseUrl, path) {
     .replace(/\/+$/, '');
   const cleanPath = String(path || '').replace(/^\/+/, '');
   if (!cleanBaseUrl) return `/${cleanPath}`;
+  if (cleanBaseUrl.endsWith('/v1') && cleanPath === 'v1') {
+    return cleanBaseUrl;
+  }
   if (cleanBaseUrl.endsWith('/v1') && cleanPath.startsWith('v1/')) {
     return `${cleanBaseUrl}/${cleanPath.slice(3)}`;
   }
@@ -716,6 +719,10 @@ const ImageGeneration = () => {
     if (directImageEditsBaseUrl !== null) return directImageEditsBaseUrl;
     return '';
   }, [directImageEditsBaseUrl]);
+  const imageDocsBaseUrl = buildImageEndpoint(
+    imageEditsBaseUrl || serverAddress,
+    '/v1',
+  );
   const imageEditsEndpoint = useMemo(
     () => buildImageEditsEndpoint(imageEditsBaseUrl),
     [imageEditsBaseUrl],
@@ -1230,7 +1237,7 @@ const ImageGeneration = () => {
           {t('基础地址')}
         </Title>
         <code className='block px-3 py-2 rounded-lg bg-[var(--semi-color-fill-0)] text-sm break-all'>
-          {serverAddress}/v1
+          {imageDocsBaseUrl}
         </code>
       </section>
       <section>
@@ -1246,11 +1253,7 @@ const ImageGeneration = () => {
           {t('请求示例')} {'- generations'}
         </Title>
         <pre className='px-4 py-3 rounded-lg bg-[var(--semi-color-fill-0)] text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed'>
-          {`curl -X POST '${
-            imageEditsBaseUrl
-              ? buildImageGenerationsEndpoint(imageEditsBaseUrl)
-              : `${serverAddress}/v1/images/generations`
-          }' \\
+          {`curl -X POST '${imageDocsBaseUrl}/images/generations' \\
   -H 'Authorization: Bearer YOUR_API_KEY' \\
   -H 'Content-Type: application/json' \\
   -d '{
@@ -1268,11 +1271,7 @@ const ImageGeneration = () => {
           {t('请求示例<带参考图>')} {'- edits'}
         </Title>
         <pre className='px-4 py-3 rounded-lg bg-[var(--semi-color-fill-0)] text-xs overflow-x-auto whitespace-pre-wrap break-all leading-relaxed'>
-          {`curl -X POST '${
-            imageEditsBaseUrl
-              ? buildImageEditsEndpoint(imageEditsBaseUrl)
-              : `${serverAddress}/v1/images/edits`
-          }' \\
+          {`curl -X POST '${imageDocsBaseUrl}/images/edits' \\
   -H 'Authorization: Bearer YOUR_API_KEY' \\
   -F 'model=${IMAGE_MODEL}' \\
   -F 'prompt=a cinematic neon city in heavy rain' \\

@@ -359,8 +359,9 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 			return
 		}
 		prompt := "Reply with OK."
+		var logicAnswer, logicMatchMode string
 		if kind == "logic" {
-			prompt = cfg.LogicPrompt
+			prompt, logicAnswer, logicMatchMode = cfg.ResolveLogic(cfg.Groups[group])
 		}
 		if kind == "svg" {
 			prompt = cfg.SVGPrompt + "\nReturn a self-contained HTML document or SVG drawing with inline styles, without scripts or external resources."
@@ -378,8 +379,8 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 			result.Status = "success"
 		}
 		if kind == "logic" {
-			result.Expected, result.MatchMode = cfg.LogicAnswer, cfg.LogicMatchMode
-			if result.OK && !monitorLogicMatches(answer, cfg.LogicAnswer, cfg.LogicMatchMode) {
+			result.Expected, result.MatchMode = logicAnswer, logicMatchMode
+			if result.OK && !monitorLogicMatches(answer, logicAnswer, logicMatchMode) {
 				result.OK, result.Status, result.Error = false, "test_failed", "answer_mismatch"
 			}
 		}

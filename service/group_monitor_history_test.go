@@ -335,3 +335,69 @@ func TestMonitorTaskResultsAndPartialArchives(t *testing.T) {
 		})
 	}
 }
+
+func TestMonitorLogicGroupOverridesInRequestAndHistory(t *testing.T) {
+	for _, protocol := range []string{"responses", "messages"} {
+		for _, tc := range []struct {
+			name, groupJSON, prompt, expected, mode, reply, status string
+		}{
+			{"custom", `{"logic_prompt":"group question","logic_answer":"32","logic_match_mode":"contains"}`, "group question", "32", "contains", "Answer: 32", "success"},
+			{"inherited", `{}`, "global question", "21", "exact", "Answer: 32", "test_failed"},
+			{"mode only", `{"logic_match_mode":"contains"}`, "global question", "21", "contains", "Answer: 21", "success"},
+		} {
+			t.Run(protocol+"/"+tc.name, func(t *testing.T) {
+				monitorTestRedis(t)
+				requests := make(chan map[string]any, 1)
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]any
+					if err := common.DecodeJson(r.Body, &body); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					requests <- body
+					w.Header().Set("Content-Type", "text/event-stream")
+					if protocol == "messages" {
+						raw, _ := common.Marshal(map[string]any{"type": "content_block_delta", "delta": map[string]string{"type": "text_delta", "text": tc.reply}})
+						fmt.Fprintf(w, "data: %s\n\ndata: {\"type\":\"message_stop\"}\n\n", raw)
+					} else {
+						raw, _ := common.Marshal(map[string]string{"type": "response.output_text.delta", "delta": tc.reply})
+						fmt.Fprintf(w, "data: %s\n\ndata: {\"type\":\"response.completed\"}\n\n", raw)
+					}
+				}))
+				defer upstream.Close()
+				cfg := monitorconfig.Default()
+				cfg.BaseURL = upstream.URL
+				cfg.LogicPrompt, cfg.LogicAnswer, cfg.LogicMatchMode = "global question", "21", "exact"
+				var group monitorconfig.Group
+				require.NoError(t, common.UnmarshalJsonStr(tc.groupJSON, &group))
+				group.Protocol = protocol
+				cfg.Groups["g"] = group
+				active := make(chan struct{}, 1)
+				tryMonitorJob(active, cfg, "g", "reasoning", "secret", "logic", 1)
+				var history []MonitorResult
+				require.Eventually(t, func() bool {
+					history, _ = GetMonitorHistory(context.Background(), "g", "logic", cfg)
+					return len(active) == 0 && len(history) == 1
+				}, 5*time.Second, 10*time.Millisecond)
+				require.Len(t, requests, 1)
+				request := <-requests
+				require.Equal(t, "reasoning", request["model"])
+				if protocol == "messages" {
+					require.Equal(t, []any{map[string]any{"role": "user", "content": tc.prompt}}, request["messages"])
+				} else {
+					require.Equal(t, tc.prompt, request["input"])
+				}
+				// A later configuration change must not rewrite this run's details.
+				cfg.LogicPrompt, cfg.LogicAnswer, cfg.LogicMatchMode = "changed", "99", "contains"
+				cfg.Groups["g"] = monitorconfig.Group{}
+				record, err := GetMonitorRecord(context.Background(), "g", "logic", history[0].ID, cfg)
+				require.NoError(t, err)
+				require.Equal(t, tc.prompt, record.Prompt)
+				require.Equal(t, tc.expected, record.Expected)
+				require.Equal(t, tc.mode, record.MatchMode)
+				require.Equal(t, tc.reply, record.Answer)
+				require.Equal(t, tc.status, record.Status)
+			})
+		}
+	}
+}

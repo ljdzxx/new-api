@@ -12,15 +12,18 @@ const OptionKey = "GroupMonitorConfigSecret"
 const DefaultSVGOutputDir = "data/monitor-svg"
 
 type Group struct {
-	Models     []string `json:"model"`
-	Key        string   `json:"key"`
-	SVGModel   string   `json:"svg_model"`
-	LogicModel string   `json:"logic_model"`
-	Protocol   string   `json:"protocol"`
-	SVGTest    *bool    `json:"svg_test"`
-	LogicTest  *bool    `json:"logic_test"`
-	Active     *bool    `json:"active"`
-	Order      int      `json:"order"`
+	Models         []string `json:"model"`
+	Key            string   `json:"key"`
+	SVGModel       string   `json:"svg_model"`
+	LogicModel     string   `json:"logic_model"`
+	LogicPrompt    *string  `json:"logic_prompt,omitempty"`
+	LogicAnswer    *string  `json:"logic_answer,omitempty"`
+	LogicMatchMode *string  `json:"logic_match_mode,omitempty"`
+	Protocol       string   `json:"protocol"`
+	SVGTest        *bool    `json:"svg_test"`
+	LogicTest      *bool    `json:"logic_test"`
+	Active         *bool    `json:"active"`
+	Order          int      `json:"order"`
 }
 
 func (g Group) Visible() bool   { return g.Active == nil || *g.Active }
@@ -60,6 +63,25 @@ func Default() Config {
 		LogicMinutes: 60}
 }
 
+// ResolveLogic applies per-field overrides without persisting inherited values.
+// Empty and whitespace-only overrides inherit the current global setting.
+func (c Config) ResolveLogic(g Group) (prompt, answer, matchMode string) {
+	prompt, answer, matchMode = c.LogicPrompt, c.LogicAnswer, c.LogicMatchMode
+	if g.LogicPrompt != nil && strings.TrimSpace(*g.LogicPrompt) != "" {
+		prompt = *g.LogicPrompt
+	}
+	if g.LogicAnswer != nil && strings.TrimSpace(*g.LogicAnswer) != "" {
+		answer = *g.LogicAnswer
+	}
+	if g.LogicMatchMode != nil && strings.TrimSpace(*g.LogicMatchMode) != "" {
+		matchMode = *g.LogicMatchMode
+	}
+	if strings.TrimSpace(matchMode) == "" {
+		matchMode = "exact"
+	}
+	return
+}
+
 func Get() Config {
 	c := Default()
 	common.OptionMapRWMutex.RLock()
@@ -85,7 +107,7 @@ func (c *Config) Normalize() {
 	if strings.TrimSpace(c.SVGOutputDir) == "" {
 		c.SVGOutputDir = DefaultSVGOutputDir
 	}
-	if c.LogicMatchMode == "" {
+	if strings.TrimSpace(c.LogicMatchMode) == "" {
 		c.LogicMatchMode = "exact"
 	}
 	for name, g := range c.Groups {
@@ -126,7 +148,7 @@ func Validate(c Config) error {
 	if c.HistoryKeep < 1 || c.HistoryKeep > 1000 || c.HistoryDays < 1 || c.HistoryDays > 90 {
 		return fmt.Errorf("测试历史数量为 1–1000，保留天数为 1–90")
 	}
-	if c.LogicMatchMode != "" && c.LogicMatchMode != "exact" && c.LogicMatchMode != "contains" {
+	if strings.TrimSpace(c.LogicMatchMode) != "" && c.LogicMatchMode != "exact" && c.LogicMatchMode != "contains" {
 		return fmt.Errorf("逻辑题匹配方式必须为 exact 或 contains")
 	}
 	if strings.TrimSpace(c.SVGOutputDir) == "" || strings.ContainsAny(c.SVGOutputDir, "\x00\r\n") {
@@ -148,7 +170,17 @@ func Validate(c Config) error {
 		if g.TestSVG() && (strings.TrimSpace(g.SVGModel) == "" || strings.TrimSpace(c.SVGPrompt) == "") {
 			return fmt.Errorf("分组 %s 的 SVG 测试需要 svg_model、题目", name)
 		}
-		if g.TestLogic() && (strings.TrimSpace(g.LogicModel) == "" || strings.TrimSpace(c.LogicPrompt) == "" || strings.TrimSpace(c.LogicAnswer) == "") {
+		if g.LogicPrompt != nil && len(*g.LogicPrompt) > 32000 {
+			return fmt.Errorf("分组 %s 的逻辑题目过长", name)
+		}
+		if g.LogicAnswer != nil && len(*g.LogicAnswer) > 16000 {
+			return fmt.Errorf("分组 %s 的预期答案过长", name)
+		}
+		logicPrompt, logicAnswer, logicMatchMode := c.ResolveLogic(g)
+		if logicMatchMode != "exact" && logicMatchMode != "contains" {
+			return fmt.Errorf("分组 %s 的逻辑题匹配方式必须为 exact 或 contains", name)
+		}
+		if g.TestLogic() && (strings.TrimSpace(g.LogicModel) == "" || strings.TrimSpace(logicPrompt) == "" || strings.TrimSpace(logicAnswer) == "") {
 			return fmt.Errorf("分组 %s 的逻辑测试需要 logic_model、题目和预期答案", name)
 		}
 		if strings.TrimSpace(name) == "" || len(name) > 128 || len(g.Models) == 0 || len(g.Models) > 50 || strings.TrimSpace(g.Key) == "" {
