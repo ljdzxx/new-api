@@ -400,6 +400,88 @@ func TestCalculateTextQuotaSummaryUsesAnthropicCachePriceFields(t *testing.T) {
 	require.Equal(t, []string{"input", "output", "cache_read", "cache_write", "cache_write_5m", "cache_write_1h"}, fields)
 }
 
+func TestCalculateTextQuotaSummaryMatchesTierWithClaudeCacheWriteDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	policy := billing_policy.Policy{
+		Version: billing_policy.SchemaVersion, Mode: "tiered", Currency: "USD", Unit: "per_million_tokens",
+		Tiers: []billing_policy.Tier{
+			{ID: "long", Priority: 10, Conditions: []billing_policy.TierCondition{
+				{Metric: "input_total_tokens", Operator: "gte", Value: 200_000},
+			}, Prices: billing_policy.Prices{Input: "2", CacheRead: "2", CacheWrite: "2", CacheWrite5m: "2", CacheWrite1h: "2"}},
+			{ID: "short", Priority: 20, Fallback: true, Prices: billing_policy.Prices{
+				Input: "1", CacheRead: "1", CacheWrite: "1", CacheWrite5m: "1", CacheWrite1h: "1",
+			}},
+		},
+	}
+	installActiveBillingPolicyForTest(t, "claude-cache-write-tier", policy)
+
+	for _, tt := range []struct {
+		name        string
+		aggregate   int
+		write5m     int
+		write1h     int
+		native      bool
+		legacy      bool
+		openAI      bool
+		wantInput   int64
+		wantTier    string
+		wantCostUSD string
+	}{
+		{"native 5m only", 0, 40_000, 0, true, false, false, 200_000, "long", "0.4"},
+		{"native 1h only", 0, 0, 40_000, true, false, false, 200_000, "long", "0.4"},
+		{"native mixed TTL", 0, 20_000, 30_000, true, false, false, 210_000, "long", "0.42"},
+		{"native legacy TTL fields", 0, 20_000, 30_000, true, true, false, 210_000, "long", "0.42"},
+		{"without native snapshot", 0, 20_000, 30_000, false, false, false, 210_000, "long", "0.42"},
+		{"aggregate and details not double counted", 50_000, 20_000, 30_000, true, false, false, 210_000, "long", "0.42"},
+		{"aggregate preserves remainder", 60_000, 20_000, 30_000, true, false, false, 220_000, "long", "0.44"},
+		{"OpenAI total already includes cache", 0, 20_000, 30_000, false, false, true, 160_000, "short", "0.16"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			relayInfo := &relaycommon.RelayInfo{
+				OriginModelName: "claude-cache-write-tier", RelayFormat: types.RelayFormatOpenAI,
+				FinalRequestRelayFormat: types.RelayFormatOpenAI,
+				PriceData:               types.PriceData{GlobalModelRatio: 1, GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1}},
+				StartTime:               time.Now(),
+			}
+			usage := &dto.Usage{
+				PromptTokens: 10_000, UsageSemantic: dto.BillingUsageSemanticAnthropic,
+				PromptTokensDetails:         dto.InputTokenDetails{CachedTokens: 150_000, CacheWriteTokens: tt.aggregate},
+				ClaudeCacheCreation5mTokens: tt.write5m, ClaudeCacheCreation1hTokens: tt.write1h,
+			}
+			if tt.native {
+				native := &dto.ClaudeUsage{
+					InputTokens: 10_000, CacheReadInputTokens: 150_000, CacheCreationInputTokens: tt.aggregate,
+					CacheCreation: &dto.ClaudeCacheCreationUsage{Ephemeral5mInputTokens: tt.write5m, Ephemeral1hInputTokens: tt.write1h},
+				}
+				if tt.legacy {
+					native.CacheCreation = nil
+					native.ClaudeCacheCreation5mTokens = tt.write5m
+					native.ClaudeCacheCreation1hTokens = tt.write1h
+				}
+				// The client-facing usage must not override the upstream billing snapshot.
+				usage = &dto.Usage{PromptTokens: 999, BillingUsage: dto.NewClaudeMessagesBillingUsage(native)}
+			}
+			if tt.openAI {
+				usage.PromptTokens = 160_000
+				usage.UsageSemantic = dto.BillingUsageSemanticOpenAI
+				usage.ClaudeCacheCreation5mTokens = 0
+				usage.ClaudeCacheCreation1hTokens = 0
+			}
+
+			summary := calculateTextQuotaSummary(ctx, relayInfo, effectiveBillingUsage(usage))
+			require.NoError(t, summary.PolicyError)
+			require.Equal(t, tt.wantInput, summary.PolicyInputTotalTokens)
+			require.Equal(t, tt.wantTier, ctx.GetString("billing_policy_tier"))
+			require.NotNil(t, summary.PolicyCalculation)
+			require.Equal(t, tt.wantTier, summary.PolicyCalculation.TierID)
+			require.Equal(t, tt.wantInput, summary.PolicyCalculation.Usage.TierInputTotalTokens)
+			require.Equal(t, tt.wantCostUSD, summary.PolicyCalculation.TotalUSD)
+		})
+	}
+}
+
 func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

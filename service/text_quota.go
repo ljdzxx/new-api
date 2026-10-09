@@ -233,7 +233,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	summary.PolicyOutputTotalTokens = int64(usage.CompletionTokens)
 	legacyClaudeDerived := isLegacyClaudeDerivedOpenAIUsage(relayInfo, usage)
 	if summary.IsClaudeUsageSemantic {
-		summary.PolicyInputTotalTokens += int64(summary.CacheTokens + summary.CacheCreationTokens)
+		// Some Claude-compatible upstreams only report the 5m/1h cache-write
+		// details. Include them without counting the aggregate a second time.
+		summary.PolicyInputTotalTokens += int64(summary.CacheTokens) + int64(cacheWriteTokensTotal(summary))
 	}
 	if hasActualUsage {
 		summary.GlobalModelRatio = relayhelper.ReevaluateGlobalModelRatioForActualInput(relayInfo, summary.PolicyInputTotalTokens)
@@ -253,12 +255,8 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	if billing_policy.IsActive() {
 		if policy, ok := requestBillingPolicy(relayInfo); ok && policy.Mode == "tiered" {
-			inputTotal := int64(usage.PromptTokens)
-			if summary.IsClaudeUsageSemantic {
-				inputTotal += int64(summary.CacheTokens + summary.CacheCreationTokens)
-			}
 			values, tierID, err := billing_policy.ToLegacyValuesForUsage(policy, billing_policy.Usage{
-				InputTotalTokens: inputTotal, OutputTotalTokens: int64(usage.CompletionTokens),
+				InputTotalTokens: summary.PolicyInputTotalTokens, OutputTotalTokens: summary.PolicyOutputTotalTokens,
 			})
 			if err != nil {
 				logger.LogWarn(ctx, "failed to resolve active tiered billing policy: "+err.Error())
