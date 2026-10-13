@@ -185,6 +185,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 4. 价格计算：基础模型价格
 	info.OriginModelName = modelName
+	previousServiceTier := info.PriceData.ServiceTier
 	priceData, err := helper.ModelPriceHelperPerCall(c, info)
 	if err != nil {
 		return nil, service.TaskErrorWrapper(err, "model_price_error", http.StatusBadRequest)
@@ -209,6 +210,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	// 7. 预扣费（仅首次 — 重试时 info.Billing 已存在，跳过）
+	if info.Billing != nil && (previousServiceTier != nil || info.PriceData.ServiceTier != nil) {
+		if info.QuotaClamp != nil {
+			return nil, service.TaskErrorWrapperLocal(info.QuotaClamp, "model_price_error", http.StatusBadRequest)
+		}
+		if session, ok := info.Billing.(*service.BillingSession); ok {
+			if apiErr := session.EnsurePreConsumedQuota(c, info.PriceData.Quota); apiErr != nil {
+				return nil, service.TaskErrorFromAPIError(apiErr)
+			}
+		}
+	}
 	if info.Billing == nil && !info.PriceData.FreeModel {
 		info.ForcePreConsume = true
 		if apiErr := service.PreConsumeBilling(c, info.PriceData.Quota, info); apiErr != nil {

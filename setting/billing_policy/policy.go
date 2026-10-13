@@ -164,6 +164,11 @@ func Resolve(modelName string) (Policy, bool) {
 	return resolvePolicy(store.config.Policies, modelName)
 }
 
+// ResolveConfig uses the billing engine's exact, compact and wildcard rules.
+func ResolveConfig(config Config, modelName string) (Policy, bool) {
+	return resolvePolicy(config.Policies, modelName)
+}
+
 func resolvePolicy(policies map[string]Policy, modelName string) (Policy, bool) {
 	if policy, ok := policies[modelName]; ok {
 		return clonePolicy(policy), true

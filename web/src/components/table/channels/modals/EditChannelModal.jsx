@@ -58,6 +58,8 @@ import {
   getModelCategories,
   selectFilter,
 } from '../../../../helpers';
+import ServiceTierBillingEditor from './ServiceTierBillingEditor';
+import { validateServiceTierBilling } from '../../../../helpers/serviceTierBilling';
 import ModelSelectModal from './ModelSelectModal';
 import SingleModelSelectModal from './SingleModelSelectModal';
 import OllamaModelModal from './OllamaModelModal';
@@ -325,6 +327,7 @@ const EditChannelModal = (props) => {
     // 企业账户设置
     is_enterprise_account: false,
     // 字段透传控制默认值
+    service_tier_billing: { enabled: false, rules: [] },
     allow_service_tier: false,
     disable_store: false, // false = 允许透传（默认开启）
     allow_safety_identifier: false,
@@ -1090,6 +1093,10 @@ const EditChannelModal = (props) => {
           data.is_enterprise_account =
             parsedSettings.openrouter_enterprise === true;
           // 读取字段透传控制设置
+          data.service_tier_billing = parsedSettings.service_tier_billing || {
+            enabled: false,
+            rules: [],
+          };
           data.allow_service_tier = parsedSettings.allow_service_tier || false;
           data.disable_store = parsedSettings.disable_store || false;
           data.allow_safety_identifier =
@@ -1729,6 +1736,18 @@ const EditChannelModal = (props) => {
     const formValues = formApiRef.current ? formApiRef.current.getValues() : {};
     let localInputs = { ...formValues };
     localInputs.param_override = inputs.param_override;
+    localInputs.service_tier_billing = inputs.service_tier_billing;
+    if (
+      localInputs.type === 1 &&
+      !validateServiceTierBilling(localInputs.service_tier_billing)
+    ) {
+      showError(
+        t(
+          '服务档位规则无效：模型不可重复且仅支持完整的 * 通配符，档位必填，倍率须大于 0 且不超过 1000，请选择有效标签样式。',
+        ),
+      );
+      return;
+    }
 
     if (localInputs.type === 57) {
       if (batch) {
@@ -2087,6 +2106,15 @@ const EditChannelModal = (props) => {
       }
     }
 
+    if (localInputs.type === 1) {
+      settings.service_tier_billing = localInputs.service_tier_billing || {
+        enabled: false,
+        rules: [],
+      };
+    } else {
+      delete settings.service_tier_billing;
+    }
+
     // type === 20: 设置企业账户标识，无论是true还是false都要传到后端
     if (localInputs.type === 20) {
       settings.openrouter_enterprise =
@@ -2175,6 +2203,7 @@ const EditChannelModal = (props) => {
     // 顶层的 aws_key_type 不应发送给后端
     delete localInputs.aws_key_type;
     // 清理字段透传控制的临时字段
+    delete localInputs.service_tier_billing;
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
     delete localInputs.allow_safety_identifier;
@@ -4213,6 +4242,17 @@ const EditChannelModal = (props) => {
                       )}
                     />
 
+                    {inputs.type === 1 && (
+                      <ServiceTierBillingEditor
+                        value={inputs.service_tier_billing}
+                        onChange={(value) =>
+                          handleChannelOtherSettingsChange(
+                            'service_tier_billing',
+                            value,
+                          )
+                        }
+                      />
+                    )}
                     {/* 字段透传控制 - OpenAI 渠道 */}
                     {inputs.type === 1 && (
                       <>

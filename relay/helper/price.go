@@ -221,7 +221,31 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) types.
 	return groupRatioInfo
 }
 
+func matchServiceTier(c *gin.Context, info *relaycommon.RelayInfo) (*types.ServiceTierBillingRule, error) {
+	c.Set("service_tier_billing", nil)
+	var serviceTier *types.ServiceTierBillingRule
+	if info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeOpenAI {
+		var err error
+		serviceTier, err = info.ChannelOtherSettings.ServiceTierBilling.Match(info.OriginModelName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if serviceTier != nil {
+		c.Set("service_tier_billing", *serviceTier)
+	}
+	return serviceTier, nil
+}
+
 func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens int, meta *types.TokenCountMeta) (types.PriceData, error) {
+	serviceTier, err := matchServiceTier(c, info)
+	if err != nil {
+		return types.PriceData{}, err
+	}
+	serviceTierRatio := 1.0
+	if serviceTier != nil {
+		serviceTierRatio = serviceTier.Multiplier
+	}
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 	var activePolicyValues *billing_policy.LegacyValues
 	var activePolicy *billing_policy.Policy
@@ -325,6 +349,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			return types.PriceData{}, err
 		}
 		if activePolicy != nil {
+			requestContext := billingPolicyRequestContext(c)
+			requestContext.ModelPriceMultiplier = serviceTierRatio
 			estimatedOutputTokens := meta.MaxTokens
 			if estimatedOutputTokens == 0 && groupRatioInfo.GroupRatio != 0 && globalModelRatio != 0 {
 				estimatedOutputTokens = defaultBillingPolicyPreConsumeOutputTokens
@@ -342,7 +368,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				TierOutputTotalTokens: int64(estimatedOutputTokens),
 				InputTokens:           int64(scaledInputTokens),
 				OutputTokens:          int64(scaledOutputTokens),
-			}, billingPolicyRequestContext(c))
+			}, requestContext)
 			if err != nil {
 				return types.PriceData{}, fmt.Errorf("模型 %s 预扣费计算失败: %w", info.OriginModelName, err)
 			}
@@ -374,7 +400,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			policyPreConsumeCalculated = true
 			activePolicyTier = calculation.TierID
 		} else {
-			ratio := modelRatio * groupRatioInfo.GroupRatio
+			ratio := modelRatio * groupRatioInfo.GroupRatio * serviceTierRatio
 			preConsumedQuota, err = common.QuotaFromFloatStrict(float64(scaledPreConsumedTokens) * ratio)
 			if err != nil {
 				return types.PriceData{}, err
@@ -411,7 +437,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if meta.ImagePriceRatio != 0 {
 			modelPrice = modelPrice * meta.ImagePriceRatio
 		}
-		quotaToPreConsume := modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio
+		quotaToPreConsume := modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * serviceTierRatio
 		quotaToPreConsume = requestBillingRatios.ApplyOtherRatiosToFloat(quotaToPreConsume)
 		quotaToPreConsume *= policyAdjustmentMultiplier
 		var err error
@@ -448,6 +474,7 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	priceData := types.PriceData{
+		ServiceTier:                      serviceTier,
 		FreeModel:                        freeModel,
 		ModelPrice:                       modelPrice,
 		ModelRatio:                       modelRatio,
@@ -573,17 +600,19 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 		for name, ratio := range meta.BillingRatios {
 			shadowPriceData.AddOtherRatio(name, ratio)
 		}
-		quotaValue := shadowPriceData.ApplyOtherRatiosToFloat(price * common.QuotaPerUnit * legacy.GroupRatioInfo.GroupRatio)
+		quotaValue := shadowPriceData.ApplyOtherRatiosToFloat(price * common.QuotaPerUnit * legacy.GroupRatioInfo.GroupRatio * legacy.ServiceTierMultiplier())
 		adjustment, _ := evaluatePolicyAdjustments(c, policy)
 		quotaValue = adjustment.Mul(decimal.NewFromFloat(quotaValue)).InexactFloat64()
 		quota = common.QuotaFromFloat(quotaValue)
 	} else {
+		requestContext := billingPolicyRequestContext(c)
+		requestContext.ModelPriceMultiplier = legacy.ServiceTierMultiplier()
 		calculation, calculationErr := billing_policy.CalculateBilling(policy, billing_policy.BillingUsage{
 			TierInputTotalTokens:  int64(promptTokens),
 			TierOutputTotalTokens: int64(estimatedOutputTokens),
 			InputTokens:           int64(ScaleTokensByGlobalModelRatio(common.Max(promptTokens, common.PreConsumedQuota), legacy.GlobalModelRatio)),
 			OutputTokens:          int64(ScaleTokensByGlobalModelRatio(estimatedOutputTokens, legacy.GlobalModelRatio)),
-		}, billingPolicyRequestContext(c))
+		}, requestContext)
 		if calculationErr != nil {
 			billing_policy.ObserveShadowPreConsumeError(info.OriginModelName)
 			logger.LogWarn(c, "shadow billing policy pre-consume calculation failed: "+calculationErr.Error())
@@ -610,6 +639,14 @@ func observeShadowPreConsume(c *gin.Context, info *relaycommon.RelayInfo, prompt
 
 // ModelPriceHelperPerCall 按次计费的 PriceHelper (MJ、Task)
 func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types.PriceData, error) {
+	serviceTier, err := matchServiceTier(c, info)
+	if err != nil {
+		return types.PriceData{}, err
+	}
+	serviceTierRatio := 1.0
+	if serviceTier != nil {
+		serviceTierRatio = serviceTier.Multiplier
+	}
 	groupRatioInfo := HandleGroupRatio(c, info)
 	globalRatioConfig := captureGlobalModelRatioConfig(info.UserId, getChannelModelRatio(info), getChannelModelRatioInputTokenThreshold(info))
 	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := globalRatioConfig.effective(0)
@@ -651,7 +688,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		}
 
 	}
-	quota, err := common.QuotaFromFloatStrict(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+	quota, err := common.QuotaFromFloatStrict(modelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * serviceTierRatio)
 	if err != nil {
 		return types.PriceData{}, err
 	}
@@ -696,6 +733,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 		ChannelGlobalRatioThreshold:      globalRatioConfig.channelThreshold,
 		GlobalRatioConfigSnapshot:        true,
 		Quota:                            quota,
+		ServiceTier:                      serviceTier,
 		GroupRatioInfo:                   groupRatioInfo,
 	}
 	if policyAdjustmentMultiplier != 1 {
@@ -710,7 +748,7 @@ func ModelPriceHelperPerCall(c *gin.Context, info *relaycommon.RelayInfo) (types
 			billing_policy.ObserveShadowSettlementError(info.OriginModelName)
 			logger.LogWarn(c, "shadow per-call billing policy invalid for model "+info.OriginModelName)
 		} else {
-			policyQuota := common.QuotaFromFloat(values.ModelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio)
+			policyQuota := common.QuotaFromFloat(values.ModelPrice * common.QuotaPerUnit * groupRatioInfo.GroupRatio * serviceTierRatio)
 			if freeModel {
 				policyQuota = 0
 			}

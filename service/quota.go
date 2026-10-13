@@ -32,6 +32,7 @@ type TokenDetails struct {
 }
 
 type QuotaInfo struct {
+	ServiceTierMultiplier      float64
 	InputDetails               TokenDetails
 	OutputDetails              TokenDetails
 	ModelName                  string
@@ -65,7 +66,11 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 	if policyAdjustmentMultiplier <= 0 || math.IsNaN(policyAdjustmentMultiplier) || math.IsInf(policyAdjustmentMultiplier, 0) {
 		policyAdjustmentMultiplier = 1
 	}
-	totalMultiplier := otherRatioMultiplier * policyAdjustmentMultiplier
+	serviceTierMultiplier := info.ServiceTierMultiplier
+	if serviceTierMultiplier == 0 {
+		serviceTierMultiplier = 1
+	}
+	totalMultiplier := otherRatioMultiplier * policyAdjustmentMultiplier * serviceTierMultiplier
 	scaledInputTextTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.InputDetails.TextTokens, info.GlobalRatio)
 	scaledOutputTextTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.OutputDetails.TextTokens, info.GlobalRatio)
 	scaledInputAudioTokens := relayhelper.ScaleTokensByGlobalModelRatio(info.InputDetails.AudioTokens, info.GlobalRatio)
@@ -159,6 +164,7 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	}
 
 	quotaInfo := QuotaInfo{
+		ServiceTierMultiplier: relayInfo.PriceData.ServiceTierMultiplier(),
 		InputDetails: TokenDetails{
 			TextTokens:  textInputTokens,
 			AudioTokens: audioInputTokens,
@@ -243,6 +249,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 	globalModelRatio := relayInfo.PriceData.GlobalModelRatio
 
 	quotaInfo := QuotaInfo{
+		ServiceTierMultiplier: relayInfo.PriceData.ServiceTierMultiplier(),
 		InputDetails: TokenDetails{
 			TextTokens:  textInputTokens,
 			AudioTokens: audioInputTokens,
@@ -368,6 +375,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	globalModelRatio := relayInfo.PriceData.GlobalModelRatio
 
 	quotaInfo := QuotaInfo{
+		ServiceTierMultiplier: relayInfo.PriceData.ServiceTierMultiplier(),
 		InputDetails: TokenDetails{
 			TextTokens:  textInputTokens,
 			AudioTokens: audioInputTokens,

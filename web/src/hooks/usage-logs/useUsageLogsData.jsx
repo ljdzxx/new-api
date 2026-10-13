@@ -442,6 +442,12 @@ export const useLogsData = () => {
           value: other.cache_creation_tokens,
         });
       }
+      if (other?.service_tier_billing) {
+        expandDataLocal.push({
+          key: t('固定服务档位计费'),
+          value: `${other.service_tier_billing.tier} · ×${other.service_tier_billing.multiplier}`,
+        });
+      }
       if (logs[i].type === 2) {
         const hasBillingPolicySnapshot = Boolean(
           other?.billing_policy?.calculation,

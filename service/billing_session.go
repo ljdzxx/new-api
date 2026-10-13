@@ -34,6 +34,7 @@ type BillingSession struct {
 	funding          FundingSource
 	preConsumedQuota int  // 实际预扣额度（信任用户可能为 0）
 	tokenConsumed    int  // 令牌额度实际扣减量
+	retryReserved    int  // Additional reservations on a more expensive retry.
 	fundingSettled   bool // funding.Settle 已成功，资金来源已提交
 	settled          bool // Settle 全部完成（资金 + 令牌）
 	refunded         bool // Refund 已调用
@@ -112,8 +113,14 @@ func (s *BillingSession) Refund(c *gin.Context) {
 	isPlayground := s.relayInfo.IsPlayground
 	tokenConsumed := s.tokenConsumed
 	funding := s.funding
+	retryReserved := s.retryReserved
 
 	gopool.Go(func() {
+		if retryReserved > 0 {
+			if err := funding.Settle(-retryReserved); err != nil {
+				common.SysError("error refunding retry reservation: " + err.Error())
+			}
+		}
 		// 1) 退还资金来源
 		if err := funding.Refund(); err != nil {
 			common.SysLog("error refunding billing source: " + err.Error())
@@ -152,6 +159,56 @@ func (s *BillingSession) needsRefundLocked() bool {
 // GetPreConsumedQuota 返回实际预扣的额度。
 func (s *BillingSession) GetPreConsumedQuota() int {
 	return s.preConsumedQuota
+}
+
+// EnsurePreConsumedQuota reserves a higher-priced retry before contacting the
+// upstream. Lower-priced retries retain the reservation until settle/refund.
+func (s *BillingSession) EnsurePreConsumedQuota(c *gin.Context, quota int) *types.NewAPIError {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := common.QuotaFromFloatStrict(float64(quota)); err != nil {
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+	if s.settled || s.refunded || s.fundingSettled {
+		return types.NewError(fmt.Errorf("billing session already closed"), types.ErrorCodeUpdateDataError, types.ErrOptionWithSkipRetry())
+	}
+	if quota <= s.preConsumedQuota || s.relayInfo.PreConsumePath == preConsumePathMinimumBalance || s.relayInfo.PreConsumePath == preConsumePathTrustQuota {
+		return nil
+	}
+	delta := quota - s.preConsumedQuota
+	insufficient := func(err error) *types.NewAPIError {
+		return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusBadRequest, types.ErrOptionWithSkipRetry(), types.ErrOptionWithNoRecordErrorLog())
+	}
+	if s.funding.Source() == BillingSourceWallet {
+		remaining, err := model.GetUserQuota(s.relayInfo.UserId, false)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+		}
+		if remaining < delta {
+			return insufficient(fmt.Errorf("insufficient quota for retry: remaining=%d required=%d", remaining, delta))
+		}
+	}
+	if err := PreConsumeTokenQuota(s.relayInfo, delta); err != nil {
+		return insufficient(err)
+	}
+	if err := s.funding.Settle(delta); err != nil {
+		if !s.relayInfo.IsPlayground {
+			if rollbackErr := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, delta); rollbackErr != nil {
+				common.SysError("error rolling back retry token reservation: " + rollbackErr.Error())
+			}
+		}
+		return insufficient(err)
+	}
+	s.retryReserved += delta
+	s.tokenConsumed += delta
+	s.preConsumedQuota = quota
+	s.relayInfo.FinalPreConsumedQuota = quota
+	if s.funding.Source() == BillingSourceSubscription {
+		s.relayInfo.SubscriptionPreConsumed += int64(delta)
+		s.relayInfo.SubscriptionAmountUsedAfterPreConsume += int64(delta)
+	}
+	logPreConsumePath(c, s.relayInfo, quota, quota)
+	return nil
 }
 
 // ---------------------------------------------------------------------------

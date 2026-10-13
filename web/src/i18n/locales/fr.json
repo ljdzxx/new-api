@@ -1,5 +1,11 @@
 {
   "translation": {
+    "同步旧版": "Synchroniser l’ancien tarif",
+    "已同步旧版价格": "Ancien tarif synchronisé",
+    "同步旧版价格失败": "Échec de la synchronisation de l’ancien tarif",
+    "请先完成迁移并激活新版计费后再同步": "Terminez la migration et activez la nouvelle facturation avant de synchroniser",
+    "旧版价格缺失或无效，请手动设置价格": "Ancien tarif absent ou invalide ; définissez le tarif manuellement",
+    "将旧版价格转换并保存为新版计费策略": "Convertir l’ancien tarif et enregistrer la nouvelle politique de facturation",
     "logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。": "logic_prompt, logic_answer et logic_match_mode remplacent indépendamment les paramètres logiques globaux. Une valeur omise, null, vide ou composée uniquement d’espaces hérite de la valeur globale. Modes : exact ou contains.",
     "以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。": "La question, la réponse et le mode de correspondance ci-dessous sont les valeurs globales par défaut ; les paramètres du groupe sont prioritaires. La question et la réponse globales peuvent rester vides si chaque groupe avec les tests logiques activés fournit les siennes.",
     "R2 Worker 地址": "URL du Worker R2",
@@ -4658,7 +4664,13 @@
     "测试恢复时间": "Rétabli par test le",
     "模型可用性": "Disponibilité des modèles",
     "刷新模型状态": "Actualiser les états des modèles",
-    "状态更新时间": "État consulté le"
+    "状态更新时间": "État consulté le",
+    "固定服务档位计费": "Facturation par niveau de service fixe",
+    "标签颜色": "Couleur du tag",
+    "标签样式": "Style du tag",
+    "计费倍率": "Multiplicateur de facturation",
+    "按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用，不修改上游请求参数。": "Le modèle avant mappage est utilisé. Les règles exactes sont prioritaires ; * correspond à tous les modèles. Seuls les frais du modèle sont ajustés, sans modifier les frais des outils ni les paramètres envoyés en amont.",
+    "服务档位规则无效：模型不可重复且仅支持完整的 * 通配符，档位必填，倍率须大于 0 且不超过 1000，请选择有效标签样式。": "Règles invalides : modèles uniques, seul * est accepté comme joker. Le niveau est obligatoire, le multiplicateur doit être supérieur à 0 et inférieur ou égal à 1000, avec un style de tag valide."
   },
   "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Active la transmission directe du corps de requête. Une fois activée, les tokens de la réponse finale peuvent différer des tokens facturés.",
   "缩放API响应usage": "Mettre à l’échelle l’usage de la réponse API",

@@ -42,8 +42,36 @@ func LegacySourceValues() map[string]string {
 }
 
 func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) {
-	sources := LegacySourceValues()
-	report := MigrationReport{SourceChecksum: SourceChecksum(sources)}
+	return buildLegacyMigrationCandidate(targetState, "")
+}
+
+// BuildLegacyModelPolicy converts only the requested model using the same
+// converter as full migration. Unrelated invalid legacy entries cannot block it.
+func BuildLegacyModelPolicy(modelName string) (Policy, error) {
+	if strings.TrimSpace(modelName) == "" || strings.Contains(modelName, "*") {
+		return Policy{}, fmt.Errorf("a concrete model name is required")
+	}
+	report, err := buildLegacyMigrationCandidate(StateActive, modelName)
+	if err != nil {
+		for _, issue := range report.Issues {
+			if issue.Level == "error" {
+				return Policy{}, fmt.Errorf("%s: %s", issue.Code, issue.Message)
+			}
+		}
+		return Policy{}, err
+	}
+	policy, ok := report.Candidate.Policies[modelName]
+	if !ok {
+		return Policy{}, fmt.Errorf("no legacy base price for model %s", modelName)
+	}
+	return policy, nil
+}
+
+func buildLegacyMigrationCandidate(targetState, requestedModel string) (MigrationReport, error) {
+	report := MigrationReport{}
+	if requestedModel == "" {
+		report.SourceChecksum = SourceChecksum(LegacySourceValues())
+	}
 	config := NewConfig()
 	config.State = targetState
 
@@ -65,6 +93,33 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 	ordered := make([]string, 0, len(names))
 	for name := range names {
 		ordered = append(ordered, name)
+	}
+	if requestedModel != "" {
+		// Mirror legacy price/ratio matching, without its self-use fallback price.
+		matched := ratio_setting.FormatMatchingModelName(requestedModel)
+		priceKey := matched
+		ratioKey := matched
+		if strings.HasSuffix(matched, ratio_setting.CompactModelSuffix) {
+			priceKey = ratio_setting.CompactWildcardModelKey
+			if _, ok := ratios[ratioKey]; !ok {
+				ratioKey = ratio_setting.CompactWildcardModelKey
+			}
+		}
+		remap := func(values map[string]float64, key string) map[string]float64 {
+			result := map[string]float64{}
+			if value, ok := values[key]; ok {
+				result[requestedModel] = value
+			}
+			return result
+		}
+		prices = remap(prices, priceKey)
+		ratios = remap(ratios, ratioKey)
+		cache = remap(cache, requestedModel)
+		cacheCreate = remap(cacheCreate, requestedModel)
+		image = remap(image, requestedModel)
+		audio = remap(audio, matched)
+		audioOutput = remap(audioOutput, matched)
+		ordered = []string{requestedModel}
 	}
 	sort.Strings(ordered)
 
@@ -94,6 +149,22 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 		}
 		if err := validateLegacyNumber(ratio); err != nil {
 			report.Issues = append(report.Issues, MigrationIssue{Level: "error", Model: name, Code: "INVALID_RATIO", Message: err.Error()})
+			continue
+		}
+		invalidSecondary := false
+		if err := validateLegacyNumber(ratio_setting.GetCompletionRatio(name)); err != nil {
+			report.Issues = append(report.Issues, MigrationIssue{Level: "error", Model: name, Code: "INVALID_SECONDARY_RATIO", Message: err.Error()})
+			invalidSecondary = true
+		}
+		for _, values := range []map[string]float64{cache, cacheCreate, image, audio, audioOutput} {
+			if value, ok := values[name]; ok {
+				if err := validateLegacyNumber(value); err != nil {
+					report.Issues = append(report.Issues, MigrationIssue{Level: "error", Model: name, Code: "INVALID_SECONDARY_RATIO", Message: err.Error()})
+					invalidSecondary = true
+				}
+			}
+		}
+		if invalidSecondary {
 			continue
 		}
 		input := decimal.NewFromFloat(ratio).Mul(decimal.NewFromInt(2))
@@ -134,6 +205,9 @@ func BuildLegacyMigrationCandidate(targetState string) (MigrationReport, error) 
 		if issue.Level == "error" {
 			return report, fmt.Errorf("legacy billing migration contains validation errors")
 		}
+	}
+	if requestedModel != "" && len(config.Policies) == 0 {
+		return report, nil
 	}
 	if err := ValidateConfig(&config); err != nil {
 		return report, err

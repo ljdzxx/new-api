@@ -464,6 +464,19 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		return fmt.Errorf("订阅支付和余额支付不能同时关闭")
 	}
 	// 校验 channel settings
+	if channel.Type != constant.ChannelTypeOpenAI && channel.OtherSettings != "" {
+		var settings map[string]json.RawMessage
+		if common.UnmarshalJsonStr(channel.OtherSettings, &settings) == nil {
+			if _, exists := settings["service_tier_billing"]; exists {
+				delete(settings, "service_tier_billing")
+				data, err := common.Marshal(settings)
+				if err != nil {
+					return err
+				}
+				channel.OtherSettings = string(data)
+			}
+		}
+	}
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
@@ -888,6 +901,10 @@ func UpdateChannel(c *gin.Context) {
 			"message": err.Error(),
 		})
 		return
+	}
+	// Partial updates may omit the type; validate against the effective type.
+	if channel.Type == 0 {
+		channel.Type = originChannel.Type
 	}
 	if channel.ModelRatio == nil {
 		channel.ModelRatio = originChannel.ModelRatio

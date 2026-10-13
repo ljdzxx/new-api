@@ -392,10 +392,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// currently selected channel's immutable multiplier snapshot.
 		relayInfo.InitChannelMeta(c)
 		helper.BindChannelModelRatioConfig(relayInfo, channel.GetModelRatio(), channel.GetModelRatioInputTokenThreshold())
+		previousServiceTier := relayInfo.PriceData.ServiceTier
 		priceData, err = helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 		if err != nil {
 			newAPIError = types.NewError(err, types.ErrorCodeModelPriceError)
 			break
+		}
+		if relayInfo.Billing != nil && (previousServiceTier != nil || priceData.ServiceTier != nil) {
+			if session, ok := relayInfo.Billing.(*service.BillingSession); ok {
+				if newAPIError = session.EnsurePreConsumedQuota(c, priceData.QuotaToPreConsume); newAPIError != nil {
+					break
+				}
+			}
 		}
 		if relayInfo.Billing == nil && !priceData.FreeModel {
 			newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
@@ -1230,6 +1238,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["status_code"] = err.StatusCode
 		service.AppendResponsesLogBadges(c, other)
 		service.AppendClientFastMode(c, other)
+		if tier, ok := c.Get("service_tier_billing"); ok && tier != nil {
+			other["service_tier_billing"] = tier
+		}
 		other["channel_id"] = channelId
 		other["channel_name"] = c.GetString("channel_name")
 		other["channel_type"] = c.GetInt("channel_type")
@@ -1454,6 +1465,7 @@ func RelayTask(c *gin.Context) {
 			}
 		}
 		task.PrivateData.BillingContext = &model.TaskBillingContext{
+			ServiceTier:                relayInfo.PriceData.ServiceTier,
 			ModelPrice:                 relayInfo.PriceData.ModelPrice,
 			GroupRatio:                 relayInfo.PriceData.GroupRatioInfo.GroupRatio,
 			ModelRatio:                 relayInfo.PriceData.ModelRatio,

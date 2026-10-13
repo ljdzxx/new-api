@@ -10,9 +10,11 @@ import (
 )
 
 type RequestContext struct {
-	Headers map[string]string
-	Body    []byte
-	Now     time.Time
+	// Channel pricing multiplier applies to model charges only, before tools.
+	ModelPriceMultiplier float64
+	Headers              map[string]string
+	Body                 []byte
+	Now                  time.Time
 	// Frozen adjustment values are populated from the request's billing
 	// snapshot. They prevent time/header/body rules from being re-evaluated at
 	// settlement after the request or policy has changed.

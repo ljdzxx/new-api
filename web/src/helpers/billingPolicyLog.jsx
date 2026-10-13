@@ -252,6 +252,14 @@ export function getBillingPolicyLogLines(other, t, showTokenScaling = false) {
     );
   }
 
+  const serviceTierMultiplier = number(calculation.model_price_multiplier, 1);
+  if (other?.service_tier_billing) {
+    lines.push(
+      `${t('固定服务档位计费')} ${other.service_tier_billing.tier}：${displayUSD(modelSubtotal)} × ${serviceTierMultiplier} = ${displayUSD(modelSubtotal * serviceTierMultiplier)}`,
+    );
+  }
+  modelSubtotal *= serviceTierMultiplier;
+
   if (toolRows.length > 0) {
     const toolSubtotal = toolRows.reduce(
       (total, row) => total + number(row.costUSD),

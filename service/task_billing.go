@@ -39,6 +39,9 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 		}
 	}
 	other := make(map[string]interface{})
+	if info.PriceData.ServiceTier != nil {
+		other["service_tier_billing"] = *info.PriceData.ServiceTier
+	}
 	other["request_path"] = c.Request.URL.Path
 	other["model_price"] = info.PriceData.ModelPrice
 	attachGroupRatioBreakdown(other, info.PriceData.GroupRatioInfo)
@@ -118,6 +121,9 @@ func taskAdjustTokenQuota(ctx context.Context, task *model.Task, delta int) {
 func taskBillingOther(task *model.Task) map[string]interface{} {
 	other := make(map[string]interface{})
 	if bc := task.PrivateData.BillingContext; bc != nil {
+		if bc.ServiceTier != nil {
+			other["service_tier_billing"] = *bc.ServiceTier
+		}
 		other["model_price"] = bc.ModelPrice
 		other["group_ratio"] = bc.GroupRatio
 		other["system_global_model_ratio"] = bc.SystemGlobalModelRatio
@@ -393,8 +399,12 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 		otherMultiplier = priceData.OtherRatioMultiplier()
 	}
 	policyAdjustmentMultiplier := effectiveTaskPolicyAdjustmentMultiplier(task.PrivateData.BillingContext)
+	serviceTierMultiplier := 1.0
+	if bc := task.PrivateData.BillingContext; bc != nil && bc.ServiceTier != nil {
+		serviceTierMultiplier = bc.ServiceTier.Multiplier
+	}
 	scaledTotalTokens := relayhelper.ScaleTokensByGlobalModelRatio(totalTokens, globalModelRatio)
-	actualQuota, clamp := common.QuotaFromFloatChecked(float64(scaledTotalTokens) * modelRatio * finalGroupRatio * policyAdjustmentMultiplier * otherMultiplier)
+	actualQuota, clamp := common.QuotaFromFloatChecked(float64(scaledTotalTokens) * modelRatio * finalGroupRatio * policyAdjustmentMultiplier * otherMultiplier * serviceTierMultiplier)
 
 	reason := fmt.Sprintf("token重算：tokens=%d, modelRatio=%.2f, groupRatio=%.2f", totalTokens, modelRatio, finalGroupRatio)
 	if globalModelRatio != 1 || (common.DebugTraceEnabled && common.NormalizeDebugTraceToken(common.DebugTraceToken) == "") {

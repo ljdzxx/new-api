@@ -252,6 +252,8 @@ func SetApiRouter(router *gin.Engine) {
 			optionRoute.GET("/billing_policy", controller.GetBillingPolicyState)
 			optionRoute.PUT("/billing_policy", controller.UpdateBillingPolicyConfig)
 			optionRoute.PUT("/billing_policy/policy", controller.UpsertBillingPolicyModelPolicy)
+			optionRoute.POST("/billing_policy/legacy/preview", controller.PreviewLegacyModelPrices)
+			optionRoute.POST("/billing_policy/sync_legacy", controller.SyncLegacyModelPrice)
 			optionRoute.GET("/billing_policy/migration/preview", controller.PreviewBillingPolicyMigration)
 			optionRoute.POST("/billing_policy/shadow", controller.StartBillingPolicyShadow)
 			optionRoute.POST("/billing_policy/prepare", controller.PrepareBillingPolicySwitch)

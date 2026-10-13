@@ -115,6 +115,9 @@ func AppendClientFastMode(ctx *gin.Context, other map[string]interface{}) {
 func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelRatio, groupRatio, completionRatio float64,
 	cacheTokens int, cacheRatio float64, modelPrice float64, userGroupRatio float64) map[string]interface{} {
 	other := make(map[string]interface{})
+	if relayInfo.PriceData.ServiceTier != nil {
+		other["service_tier_billing"] = *relayInfo.PriceData.ServiceTier
+	}
 	other["model_ratio"] = modelRatio
 	attachGroupRatioBreakdown(other, relayInfo.PriceData.GroupRatioInfo)
 	other["system_global_model_ratio"] = relayInfo.PriceData.SystemGlobalModelRatio
@@ -506,6 +509,9 @@ func ensureBillingPolicySnapshot(ctx *gin.Context, relayInfo *relaycommon.RelayI
 
 func frozenBillingPolicyRequestContext(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) billing_policy.RequestContext {
 	requestContext := billingPolicyRequestContext(ctx)
+	if relayInfo != nil {
+		requestContext.ModelPriceMultiplier = relayInfo.PriceData.ServiceTierMultiplier()
+	}
 	if relayInfo == nil || relayInfo.BillingPolicySnapshot == nil {
 		return requestContext
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -233,17 +234,52 @@ func UpdateOption(key string, value string) error {
 	return updateOptionMap(key, value)
 }
 
+var billingPolicyOptionMutex sync.Mutex
+
+var ErrBillingPolicyRevisionConflict = fmt.Errorf("billing policy revision conflict")
+
 // UpdateBillingPolicyOptionAtomic persists the complete policy set and engine
 // state as one row transaction. In-memory readers are updated only after the
 // database commit succeeds, so they observe either the old or the new config.
 func UpdateBillingPolicyOptionAtomic(value string) error {
+	return updateBillingPolicyOption(value, nil)
+}
+
+// UpdateBillingPolicyOptionChecked compares the persisted revision and uses a
+// conditional update to prevent lost writes, including across server processes.
+func UpdateBillingPolicyOptionChecked(value string, revision int64) error {
+	return updateBillingPolicyOption(value, &revision)
+}
+
+func updateBillingPolicyOption(value string, revision *int64) error {
+	billingPolicyOptionMutex.Lock()
+	defer billingPolicyOptionMutex.Unlock()
 	if err := DB.Transaction(func(tx *gorm.DB) error {
 		option := Option{Key: "ModelBillingPolicy"}
 		if err := tx.FirstOrCreate(&option, Option{Key: option.Key}).Error; err != nil {
 			return err
 		}
-		option.Value = value
-		return tx.Save(&option).Error
+		if revision == nil {
+			option.Value = value
+			return tx.Save(&option).Error
+		}
+		previous := billing_policy.NewConfig()
+		if option.Value != "" {
+			if err := common.UnmarshalJsonStr(option.Value, &previous); err != nil {
+				return err
+			}
+		}
+		if previous.Revision != *revision {
+			return ErrBillingPolicyRevisionConflict
+		}
+		result := tx.Model(&Option{}).Where(map[string]interface{}{"key": option.Key, "value": option.Value}).Update("value", value)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrBillingPolicyRevisionConflict
+		}
+		return nil
 	}); err != nil {
 		return err
 	}

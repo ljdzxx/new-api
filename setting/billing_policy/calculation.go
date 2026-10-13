@@ -2,6 +2,7 @@ package billing_policy
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -45,6 +46,7 @@ const (
 )
 
 type BillingCalculation struct {
+	ModelPriceMultiplier float64             `json:"model_price_multiplier,omitempty"`
 	Mode                 string              `json:"mode"`
 	TierID               string              `json:"tier_id,omitempty"`
 	Currency             string              `json:"currency"`
@@ -168,6 +170,13 @@ func CalculateBilling(policy Policy, usage BillingUsage, requestCtx RequestConte
 				Tokens: field.tokens, PricePerMillion: price.String(), CostUSD: cost.String(),
 			})
 		}
+	}
+	if multiplier := requestCtx.ModelPriceMultiplier; multiplier != 0 {
+		if multiplier <= 0 || math.IsNaN(multiplier) || math.IsInf(multiplier, 0) {
+			return BillingCalculation{}, fmt.Errorf("invalid model price multiplier")
+		}
+		result.ModelPriceMultiplier = multiplier
+		subtotal = subtotal.Mul(decimal.NewFromFloat(multiplier))
 	}
 	for name, units := range usage.ToolUsage {
 		if units == 0 {

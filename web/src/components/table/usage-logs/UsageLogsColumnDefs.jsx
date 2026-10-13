@@ -394,17 +394,16 @@ function renderModelName(record, copyText, t, isAdminUser = false) {
     <Space spacing={4} wrap>
       {modelTag}
       {effortTag}
-      {other?.fast_mode === true && (
-        <Tooltip content={t('已开启Fast模式')}>
-          <span
-            style={{ display: 'inline-flex', cursor: 'help' }}
-            tabIndex={0}
-            aria-label={`F: ${t('已开启Fast模式')}`}
+      {other?.service_tier_billing?.tier && (
+        <Tooltip
+          content={`${t('固定服务档位计费')} · ×${other.service_tier_billing.multiplier}`}
+        >
+          <Tag
+            color={other.service_tier_billing.tag_color}
+            type={other.service_tier_billing.tag_type}
           >
-            <Tag color='blue' type='solid' shape='circle'>
-              F
-            </Tag>
-          </span>
+            {other.service_tier_billing.tier}
+          </Tag>
         </Tooltip>
       )}
     </Space>
@@ -746,6 +745,13 @@ function getBillingPolicySegments(other, t) {
     },
   ];
 
+  if (other?.service_tier_billing) {
+    segments.push({
+      text: `${other.service_tier_billing.tier} ×${other.service_tier_billing.multiplier}`,
+      tone: 'primary',
+    });
+  }
+
   for (const item of lineItems) {
     if (isToolBillingLineItem(item)) {
       continue;
@@ -931,7 +937,18 @@ function getUsageLogDetailSummary(record, text, billingDisplayMode, t) {
         'segments',
       );
   return {
-    segments: [...getUserLevelRatioSegments(other, t), ...priceSegments],
+    segments: [
+      ...getUserLevelRatioSegments(other, t),
+      ...(other?.service_tier_billing
+        ? [
+            {
+              text: `${other.service_tier_billing.tier} ×${other.service_tier_billing.multiplier}`,
+              tone: 'primary',
+            },
+          ]
+        : []),
+      ...priceSegments,
+    ],
   };
 }
 

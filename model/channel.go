@@ -973,7 +973,17 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	return channelParams.Validate()
+	if err := channelParams.Validate(); err != nil {
+		return err
+	}
+	if channel.Type == constant.ChannelTypeOpenAI && channel.OtherSettings != "" {
+		var other dto.ChannelOtherSettings
+		if err := common.UnmarshalJsonStr(channel.OtherSettings, &other); err != nil {
+			return err
+		}
+		return other.ServiceTierBilling.Validate()
+	}
+	return nil
 }
 
 func (channel *Channel) GetSetting() dto.ChannelSettings {

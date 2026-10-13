@@ -1,5 +1,11 @@
 {
   "translation": {
+    "同步旧版": "Sync legacy",
+    "已同步旧版价格": "Legacy pricing synced",
+    "同步旧版价格失败": "Failed to sync legacy pricing",
+    "请先完成迁移并激活新版计费后再同步": "Complete migration and activate the new billing engine before syncing",
+    "旧版价格缺失或无效，请手动设置价格": "Legacy pricing is missing or invalid; set pricing manually",
+    "将旧版价格转换并保存为新版计费策略": "Convert legacy pricing and save it as a new billing policy",
     "logic_prompt、logic_answer、logic_match_mode 可逐字段覆盖全局逻辑题设置；省略、null、空字符串或仅空白时继承全局值。匹配方式为 exact 或 contains。": "logic_prompt, logic_answer and logic_match_mode override the global logic settings independently. Omitted, null, empty or whitespace-only values inherit the global value. Matching modes: exact or contains.",
     "以下题目、答案和匹配方式为全局默认值；分组优先使用自身配置。所有启用逻辑检测的分组都提供题目和答案时，全局题目和答案可留空。": "The question, answer and matching mode below are global defaults; group settings take precedence. The global question and answer may be empty when every group with logic tests enabled supplies its own.",
     "R2 Worker 地址": "R2 Worker URL",
@@ -4717,7 +4723,13 @@
     "测试恢复时间": "Restored by test at",
     "模型可用性": "Model availability",
     "刷新模型状态": "Refresh model status",
-    "状态更新时间": "Status retrieved at"
+    "状态更新时间": "Status retrieved at",
+    "固定服务档位计费": "Fixed service tier billing",
+    "标签颜色": "Tag color",
+    "标签样式": "Tag style",
+    "计费倍率": "Billing multiplier",
+    "按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用，不修改上游请求参数。": "Match the original model before mapping. Exact rules take priority; * matches any model. Adjusts model charges only, excluding separate tool charges. Upstream request parameters are unchanged.",
+    "服务档位规则无效：模型不可重复且仅支持完整的 * 通配符，档位必填，倍率须大于 0 且不超过 1000，请选择有效标签样式。": "Invalid service tier rules: models must be unique and only the complete * wildcard is supported. Enter a tier, a multiplier greater than 0 and no more than 1000, and a valid tag style."
   },
   "启用请求体透传功能。开启后可能造成最终响应的token与计费token不一致": "Enable request body pass-through. When enabled, final response tokens may differ from billing tokens.",
   "缩放API响应usage": "Scale API response usage",

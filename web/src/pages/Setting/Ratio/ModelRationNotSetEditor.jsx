@@ -17,13 +17,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
   Empty,
   Input,
   Table,
+  Space,
+  Tooltip,
   Tag,
   Typography,
 } from '@douyinfe/semi-ui';
@@ -44,46 +52,84 @@ function newPolicy() {
   };
 }
 
-export default function ModelRatioNotSetEditor({ onBillingPolicyChanged }) {
+export default function ModelRatioNotSetEditor({
+  billingPolicyVersion,
+  onBillingPolicyChanged,
+}) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
+  const refreshSequence = useRef(0);
   const [saving, setSaving] = useState(false);
+  const [syncingModel, setSyncingModel] = useState(null);
+  const [legacyModels, setLegacyModels] = useState({});
   const [models, setModels] = useState([]);
   const [config, setConfig] = useState(null);
   const [query, setQuery] = useState('');
   const [editingModel, setEditingModel] = useState(null);
 
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
     setLoading(true);
     try {
-      const [modelsResponse, policyResponse] = await Promise.all([
-        API.get('/api/channel/models_enabled'),
-        API.get('/api/option/billing_policy'),
-      ]);
+      const modelsResponse = await API.get('/api/channel/models_enabled');
       if (!modelsResponse.data?.success)
         throw new Error(modelsResponse.data?.message);
-      if (!policyResponse.data?.success)
-        throw new Error(policyResponse.data?.message);
-      setModels(modelsResponse.data.data || []);
-      setConfig(policyResponse.data.data?.config || null);
+      const enabledModels = modelsResponse.data.data || [];
+      const previewResponse = await API.post(
+        '/api/option/billing_policy/legacy/preview',
+        {
+          models: enabledModels,
+        },
+      );
+      if (!previewResponse.data?.success)
+        throw new Error(previewResponse.data?.message);
+      if (sequence !== refreshSequence.current) return;
+      setModels(enabledModels);
+      setConfig(previewResponse.data.data?.config || null);
+      setLegacyModels(previewResponse.data.data?.models || {});
     } catch (error) {
-      showError(error.message || t('加载未设置价格模型失败'));
+      if (sequence === refreshSequence.current)
+        showError(error.message || t('加载未设置价格模型失败'));
     } finally {
-      setLoading(false);
+      if (sequence === refreshSequence.current) setLoading(false);
     }
   }, [t]);
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, billingPolicyVersion]);
 
   const unpricedModels = useMemo(() => {
-    const policies = config?.policies || {};
     const keyword = query.trim().toLowerCase();
     return models
-      .filter((name) => !policies[name])
+      .filter((name) => legacyModels[name]?.configured === false)
       .filter((name) => !keyword || name.toLowerCase().includes(keyword));
-  }, [config, models, query]);
+  }, [legacyModels, models, query]);
+
+  const syncLegacyPrice = async (name) => {
+    if (syncingModel || saving || config?.state !== 'active') return;
+    setSyncingModel(name);
+    try {
+      const response = await API.post(
+        '/api/option/billing_policy/sync_legacy',
+        {
+          model: name,
+          revision: config.revision,
+        },
+      );
+      if (!response.data?.success) throw new Error(response.data?.message);
+      showSuccess(t('已同步旧版价格'));
+      onBillingPolicyChanged?.();
+      await refresh();
+    } catch (error) {
+      showError(
+        error.response?.data?.message || error.message || t('同步旧版价格失败'),
+      );
+      await refresh();
+    } finally {
+      setSyncingModel(null);
+    }
+  };
 
   const savePolicy = async (policy) => {
     if (!editingModel) return;
@@ -160,14 +206,44 @@ export default function ModelRatioNotSetEditor({ onBillingPolicyChanged }) {
           },
           {
             title: t('操作'),
-            render: (_, record) => (
-              <Button
-                theme='solid'
-                onClick={() => setEditingModel(record.name)}
-              >
-                {t('设置价格')}
-              </Button>
-            ),
+            render: (_, record) => {
+              const unavailable = !legacyModels[record.name]?.available;
+              const reason =
+                config?.state !== 'active'
+                  ? t('请先完成迁移并激活新版计费后再同步')
+                  : unavailable
+                    ? t('旧版价格缺失或无效，请手动设置价格')
+                    : t('将旧版价格转换并保存为新版计费策略');
+              return (
+                <Space>
+                  <Button
+                    theme='solid'
+                    disabled={Boolean(syncingModel) || saving || loading}
+                    onClick={() => setEditingModel(record.name)}
+                  >
+                    {t('设置价格')}
+                  </Button>
+                  <Tooltip content={reason}>
+                    <span>
+                      <Button
+                        loading={syncingModel === record.name}
+                        disabled={
+                          config?.state !== 'active' ||
+                          unavailable ||
+                          Boolean(syncingModel) ||
+                          saving ||
+                          loading ||
+                          Boolean(editingModel)
+                        }
+                        onClick={() => syncLegacyPrice(record.name)}
+                      >
+                        {t('同步旧版')}
+                      </Button>
+                    </span>
+                  </Tooltip>
+                </Space>
+              );
+            },
           },
         ]}
       />

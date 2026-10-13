@@ -122,6 +122,7 @@ const RatioSetting = () => {
           </Tabs.TabPane>
           <Tabs.TabPane tab={t('未设置价格模型')} itemKey='unset_models'>
             <ModelRatioNotSetEditor
+              billingPolicyVersion={billingPolicyVersion}
               options={inputs}
               refresh={onRefresh}
               onBillingPolicyChanged={notifyBillingPolicyChanged}

@@ -17,6 +17,7 @@ type GroupRatioInfo struct {
 }
 
 type PriceData struct {
+	ServiceTier                      *ServiceTierBillingRule
 	FreeModel                        bool
 	ModelPrice                       float64
 	ModelRatio                       float64
