@@ -1,0 +1,241 @@
+[
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "additional_tools_flattened",
+      "tool_namespace_flattened",
+      "unsupported_opaque_tool"
+    ],
+    "function_names": [
+      "fs__read"
+    ],
+    "hosted_tools": [],
+    "name": "additional_namespace",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [],
+    "function_names": [],
+    "hosted_tools": [
+      "googleSearch"
+    ],
+    "name": "versioned_search",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [],
+    "function_names": [],
+    "hosted_tools": [
+      "googleSearch"
+    ],
+    "name": "versioned_preview",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "hosted_tool_history_unsupported"
+    ],
+    "function_names": [],
+    "hosted_tools": [],
+    "name": "hosted_history",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "trailing_assistant_omitted"
+    ],
+    "function_names": [],
+    "hosted_tools": [],
+    "name": "trailing_assistant",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      },
+      {
+        "parts": [
+          {
+            "functionCall": {
+              "args": {},
+              "id": "a",
+              "name": "run"
+            },
+            "thoughtSignature": "context_engineering_is_the_way_to_go"
+          }
+        ],
+        "role": "model"
+      },
+      {
+        "parts": [
+          {
+            "functionResponse": {
+              "id": "a",
+              "name": "run",
+              "response": {
+                "content": "false"
+              }
+            }
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "trailing_assistant_omitted"
+    ],
+    "function_names": [],
+    "hosted_tools": [],
+    "name": "tool_scalar_and_history",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "unsupported_parallel_tool_control"
+    ],
+    "function_names": [
+      "run"
+    ],
+    "hosted_tools": [],
+    "name": "parallel_false",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "custom_tool_as_function",
+      "tool_namespace_flattened"
+    ],
+    "function_names": [
+      "fs__patch"
+    ],
+    "hosted_tools": [],
+    "name": "custom_namespace_choice",
+    "rejected": false,
+    "tool_config": {
+      "functionCallingConfig": {
+        "allowedFunctionNames": [
+          "fs__patch"
+        ],
+        "mode": "ANY"
+      }
+    }
+  },
+  {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "hi"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "diagnostic_codes": [
+      "unsupported_tool_choice"
+    ],
+    "function_names": [
+      "run"
+    ],
+    "hosted_tools": [],
+    "name": "opaque_choice",
+    "rejected": false,
+    "tool_config": null
+  },
+  {
+    "diagnostic_codes": [
+      "unsupported_opaque_tool"
+    ],
+    "name": "safe_tool_search",
+    "rejected": true
+  },
+  {
+    "diagnostic_codes": [
+      "custom_tool_as_function"
+    ],
+    "name": "strict_custom",
+    "rejected": true
+  }
+]

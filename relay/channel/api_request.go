@@ -583,6 +583,13 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		if c.Request.Context().Err() != nil {
 			return nil, types.NewClientDisconnectedError(c.Request.Context().Err())
 		}
+		var headerTimeout *service.UpstreamResponseHeaderTimeout
+		if errors.As(err, &headerTimeout) {
+			logger.LogWarn(c, fmt.Sprintf("upstream response header timeout: channel_id=%d upstream_model=%q timeout=%s", info.ChannelId, info.UpstreamModelName, headerTimeout.After))
+			apiErr := types.NewErrorWithStatusCode(headerTimeout, types.ErrorCodeUpstreamResponseHeaderTimeout, http.StatusGatewayTimeout)
+			apiErr.UpstreamStatusCode = 0 // The upstream sent no HTTP status.
+			return nil, apiErr
+		}
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}

@@ -100,7 +100,8 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		if relaycommon.ShouldStripImageGeneration(info.RelayMode) || info.IsModelMapped {
+		info.UpstreamRequestBodySize = storage.Size()
+		if !info.ChannelOtherSettings.AllowServiceTier || relaycommon.ShouldStripImageGeneration(info.RelayMode) || info.IsModelMapped {
 			jsonData, readErr := storage.Bytes()
 			if readErr != nil {
 				return types.NewError(readErr, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
@@ -111,6 +112,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				return types.NewError(mapErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 			jsonData = mappedBody
+			jsonData, err = relaycommon.RemoveDisabledFields(jsonData, info.ChannelOtherSettings, info.ChannelSetting.PassThroughBodyEnabled)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
 			bodyChanged := !bytes.Equal(jsonData, originalBody)
 			removed := 0
 			if relaycommon.ShouldStripImageGeneration(info.RelayMode) {

@@ -31,7 +31,7 @@ func usageFromBillingUsage(usage *dto.Usage) (*dto.Usage, bool) {
 		(strings.EqualFold(source, dto.BillingUsageSourceClaudeMessages) || strings.EqualFold(semantic, dto.BillingUsageSemanticAnthropic)) {
 		return usageFromClaudeBillingUsage(billingUsage), true
 	}
-	if billingUsage.GeminiUsageMetadata != nil &&
+	if dto.HasGeminiUsageMetadataTokens(billingUsage.GeminiUsageMetadata) &&
 		(strings.EqualFold(source, dto.BillingUsageSourceGeminiChat) || strings.EqualFold(semantic, dto.BillingUsageSemanticGemini)) {
 		return usageFromGeminiBillingUsage(billingUsage), true
 	}
@@ -127,10 +127,20 @@ func usageFromGeminiBillingUsage(billingUsage *dto.BillingUsage) *dto.Usage {
 	for _, detail := range metadata.ToolUsePromptTokensDetails {
 		addGeminiInputTokenDetail(&usage.PromptTokensDetails, detail)
 	}
+	for _, detail := range metadata.CandidatesTokensDetails {
+		switch strings.ToUpper(strings.TrimSpace(detail.Modality)) {
+		case "TEXT":
+			usage.CompletionTokenDetails.TextTokens += detail.TokenCount
+		case "IMAGE":
+			usage.CompletionTokenDetails.ImageTokens += detail.TokenCount
+		case "AUDIO":
+			usage.CompletionTokenDetails.AudioTokens += detail.TokenCount
+		}
+	}
 	if usage.TotalTokens == 0 {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	} else if usage.CompletionTokens <= 0 {
-		usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+		usage.CompletionTokens = max(usage.TotalTokens-usage.PromptTokens, 0)
 	}
 	if usage.PromptTokens > 0 && usage.PromptTokensDetails.TextTokens == 0 && usage.PromptTokensDetails.AudioTokens == 0 {
 		usage.PromptTokensDetails.TextTokens = usage.PromptTokens
@@ -139,7 +149,7 @@ func usageFromGeminiBillingUsage(billingUsage *dto.BillingUsage) *dto.Usage {
 }
 
 func addGeminiInputTokenDetail(details *dto.InputTokenDetails, detail dto.GeminiPromptTokensDetails) {
-	switch detail.Modality {
+	switch strings.ToUpper(strings.TrimSpace(detail.Modality)) {
 	case "AUDIO":
 		details.AudioTokens += detail.TokenCount
 	case "IMAGE":

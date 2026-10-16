@@ -28,7 +28,11 @@ func TestMonitorLogicMatchModes(t *testing.T) {
 	}{
 		{" 21\n", "21", "exact", true}, {"Answer: 21", "21", "exact", false},
 		{"Answer: 21", "21", "contains", true}, {"Answer: 12", "21", "contains", false},
-		{"ABC", "abc", "contains", false}, {"anything", " ", "contains", false},
+		{"ABC", "abc", "contains", true}, {"anything", " ", "contains", false},
+		{" AbC\n", "aBc", "exact", true}, {"abc", "ABC", "exact", true},
+		{"Answer: AbC", "aBc", "contains", true}, {"answer: abc", "ABC", "contains", true},
+		{"ABC", "abd", "exact", false}, {"Answer: ABC", "abd", "contains", false},
+		{"ABC", "abc", "", true}, {"", " ", "exact", false},
 	} {
 		require.Equal(t, tc.ok, monitorLogicMatches(tc.answer, tc.expected, tc.mode), tc)
 	}

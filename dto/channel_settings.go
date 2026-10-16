@@ -189,6 +189,9 @@ const (
 )
 
 type ChannelOtherSettings struct {
+	ToolLossPolicy types.ConversionLossPolicy `json:"tool_loss_policy,omitempty"`
+
+	VertexProjectID                       string                    `json:"vertex_project_id,omitempty"` // Optional project for Vertex API key mode.
 	ServiceTierBilling                    *types.ServiceTierBilling `json:"service_tier_billing,omitempty"`
 	AzureResponsesVersion                 string                    `json:"azure_responses_version,omitempty"`
 	VertexKeyType                         VertexKeyType             `json:"vertex_key_type,omitempty"` // "json" or "api_key"

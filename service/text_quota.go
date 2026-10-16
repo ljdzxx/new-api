@@ -22,54 +22,59 @@ import (
 )
 
 type textQuotaSummary struct {
-	PromptTokens             int
-	CompletionTokens         int
-	TotalTokens              int
-	CacheTokens              int
-	CacheCreationTokens      int
-	CacheCreationTokens5m    int
-	CacheCreationTokens1h    int
-	ImageTokens              int
-	AudioTokens              int
-	AudioOutputTokens        int
-	RawPromptTokens          int
-	RawCompletionTokens      int
-	RawCacheTokens           int
-	RawCacheCreationTokens   int
-	RawCacheCreationTokens5m int
-	RawCacheCreationTokens1h int
-	RawImageTokens           int
-	RawAudioTokens           int
-	RawAudioOutputTokens     int
-	PolicyInputTotalTokens   int64
-	PolicyOutputTotalTokens  int64
-	ModelName                string
-	TokenName                string
-	UseTimeSeconds           int64
-	CompletionRatio          float64
-	CacheRatio               float64
-	ImageRatio               float64
-	ModelRatio               float64
-	GroupRatio               float64
-	GlobalModelRatio         float64
-	ModelPrice               float64
-	CacheCreationRatio       float64
-	CacheCreationRatio5m     float64
-	CacheCreationRatio1h     float64
-	Quota                    int
-	IsClaudeUsageSemantic    bool
-	UsageSemantic            string
-	WebSearchPrice           float64
-	WebSearchCallCount       int
-	ClaudeWebSearchPrice     float64
-	ClaudeWebSearchCallCount int
-	FileSearchPrice          float64
-	FileSearchCallCount      int
-	AudioInputPrice          float64
-	ImageGenerationCallPrice float64
-	PolicyCalculation        *billing_policy.BillingCalculation
-	PolicyError              error
-	MissingUsagePreConsumed  bool
+	PromptTokens              int
+	CompletionTokens          int
+	TotalTokens               int
+	CacheTokens               int
+	CacheCreationTokens       int
+	CacheCreationTokens5m     int
+	CacheCreationTokens1h     int
+	ImageTokens               int
+	AudioTokens               int
+	AudioOutputTokens         int
+	RawPromptTokens           int
+	RawCompletionTokens       int
+	RawCacheTokens            int
+	RawCacheCreationTokens    int
+	RawCacheCreationTokens5m  int
+	RawCacheCreationTokens1h  int
+	RawImageTokens            int
+	RawAudioTokens            int
+	RawAudioOutputTokens      int
+	PolicyInputTotalTokens    int64
+	PolicyOutputTotalTokens   int64
+	ModelName                 string
+	TokenName                 string
+	UseTimeSeconds            int64
+	CompletionRatio           float64
+	CacheRatio                float64
+	ImageRatio                float64
+	ModelRatio                float64
+	GroupRatio                float64
+	GlobalModelRatio          float64
+	ModelPrice                float64
+	CacheCreationRatio        float64
+	CacheCreationRatio5m      float64
+	CacheCreationRatio1h      float64
+	Quota                     int
+	IsClaudeUsageSemantic     bool
+	UsageSemantic             string
+	WebSearchPrice            float64
+	WebSearchCallCount        int
+	ClaudeWebSearchPrice      float64
+	ClaudeWebSearchCallCount  int
+	GeminiSearchBillingKey    string
+	GeminiSearchQueryCount    int
+	GeminiGroundedPromptCount int
+	GeminiSearchCallCount     int
+	GeminiSearchPrice         float64
+	FileSearchPrice           float64
+	FileSearchCallCount       int
+	AudioInputPrice           float64
+	ImageGenerationCallPrice  float64
+	PolicyCalculation         *billing_policy.BillingCalculation
+	PolicyError               error
+	MissingUsagePreConsumed   bool
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -93,6 +98,7 @@ func hasBillableTokenUsage(summary textQuotaSummary) bool {
 		summary.AudioOutputTokens > 0 ||
 		summary.WebSearchCallCount > 0 ||
 		summary.ClaudeWebSearchCallCount > 0 ||
+		summary.GeminiSearchCallCount > 0 ||
 		summary.FileSearchCallCount > 0 ||
 		summary.ImageGenerationCallPrice > 0
 }
@@ -108,6 +114,9 @@ func billingPolicyToolUsage(ctx *gin.Context, summary textQuotaSummary) map[stri
 	}
 	if summary.ClaudeWebSearchCallCount > 0 {
 		usage[billing_policy.ToolClaudeWebSearch] = int64(summary.ClaudeWebSearchCallCount)
+	}
+	if summary.GeminiSearchCallCount > 0 {
+		usage[summary.GeminiSearchBillingKey] = int64(summary.GeminiSearchCallCount)
 	}
 	if summary.FileSearchCallCount > 0 {
 		usage[billing_policy.ToolFileSearch] = int64(summary.FileSearchCallCount)
@@ -357,6 +366,36 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			Mul(decimal.NewFromInt(int64(summary.ClaudeWebSearchCallCount)))
 	}
 
+	// Gemini 3 按去重查询计费；旧模型按 grounded prompt 计费，两者互斥。
+	var dGeminiSearchQuota decimal.Decimal
+	if relayInfo.ResponsesUsageInfo != nil {
+		tools := relayInfo.ResponsesUsageInfo.BuiltInTools
+		if query := tools[relaycommon.GeminiGoogleSearchQueryTool]; query != nil {
+			summary.GeminiSearchQueryCount = max(0, min(query.CallCount, relaycommon.MaxGeminiSearchCount))
+		}
+		if grounded := tools[relaycommon.GeminiGoogleSearchGroundedPromptTool]; grounded != nil {
+			summary.GeminiGroundedPromptCount = max(0, min(grounded.CallCount, 1))
+		}
+		if summary.GeminiSearchQueryCount > 0 || summary.GeminiGroundedPromptCount > 0 {
+			modelName := summary.ModelName
+			if relayInfo.ChannelMeta != nil && relayInfo.UpstreamModelName != "" {
+				modelName = relayInfo.UpstreamModelName
+			}
+			summary.GeminiSearchBillingKey, summary.GeminiSearchPrice = operation_setting.GetGeminiGoogleSearchBilling(modelName)
+			switch summary.GeminiSearchBillingKey {
+			case relaycommon.GeminiGoogleSearchGroundedPromptTool:
+				summary.GeminiSearchCallCount = summary.GeminiGroundedPromptCount
+			case relaycommon.GeminiGoogleSearchQueryTool:
+				summary.GeminiSearchCallCount = summary.GeminiSearchQueryCount
+			}
+			if summary.GeminiSearchCallCount > 0 {
+				dGeminiSearchQuota = decimal.NewFromFloat(summary.GeminiSearchPrice).
+					Mul(decimal.NewFromInt(int64(summary.GeminiSearchCallCount))).
+					Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit)
+			}
+		}
+	}
+
 	var dFileSearchQuota decimal.Decimal
 	if relayInfo.ResponsesUsageInfo != nil {
 		if fileSearchTool, exists := relayInfo.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolFileSearch]; exists && fileSearchTool.CallCount > 0 {
@@ -387,7 +426,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	// Keep the diagnostic amounts at the same boundaries as settlement: the
 	// channel tier scales model charges, while independent tool charges do not.
 	var modelQuotaBeforeTier, quotaBeforeRound decimal.Decimal
-	toolQuota := dWebSearchQuota.Add(dClaudeWebSearchQuota).Add(dFileSearchQuota).Add(dImageGenerationCallQuota)
+	toolQuota := dWebSearchQuota.Add(dClaudeWebSearchQuota).Add(dGeminiSearchQuota).Add(dFileSearchQuota).Add(dImageGenerationCallQuota)
 	activePolicyCalculated := false
 	if billing_policy.IsActive() {
 		if policy, ok := requestBillingPolicy(relayInfo); ok {
@@ -441,6 +480,16 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 				summary.PolicyError = err
 				logger.LogError(ctx, "active billing policy returned invalid total; settling at frozen pre-consume instead of legacy fallback: "+err.Error())
 			} else {
+				if summary.GeminiSearchCallCount > 0 {
+					for _, item := range calculation.LineItems {
+						if item.Field == summary.GeminiSearchBillingKey {
+							if price, priceErr := decimal.NewFromString(item.UnitPrice); priceErr == nil {
+								summary.GeminiSearchPrice = price.InexactFloat64()
+							}
+							break
+						}
+					}
+				}
 				if logCalculation {
 					toolQuota = decimal.Zero
 					for _, item := range calculation.LineItems {
@@ -523,6 +572,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal := modelQuotaBeforeTier.Mul(decimal.NewFromFloat(relayInfo.PriceData.ServiceTierMultiplier()))
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(dGeminiSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier()))
@@ -540,6 +590,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		quotaCalculateDecimal := modelQuotaBeforeTier.Mul(decimal.NewFromFloat(relayInfo.PriceData.ServiceTierMultiplier()))
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dWebSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dClaudeWebSearchQuota)
+		quotaCalculateDecimal = quotaCalculateDecimal.Add(dGeminiSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dFileSearchQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(dImageGenerationCallQuota)
 		quotaCalculateDecimal = quotaCalculateDecimal.Mul(decimal.NewFromFloat(relayInfo.PriceData.EffectivePolicyAdjustmentMultiplier()))
@@ -691,6 +742,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if summary.ClaudeWebSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("Claude Web Search 调用 %d 次，调用花费 %s", summary.ClaudeWebSearchCallCount, decimal.NewFromFloat(summary.ClaudeWebSearchPrice).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).Mul(decimal.NewFromInt(int64(summary.ClaudeWebSearchCallCount))).String()))
 	}
+	if summary.GeminiSearchCallCount > 0 {
+		extraContent = append(extraContent, fmt.Sprintf("Gemini Google Search %s %d 次，调用花费 %s", summary.GeminiSearchBillingKey, summary.GeminiSearchCallCount, decimal.NewFromFloat(summary.GeminiSearchPrice).Mul(decimal.NewFromInt(int64(summary.GeminiSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
+	}
 	if summary.FileSearchCallCount > 0 {
 		extraContent = append(extraContent, fmt.Sprintf("File Search 调用 %d 次，调用花费 %s", summary.FileSearchCallCount, decimal.NewFromFloat(summary.FileSearchPrice).Mul(decimal.NewFromInt(int64(summary.FileSearchCallCount))).Div(decimal.NewFromInt(1000)).Mul(decimal.NewFromFloat(summary.GroupRatio)).Mul(decimal.NewFromFloat(common.QuotaPerUnit)).String()))
 	}
@@ -767,6 +821,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other["file_search"] = true
 		other["file_search_call_count"] = summary.FileSearchCallCount
 		other["file_search_price"] = summary.FileSearchPrice
+	}
+	if summary.GeminiSearchQueryCount > 0 || summary.GeminiGroundedPromptCount > 0 {
+		other["gemini_google_search"] = map[string]any{
+			"query_count":           summary.GeminiSearchQueryCount,
+			"grounded_prompt_count": summary.GeminiGroundedPromptCount,
+			"billing_key":           summary.GeminiSearchBillingKey,
+			"billable_count":        summary.GeminiSearchCallCount,
+			"price_per_thousand":    summary.GeminiSearchPrice,
+		}
 	}
 	if summary.AudioInputPrice > 0 && summary.AudioTokens > 0 {
 		other["audio_input_seperate_price"] = true

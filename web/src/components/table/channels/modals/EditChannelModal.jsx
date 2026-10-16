@@ -59,6 +59,10 @@ import {
   selectFilter,
 } from '../../../../helpers';
 import ServiceTierBillingEditor from './ServiceTierBillingEditor';
+import {
+  readVertexChannelSettings,
+  writeVertexChannelSettings,
+} from '../../../../helpers/vertexChannelSettings';
 import { validateServiceTierBilling } from '../../../../helpers/serviceTierBilling';
 import ModelSelectModal from './ModelSelectModal';
 import SingleModelSelectModal from './SingleModelSelectModal';
@@ -322,6 +326,7 @@ const EditChannelModal = (props) => {
     settings: '',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
+    vertex_project_id: '',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
     aws_key_type: 'ak_sk',
     // 企业账户设置
@@ -1086,7 +1091,10 @@ const EditChannelModal = (props) => {
           data.azure_responses_version =
             parsedSettings.azure_responses_version || '';
           // 读取 Vertex 密钥格式
-          data.vertex_key_type = parsedSettings.vertex_key_type || 'json';
+          Object.assign(
+            data,
+            readVertexChannelSettings(data.type, parsedSettings),
+          );
           // 读取 AWS 密钥格式和区域
           data.aws_key_type = parsedSettings.aws_key_type || 'ak_sk';
           // 读取企业账户设置
@@ -1127,7 +1135,7 @@ const EditChannelModal = (props) => {
           console.error('解析其他设置失败:', error);
           data.azure_responses_version = '';
           data.region = '';
-          data.vertex_key_type = 'json';
+          Object.assign(data, readVertexChannelSettings(data.type));
           data.aws_key_type = 'ak_sk';
           data.is_enterprise_account = false;
           data.allow_service_tier = false;
@@ -1145,7 +1153,7 @@ const EditChannelModal = (props) => {
         }
       } else {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
-        data.vertex_key_type = 'json';
+        Object.assign(data, readVertexChannelSettings(data.type));
         data.aws_key_type = 'ak_sk';
         data.is_enterprise_account = false;
         data.allow_service_tier = false;
@@ -2127,11 +2135,7 @@ const EditChannelModal = (props) => {
     }
 
     // type === 41 (Vertex): 始终保存 vertex_key_type 到 settings，避免编辑时被重置
-    if (localInputs.type === 41) {
-      settings.vertex_key_type = localInputs.vertex_key_type || 'json';
-    } else if ('vertex_key_type' in settings) {
-      delete settings.vertex_key_type;
-    }
+    settings = writeVertexChannelSettings(settings, localInputs);
 
     // type === 1 (OpenAI) 或 type === 14 (Claude): 设置字段透传控制（显式保存布尔值）
     if (localInputs.type === 1 || localInputs.type === 14) {
@@ -2200,6 +2204,7 @@ const EditChannelModal = (props) => {
     delete localInputs.is_enterprise_account;
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
+    delete localInputs.vertex_project_id;
     // 顶层的 aws_key_type 不应发送给后端
     delete localInputs.aws_key_type;
     // 清理字段透传控制的临时字段
@@ -2760,6 +2765,24 @@ const EditChannelModal = (props) => {
                         }
                       />
                     )}
+                    {inputs.type === 41 &&
+                      inputs.vertex_key_type === 'api_key' && (
+                        <Form.Input
+                          field='vertex_project_id'
+                          label={t('项目 ID（可选）')}
+                          placeholder={t('请输入 Google Cloud 项目 ID')}
+                          value={inputs.vertex_project_id || ''}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'vertex_project_id',
+                              value,
+                            )
+                          }
+                          extraText={t(
+                            '标准 Vertex API Key 填写项目 ID；Express 模式可留空。填写后请求将使用配置的项目和区域。',
+                          )}
+                        />
+                      )}
                     {batch ? (
                       inputs.type === 41 &&
                       (inputs.vertex_key_type || 'json') === 'json' ? (

@@ -1,0 +1,193 @@
+{
+  "ModelBillingPolicy": {
+    "schema_version": 1,
+    "revision": 1,
+    "state": "active",
+    "policies": {
+      "gpt-5.6-sol": {
+        "version": 1,
+        "mode": "tiered",
+        "currency": "USD",
+        "unit": "per_million_tokens",
+        "tiers": [
+          {
+            "id": "长报文",
+            "priority": 1,
+            "conditions": [
+              {
+                "metric": "input_total_tokens",
+                "operator": "gte",
+                "value": 200
+              }
+            ],
+            "prices": {
+              "input": "1",
+              "output": "2",
+              "cache_read": "0.1",
+              "cache_write": "1.25",
+              "cache_write_5m": "1.25",
+              "cache_write_1h": "2",
+              "image_input": "3",
+              "audio_input": "4",
+              "audio_output": "5"
+            }
+          },
+          {
+            "id": "short",
+            "priority": 2,
+            "fallback": true,
+            "prices": {
+              "input": "1",
+              "output": "2",
+              "cache_read": "0.1",
+              "cache_write": "1.25",
+              "cache_write_5m": "1.25",
+              "cache_write_1h": "2",
+              "image_input": "3",
+              "audio_input": "4",
+              "audio_output": "5"
+            }
+          }
+        ],
+        "tools": {
+          "claude_web_search": {
+            "unit": "per_thousand_calls",
+            "price": "10"
+          },
+          "google_search": {
+            "unit": "per_thousand_calls",
+            "price": "14"
+          },
+          "google_search_grounded_prompt": {
+            "unit": "per_thousand_calls",
+            "price": "35"
+          }
+        }
+      },
+      "claude-fable-5": {
+        "version": 1,
+        "mode": "tiered",
+        "currency": "USD",
+        "unit": "per_million_tokens",
+        "tiers": [
+          {
+            "id": "长报文",
+            "priority": 1,
+            "conditions": [
+              {
+                "metric": "input_total_tokens",
+                "operator": "gte",
+                "value": 200
+              }
+            ],
+            "prices": {
+              "input": "1",
+              "output": "2",
+              "cache_read": "0.1",
+              "cache_write": "1.25",
+              "cache_write_5m": "1.25",
+              "cache_write_1h": "2",
+              "image_input": "3",
+              "audio_input": "4",
+              "audio_output": "5"
+            }
+          },
+          {
+            "id": "short",
+            "priority": 2,
+            "fallback": true,
+            "prices": {
+              "input": "1",
+              "output": "2",
+              "cache_read": "0.1",
+              "cache_write": "1.25",
+              "cache_write_5m": "1.25",
+              "cache_write_1h": "2",
+              "image_input": "3",
+              "audio_input": "4",
+              "audio_output": "5"
+            }
+          }
+        ],
+        "tools": {
+          "claude_web_search": {
+            "unit": "per_thousand_calls",
+            "price": "10"
+          },
+          "google_search": {
+            "unit": "per_thousand_calls",
+            "price": "14"
+          },
+          "google_search_grounded_prompt": {
+            "unit": "per_thousand_calls",
+            "price": "35"
+          }
+        }
+      },
+      "gemini-2.5-pro": {
+        "version": 1,
+        "mode": "tiered",
+        "currency": "USD",
+        "unit": "per_million_tokens",
+        "tiers": [
+          {
+            "id": "长报文",
+            "priority": 1,
+            "conditions": [
+              {
+                "metric": "input_total_tokens",
+                "operator": "gte",
+                "value": 200
+              }
+            ],
+            "prices": {
+              "input": "1",
+              "output": "2",
+              "cache_read": "0.1",
+              "cache_write": "1.25",
+              "cache_write_5m": "1.25",
+              "cache_write_1h": "2",
+              "image_input": "3",
+              "audio_input": "4",
+              "audio_output": "5"
+            }
+          },
+          {
+            "id": "short",
+            "priority": 2,
+            "fallback": true,
+            "prices": {
+              "input": "1",
+              "output": "2",
+              "cache_read": "0.1",
+              "cache_write": "1.25",
+              "cache_write_5m": "1.25",
+              "cache_write_1h": "2",
+              "image_input": "3",
+              "audio_input": "4",
+              "audio_output": "5"
+            }
+          }
+        ],
+        "tools": {
+          "claude_web_search": {
+            "unit": "per_thousand_calls",
+            "price": "10"
+          },
+          "google_search": {
+            "unit": "per_thousand_calls",
+            "price": "14"
+          },
+          "google_search_grounded_prompt": {
+            "unit": "per_thousand_calls",
+            "price": "35"
+          }
+        }
+      }
+    }
+  },
+  "GlobalModelRatio": 1,
+  "GroupRatio": {
+    "default": 1
+  }
+}

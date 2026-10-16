@@ -44,13 +44,15 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 }
 
 type ToolConfig struct {
-	FunctionCallingConfig *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
-	RetrievalConfig       *RetrievalConfig       `json:"retrievalConfig,omitempty"`
+	FunctionCallingConfig            *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
+	RetrievalConfig                  *RetrievalConfig       `json:"retrievalConfig,omitempty"`
+	IncludeServerSideToolInvocations *bool                  `json:"includeServerSideToolInvocations,omitempty"`
 }
 
 type FunctionCallingConfig struct {
-	Mode                 FunctionCallingConfigMode `json:"mode,omitempty"`
-	AllowedFunctionNames []string                  `json:"allowedFunctionNames,omitempty"`
+	Mode                        FunctionCallingConfigMode `json:"mode,omitempty"`
+	AllowedFunctionNames        []string                  `json:"allowedFunctionNames,omitempty"`
+	StreamFunctionCallArguments *bool                     `json:"streamFunctionCallArguments,omitempty"`
 }
 type FunctionCallingConfigMode string
 
@@ -108,10 +110,13 @@ func (r *GeminiChatRequest) GetTokenCountMeta() *types.TokenCountMeta {
 }
 
 func (r *GeminiChatRequest) IsStream(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
 	if c.Query("alt") == "sse" {
 		return true
 	}
-	return false
+	return strings.HasSuffix(c.Request.URL.Path, ":streamGenerateContent")
 }
 
 func (r *GeminiChatRequest) SetModelName(modelName string) {
@@ -154,8 +159,8 @@ func (r *GeminiChatRequest) SetTools(tools []GeminiChatTool) {
 }
 
 type GeminiThinkingConfig struct {
-	IncludeThoughts bool `json:"includeThoughts,omitempty"`
-	ThinkingBudget  *int `json:"thinkingBudget,omitempty"`
+	IncludeThoughts *bool `json:"includeThoughts,omitempty"`
+	ThinkingBudget  *int  `json:"thinkingBudget,omitempty"`
 	// TODO Conflict with thinkingbudget.
 	ThinkingLevel string `json:"thinkingLevel,omitempty"`
 }
@@ -177,7 +182,7 @@ func (c *GeminiThinkingConfig) UnmarshalJSON(data []byte) error {
 	*c = GeminiThinkingConfig(aux.Alias)
 
 	if aux.IncludeThoughtsSnake != nil {
-		c.IncludeThoughts = *aux.IncludeThoughtsSnake
+		c.IncludeThoughts = aux.IncludeThoughtsSnake
 	}
 
 	if aux.ThinkingBudgetSnake != nil {
@@ -232,8 +237,20 @@ func (g *GeminiInlineData) UnmarshalJSON(data []byte) error {
 }
 
 type FunctionCall struct {
-	FunctionName string `json:"name"`
-	Arguments    any    `json:"args"`
+	ID           *string            `json:"id,omitempty"`
+	FunctionName string             `json:"name"`
+	Arguments    any                `json:"args"`
+	PartialArgs  []GeminiPartialArg `json:"partialArgs,omitempty"`
+	WillContinue *bool              `json:"willContinue,omitempty"`
+}
+
+type GeminiPartialArg struct {
+	JSONPath     string          `json:"jsonPath"`
+	NumberValue  *float64        `json:"numberValue,omitempty"`
+	StringValue  *string         `json:"stringValue,omitempty"`
+	BoolValue    *bool           `json:"boolValue,omitempty"`
+	NullValue    json.RawMessage `json:"nullValue,omitempty"`
+	WillContinue *bool           `json:"willContinue,omitempty"`
 }
 
 type GeminiFunctionResponse struct {
@@ -313,11 +330,24 @@ type GeminiChatSafetySettings struct {
 }
 
 type GeminiChatTool struct {
-	GoogleSearch          any `json:"googleSearch,omitempty"`
-	GoogleSearchRetrieval any `json:"googleSearchRetrieval,omitempty"`
-	CodeExecution         any `json:"codeExecution,omitempty"`
-	FunctionDeclarations  any `json:"functionDeclarations,omitempty"`
-	URLContext            any `json:"urlContext,omitempty"`
+	GoogleSearch          any             `json:"googleSearch,omitempty"`
+	GoogleSearchRetrieval any             `json:"googleSearchRetrieval,omitempty"`
+	CodeExecution         any             `json:"codeExecution,omitempty"`
+	FunctionDeclarations  any             `json:"functionDeclarations,omitempty"`
+	URLContext            any             `json:"urlContext,omitempty"`
+	GoogleMaps            json.RawMessage `json:"googleMaps,omitempty"`
+	EnterpriseWebSearch   json.RawMessage `json:"enterpriseWebSearch,omitempty"`
+	FileSearch            json.RawMessage `json:"fileSearch,omitempty"`
+	ComputerUse           json.RawMessage `json:"computerUse,omitempty"`
+	Retrieval             json.RawMessage `json:"retrieval,omitempty"`
+}
+
+// GeminiFunctionDeclaration 使用 Gemini 专有字段承载完整 JSON Schema。
+type GeminiFunctionDeclaration struct {
+	Name                 string `json:"name"`
+	Description          string `json:"description,omitempty"`
+	Parameters           any    `json:"parameters,omitempty"`
+	ParametersJsonSchema any    `json:"parametersJsonSchema,omitempty"`
 }
 
 type GeminiChatGenerationConfig struct {
@@ -432,10 +462,23 @@ func (c *GeminiChatGenerationConfig) UnmarshalJSON(data []byte) error {
 type MediaResolution string
 
 type GeminiChatCandidate struct {
-	Content       GeminiChatContent        `json:"content"`
-	FinishReason  *string                  `json:"finishReason"`
-	Index         int64                    `json:"index"`
-	SafetyRatings []GeminiChatSafetyRating `json:"safetyRatings"`
+	Content           GeminiChatContent        `json:"content"`
+	FinishReason      *string                  `json:"finishReason"`
+	Index             int64                    `json:"index"`
+	SafetyRatings     []GeminiChatSafetyRating `json:"safetyRatings"`
+	GroundingMetadata *GeminiGroundingMetadata `json:"groundingMetadata,omitempty"`
+}
+
+type GeminiGroundingMetadata struct {
+	WebSearchQueries             []string        `json:"webSearchQueries,omitempty"`
+	ImageSearchQueries           []string        `json:"imageSearchQueries,omitempty"`
+	RetrievalQueries             []string        `json:"retrievalQueries,omitempty"`
+	GroundingChunks              json.RawMessage `json:"groundingChunks,omitempty"`
+	GroundingSupports            json.RawMessage `json:"groundingSupports,omitempty"`
+	SearchEntryPoint             json.RawMessage `json:"searchEntryPoint,omitempty"`
+	RetrievalMetadata            json.RawMessage `json:"retrievalMetadata,omitempty"`
+	SourceFlaggingUris           json.RawMessage `json:"sourceFlaggingUris,omitempty"`
+	GoogleMapsWidgetContextToken string          `json:"googleMapsWidgetContextToken,omitempty"`
 }
 
 type GeminiChatSafetyRating struct {
@@ -449,9 +492,39 @@ type GeminiChatPromptFeedback struct {
 }
 
 type GeminiChatResponse struct {
-	Candidates     []GeminiChatCandidate     `json:"candidates"`
-	PromptFeedback *GeminiChatPromptFeedback `json:"promptFeedback,omitempty"`
-	UsageMetadata  GeminiUsageMetadata       `json:"usageMetadata"`
+	Candidates       []GeminiChatCandidate     `json:"candidates"`
+	PromptFeedback   *GeminiChatPromptFeedback `json:"promptFeedback,omitempty"`
+	UsageMetadata    GeminiUsageMetadata       `json:"usageMetadata"`
+	HasUsageMetadata bool                      `json:"-"`
+}
+
+// UnmarshalJSON distinguishes an absent usageMetadata from an explicit zero
+// snapshot without changing the response's historical marshaled shape.
+func (r *GeminiChatResponse) UnmarshalJSON(data []byte) error {
+	type Alias GeminiChatResponse
+	var aux struct {
+		Alias
+		UsageMetadata *GeminiUsageMetadata `json:"usageMetadata"`
+	}
+	if err := common.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*r = GeminiChatResponse(aux.Alias)
+	r.HasUsageMetadata = aux.UsageMetadata != nil
+	if aux.UsageMetadata != nil {
+		r.UsageMetadata = *aux.UsageMetadata
+	}
+	return nil
+}
+
+func (r *GeminiChatResponse) GetUsageMetadata() *GeminiUsageMetadata {
+	if r == nil {
+		return nil
+	}
+	if r.HasUsageMetadata || HasGeminiUsageMetadataTokens(&r.UsageMetadata) {
+		return &r.UsageMetadata
+	}
+	return nil
 }
 
 type GeminiUsageMetadata struct {

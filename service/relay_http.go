@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -11,6 +13,16 @@ import (
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
+
+// UpstreamResponseHeaderTimeout distinguishes an upstream that never sent
+// headers from a downstream disconnect or a failure while reading SSE frames.
+type UpstreamResponseHeaderTimeout struct{ After time.Duration }
+
+func (e *UpstreamResponseHeaderTimeout) Error() string {
+	return fmt.Sprintf("upstream response headers timed out after %s", e.After)
+}
+
+func (e *UpstreamResponseHeaderTimeout) Unwrap() error { return context.DeadlineExceeded }
 
 // DoRelayHTTPRequest keeps upstream cancellation alive until the response body is
 // consumed or closed. Both the downstream and any existing request context apply.
@@ -27,7 +39,8 @@ func DoRelayHTTPRequest(downstream context.Context, client *http.Client, req *ht
 
 	var headerTimer *time.Timer
 	if isStream {
-		headerTimer = time.AfterFunc(relaycommon.StreamingTimeout(), func() { cancel(context.DeadlineExceeded) })
+		timeout := relaycommon.StreamingTimeout()
+		headerTimer = time.AfterFunc(timeout, func() { cancel(&UpstreamResponseHeaderTimeout{After: timeout}) })
 		defer headerTimer.Stop()
 	}
 	common.ObserveUpstreamStatus(downstream, 0)
@@ -42,6 +55,12 @@ func DoRelayHTTPRequest(downstream context.Context, client *http.Client, req *ht
 		err = context.Cause(ctx)
 	}
 	if err != nil {
+		// HTTP/2 may return context.Canceled instead of the cancellation cause.
+		// Preserve our header deadline classification before cleanup cancels ctx.
+		var headerTimeout *UpstreamResponseHeaderTimeout
+		if errors.As(context.Cause(ctx), &headerTimeout) {
+			err = headerTimeout
+		}
 		cleanup()
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()

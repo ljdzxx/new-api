@@ -1,0 +1,42 @@
+package main
+import (
+ "context"
+ "fmt"
+ "os"
+ "sort"
+ "github.com/QuantumNous/new-api/relaykit/dto"
+ "github.com/QuantumNous/new-api/relaykit/relayconvert"
+ "github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
+ "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
+ "github.com/QuantumNous/new-api/relaykit/types"
+ "github.com/tidwall/gjson"
+)
+func main() {
+ data,err:=os.ReadFile(os.Args[1]);if err!=nil{panic(err)}
+ var cases []struct{Name string;Policy types.ConversionLossPolicy;Request dto.OpenAIResponsesRequest}
+ if err=kitutil.Unmarshal(data,&cases);err!=nil{panic(err)}
+ var output []map[string]any
+ for _,test:=range cases {
+  options:= &convmeta.Options{ToolLossPolicy:test.Policy,Gemini:convmeta.GeminiOptions{SupportsJSONSchema:func(string)bool{return true},FunctionCallThoughtSignatureEnabled:true}}
+  info:=&convmeta.Values{UpstreamModelName:test.Request.Model,OriginModelName:test.Request.Model,Options:options}
+  result,err:=relayconvert.ConvertRequest(context.Background(),info,types.RelayFormatGemini,&test.Request)
+  record:=map[string]any{"name":test.Name,"rejected":err!=nil}
+  codes:=map[string]bool{}
+  if result!=nil {for _,d:=range result.Diagnostics{codes[d.Code]=true}}
+  sortedCodes:=[]string{};for c:=range codes{sortedCodes=append(sortedCodes,c)};sort.Strings(sortedCodes);record["diagnostic_codes"]=sortedCodes
+  if err==nil {
+   body,_:=kitutil.Marshal(result.Value)
+   record["contents"]=gjson.GetBytes(body,"contents").Value()
+   record["tool_config"]=gjson.GetBytes(body,"toolConfig").Value()
+   functions,hosted:=[]string{},[]string{}
+   for _,tool:=range gjson.GetBytes(body,"tools").Array(){
+    tool.ForEach(func(key,value gjson.Result)bool{if key.String()=="functionDeclarations"{for _,fn:=range value.Array(){functions=append(functions,fn.Get("name").String())}}else{hosted=append(hosted,key.String())};return true})
+   }
+   sort.Strings(functions);sort.Strings(hosted);record["function_names"]=functions;record["hosted_tools"]=hosted
+  }
+  output=append(output,record)
+ }
+ encoded,err:=kitutil.Marshal(output);if err!=nil{panic(err)}
+ if err=os.WriteFile(os.Args[2],encoded,0600);err!=nil{panic(err)}
+ fmt.Printf("Generated %d reference cases from upstream 718a4e7f97\n",len(output))
+}

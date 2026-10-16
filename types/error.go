@@ -44,6 +44,8 @@ const (
 	ErrorCodeViolationFeeGrokCSAM    ErrorCode = "violation_fee.grok.csam"
 
 	// new api error
+	ErrorCodeUpstreamResponseHeaderTimeout ErrorCode = "upstream_response_header_timeout"
+
 	ErrorCodeCountTokenFailed   ErrorCode = "count_token_failed"
 	ErrorCodeModelPriceError    ErrorCode = "model_price_error"
 	ErrorCodeInvalidApiType     ErrorCode = "invalid_api_type"

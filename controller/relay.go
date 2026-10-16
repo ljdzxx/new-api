@@ -205,6 +205,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if types.IsSkipRetryError(newAPIError) || newAPIError.StatusCode < http.StatusInternalServerError {
 				c.Header("x-should-retry", "false")
 			}
+			if relayFormat == types.RelayFormatOpenAIResponses && !c.Writer.Written() {
+				// The upstream scanner may have prepared SSE headers before the
+				// first valid event. Uncommitted errors still use a JSON envelope.
+				c.Header("Content-Type", "application/json")
+				c.Writer.Header().Del("Transfer-Encoding")
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -229,6 +235,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// Map "request body too large" to 413 so clients can handle it correctly
 		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
 			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+		} else if relayFormat == types.RelayFormatOpenAIResponses {
+			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		} else {
 			newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest)
 		}

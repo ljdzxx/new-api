@@ -88,6 +88,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			gemini.ThinkingAdaptor(request, info)
 		}
 	}
+	if err := gemini.NormalizeNativeThinkingRequest(request, info); err != nil {
+		return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	}
 
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {

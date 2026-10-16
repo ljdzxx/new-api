@@ -1,0 +1,13 @@
+[
+  {"name":"additional_namespace","request":{"model":"gemini-3-flash-preview","tools":[{"type":"tool_search"}],"input":[{"role":"user","content":"hi"},{"type":"additional_tools","tools":[{"type":"namespace","name":"fs","tools":[{"type":"function","name":"read","parameters":{"type":"object"}}]}]}]}},
+  {"name":"versioned_search","request":{"model":"gemini-3-flash-preview","input":"hi","tools":[{"type":"web_search_2025_08_26"}]}},
+  {"name":"versioned_preview","request":{"model":"gemini-3-flash-preview","input":"hi","tools":[{"type":"web_search_preview_2025_03_11"}]}},
+  {"name":"hosted_history","request":{"model":"gemini-3-flash-preview","input":[{"role":"user","content":"hi"},{"type":"web_search_call","id":"ws_test","status":"completed","action":{"type":"search","queries":["q"]}}]}},
+  {"name":"trailing_assistant","request":{"model":"gemini-3-flash-preview","input":[{"role":"user","content":"hi"},{"role":"assistant","content":"prior partial answer"}]}},
+  {"name":"tool_scalar_and_history","request":{"model":"gemini-3-flash-preview","input":[{"role":"user","content":"hi"},{"type":"function_call","call_id":"a","name":"run","arguments":"{}"},{"type":"function_call_output","call_id":"a","output":"false"},{"role":"assistant","content":"prior answer"}]}},
+  {"name":"parallel_false","request":{"model":"gemini-3-flash-preview","input":"hi","parallel_tool_calls":false,"tools":[{"type":"function","name":"run"}]}},
+  {"name":"custom_namespace_choice","request":{"model":"gemini-3-flash-preview","input":"hi","tools":[{"type":"namespace","name":"fs","tools":[{"type":"custom","name":"patch"}]}],"tool_choice":{"type":"custom","namespace":"fs","name":"patch"}}},
+  {"name":"opaque_choice","request":{"model":"gemini-3-flash-preview","input":"hi","tools":[{"type":"function","name":"run"}],"tool_choice":{"type":"allowed_tools","mode":"auto","tools":[{"type":"function","name":"run"}]}}},
+  {"name":"safe_tool_search","policy":"safe","request":{"model":"gemini-3-flash-preview","input":"hi","tools":[{"type":"tool_search"}]}},
+  {"name":"strict_custom","policy":"strict","request":{"model":"gemini-3-flash-preview","input":"hi","tools":[{"type":"custom","name":"patch"}]}}
+]

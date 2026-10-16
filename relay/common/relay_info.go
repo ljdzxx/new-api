@@ -204,6 +204,9 @@ type RelayInfo struct {
 	// RequestConversionChain records request format conversions in order, e.g.
 	// ["openai", "openai_responses"] or ["openai", "claude"].
 	RequestConversionChain []types.RelayFormat
+
+	conversionDiagnostics          []types.ConversionDiagnostic
+	conversionDiagnosticsTruncated bool
 	// 最终请求到上游的格式。可由 adaptor 显式设置；
 	// 若为空，调用 GetFinalRequestRelayFormat 会回退到 RequestConversionChain 的最后一项或 RelayFormat。
 	FinalRequestRelayFormat types.RelayFormat
@@ -219,6 +222,11 @@ type RelayInfo struct {
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
+	// 渠道重试不继承前一次 Gemini 搜索计数。
+	if info.ResponsesUsageInfo != nil {
+		delete(info.ResponsesUsageInfo.BuiltInTools, GeminiGoogleSearchQueryTool)
+		delete(info.ResponsesUsageInfo.BuiltInTools, GeminiGoogleSearchGroundedPromptTool)
+	}
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
 	paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)
 	headerOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelHeaderOverride)
@@ -824,7 +832,7 @@ func FailTaskInfo(reason string) *TaskInfo {
 }
 
 // RemoveDisabledFields 从请求 JSON 数据中移除渠道设置中禁用的字段
-// service_tier: 服务层级字段，可能导致额外计费（OpenAI、Claude、Responses API 支持）
+// service_tier: 服务层级字段，可能导致额外计费（OpenAI、Claude、Responses API 支持，请求体透传时也需过滤）
 // inference_geo: Claude 数据驻留推理区域字段（仅 Claude 支持，默认过滤）
 // speed: Claude 推理速度模式字段（仅 Claude 支持，默认过滤）
 // store: 数据存储授权字段，涉及用户隐私（仅 OpenAI、Responses API 支持，默认允许透传，禁用后可能导致 Codex 无法使用）
@@ -832,7 +840,20 @@ func FailTaskInfo(reason string) *TaskInfo {
 // stream_options.include_obfuscation: 响应流混淆控制字段（仅 OpenAI Responses API 支持）
 func RemoveDisabledFields(jsonData []byte, channelOtherSettings dto.ChannelOtherSettings, channelPassThroughEnabled bool) ([]byte, error) {
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || channelPassThroughEnabled {
-		return jsonData, nil
+		if channelOtherSettings.AllowServiceTier {
+			return jsonData, nil
+		}
+		// Only filter service_tier during body passthrough. RawMessage preserves
+		// provider-specific fields and numbers that cannot fit in a float64.
+		var data map[string]json.RawMessage
+		if err := common.Unmarshal(jsonData, &data); err != nil {
+			return nil, fmt.Errorf("filter passthrough service_tier: %w", err)
+		}
+		if _, exists := data["service_tier"]; !exists {
+			return jsonData, nil
+		}
+		delete(data, "service_tier")
+		return common.Marshal(data)
 	}
 
 	var data map[string]interface{}

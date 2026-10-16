@@ -56,6 +56,8 @@ const additionalChargeLabels = {
 
 const toolFieldLabels = {
   'web_search.standard': 'Web搜索（标准）',
+  google_search: 'Gemini Google Search 查询',
+  google_search_grounded_prompt: 'Gemini Google Search 已增强提示',
   'web_search.premium': 'Web搜索（高级）',
   claude_web_search: 'Claude Web搜索',
   file_search: '文件搜索',

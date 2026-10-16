@@ -127,9 +127,9 @@ func setGeminiThinkingConfig(body []byte, config *dto.GeminiThinkingConfig) ([]b
 			return body, err
 		}
 	}
-	if config.IncludeThoughts {
+	if config.IncludeThoughts != nil {
 		path := geminiThinkingPath(body, "includeThoughts")
-		body, err = sjson.SetBytes(body, path, true)
+		body, err = sjson.SetBytes(body, path, *config.IncludeThoughts)
 	}
 	return body, err
 }

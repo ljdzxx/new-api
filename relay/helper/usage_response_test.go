@@ -58,6 +58,16 @@ func TestPatchResponseUsageJSONRecomputesInputOutputTotal(t *testing.T) {
 	assert.EqualValues(t, 137, gjson.GetBytes(patched, "usage.total_tokens").Int())
 }
 
+func TestPatchResponsesOutputTokenDetails(t *testing.T) {
+	body := []byte(`{"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":10,"total_tokens":110,"output_tokens_details":{"reasoning_tokens":2,"text_tokens":5,"image_tokens":2,"audio_tokens":1}}}}`)
+	patched, err := PatchResponseUsageJSON(body, types.RelayFormatOpenAIResponses, 2)
+	require.NoError(t, err)
+	for key, value := range map[string]int{"reasoning_tokens": 4, "text_tokens": 10, "image_tokens": 4, "audio_tokens": 2} {
+		require.EqualValues(t, value, gjson.GetBytes(patched, "response.usage.output_tokens_details."+key).Int())
+	}
+	require.EqualValues(t, 220, gjson.GetBytes(patched, "response.usage.total_tokens").Int())
+}
+
 func TestPatchSSEUsageLinePreservesFrame(t *testing.T) {
 	line := []byte("data: {\"type\":\"message_delta\",\"usage\":{\"input_tokens\":10,\"output_tokens\":3}}\r\n")
 	patched, err := PatchSSEUsageLine(line, types.RelayFormatClaude, 2)

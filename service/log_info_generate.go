@@ -208,6 +208,10 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	other["admin_info"] = adminInfo
+	if diagnostics := relayInfo.ConversionDiagnostics(); len(diagnostics) > 0 {
+		adminInfo["conversion_diagnostics"] = diagnostics
+		adminInfo["conversion_diagnostics_truncated"] = relayInfo.ConversionDiagnosticsTruncated()
+	}
 	AppendResponsesLogBadges(ctx, other)
 	AppendClientFastMode(ctx, other)
 	if relayInfo.IsStream && relayInfo.StreamStatus != nil && relayInfo.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {

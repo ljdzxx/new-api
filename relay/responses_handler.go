@@ -26,6 +26,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	// inherit the previous attempt's encrypted-input failure badges.
 	common.SetContextKey(c, appconstant.ContextKeyResponsesLogBadges, []string(nil))
 	info.InitChannelMeta(c)
+	info.ResetConversionDiagnostics()
 	logger.LogInfo(c, fmt.Sprintf(
 		"responses relay selected channel: request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q pass_through=%t channel_pass_through=%t",
 		c.Request.URL.Path,
@@ -106,7 +107,10 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	adaptor.Init(info)
 	var requestBody io.Reader
 	var outboundRequestBody []byte
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	// Responses payloads cannot be passed verbatim to generateContent. Keep
+	// protocol conversion active even when the channel enables body passthrough.
+	geminiConversion := info.ApiType == appconstant.APITypeGemini || info.ApiType == appconstant.APITypeVertexAi
+	if !geminiConversion && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
@@ -119,8 +123,12 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if mapErr != nil {
 			return types.NewError(mapErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
-		bodyChanged := !bytes.Equal(mappedBody, outboundRequestBody)
-		outboundRequestBody = mappedBody
+		filteredBody, filterErr := relaycommon.RemoveDisabledFields(mappedBody, info.ChannelOtherSettings, info.ChannelSetting.PassThroughBodyEnabled)
+		if filterErr != nil {
+			return types.NewError(filterErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		bodyChanged := !bytes.Equal(filteredBody, outboundRequestBody)
+		outboundRequestBody = filteredBody
 		removedImageTools := 0
 		if relaycommon.ShouldStripImageGeneration(info.RelayMode) {
 			outboundRequestBody, removedImageTools, err = relaycommon.StripImageGenerationTool(outboundRequestBody)
@@ -161,6 +169,9 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 		if err != nil {
+			if geminiConversion {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeConvertRequestFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)

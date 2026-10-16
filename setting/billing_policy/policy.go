@@ -100,11 +100,13 @@ type ToolPrice struct {
 }
 
 const (
-	ToolWebSearchStandard = "web_search.standard"
-	ToolWebSearchPremium  = "web_search.premium"
-	ToolClaudeWebSearch   = "claude_web_search"
-	ToolFileSearch        = "file_search"
-	ToolImagePrefix       = "image_generation."
+	ToolWebSearchStandard    = "web_search.standard"
+	ToolWebSearchPremium     = "web_search.premium"
+	ToolClaudeWebSearch      = "claude_web_search"
+	ToolFileSearch           = "file_search"
+	ToolGeminiGoogleSearch   = "google_search"
+	ToolGeminiGroundedPrompt = "google_search_grounded_prompt"
+	ToolImagePrefix          = "image_generation."
 )
 
 type MigrationMeta struct {
@@ -528,6 +530,8 @@ func ensureDefaultToolPrices(policy *Policy) {
 		ToolWebSearchPremium:                 {Unit: "per_thousand_calls", Price: "25"},
 		ToolClaudeWebSearch:                  {Unit: "per_thousand_calls", Price: "10"},
 		ToolFileSearch:                       {Unit: "per_thousand_calls", Price: "2.5"},
+		ToolGeminiGoogleSearch:               {Unit: "per_thousand_calls", Price: "14"},
+		ToolGeminiGroundedPrompt:             {Unit: "per_thousand_calls", Price: "35"},
 		ToolImagePrefix + "low.1024x1024":    {Unit: "per_request", Price: "0.011"},
 		ToolImagePrefix + "low.1024x1536":    {Unit: "per_request", Price: "0.016"},
 		ToolImagePrefix + "low.1536x1024":    {Unit: "per_request", Price: "0.016"},

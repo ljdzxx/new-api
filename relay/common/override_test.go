@@ -1997,7 +1997,7 @@ func TestGetEffectiveHeaderOverrideUsesRuntimeOverrideAsFinalResult(t *testing.T
 	}
 }
 
-func TestRemoveDisabledFieldsSkipWhenChannelPassThroughEnabled(t *testing.T) {
+func TestRemoveDisabledFieldsFilterServiceTierWhenChannelPassThroughEnabled(t *testing.T) {
 	input := `{
 		"service_tier":"flex",
 		"safety_identifier":"user-123",
@@ -2010,10 +2010,10 @@ func TestRemoveDisabledFieldsSkipWhenChannelPassThroughEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemoveDisabledFields returned error: %v", err)
 	}
-	assertJSONEqual(t, input, string(out))
+	assertJSONEqual(t, `{"safety_identifier":"user-123","store":true,"stream_options":{"include_obfuscation":false}}`, string(out))
 }
 
-func TestRemoveDisabledFieldsSkipWhenGlobalPassThroughEnabled(t *testing.T) {
+func TestRemoveDisabledFieldsFilterServiceTierWhenGlobalPassThroughEnabled(t *testing.T) {
 	original := model_setting.GetGlobalSettings().PassThroughRequestEnabled
 	model_setting.GetGlobalSettings().PassThroughRequestEnabled = true
 	t.Cleanup(func() {
@@ -2031,7 +2031,7 @@ func TestRemoveDisabledFieldsSkipWhenGlobalPassThroughEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RemoveDisabledFields returned error: %v", err)
 	}
-	assertJSONEqual(t, input, string(out))
+	assertJSONEqual(t, `{"safety_identifier":"user-123","stream_options":{"include_obfuscation":false}}`, string(out))
 }
 
 func TestRemoveDisabledFieldsDefaultFiltering(t *testing.T) {

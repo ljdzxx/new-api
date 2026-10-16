@@ -7,7 +7,9 @@ const (
 	WebSearchPriceHigh = 25.00
 	WebSearchPrice     = 10.00
 	// File search
-	FileSearchPrice = 2.5
+	FileSearchPrice                       = 2.5
+	GeminiGoogleSearchQueryPrice          = 14.0
+	GeminiGoogleSearchGroundedPromptPrice = 35.0
 )
 
 const (
@@ -39,6 +41,15 @@ const (
 
 func GetClaudeWebSearchPricePerThousand() float64 {
 	return ClaudeWebSearchPrice
+}
+
+// GetGeminiGoogleSearchBilling 按实际上游模型选择唯一收费单位及美元千次价格。
+func GetGeminiGoogleSearchBilling(modelName string) (string, float64) {
+	modelName = strings.ToLower(strings.TrimPrefix(modelName, "models/"))
+	if strings.HasPrefix(modelName, "gemini-2.5") || strings.HasPrefix(modelName, "gemini-2.0") || strings.HasPrefix(modelName, "gemini-1.5") {
+		return "google_search_grounded_prompt", GeminiGoogleSearchGroundedPromptPrice
+	}
+	return "google_search", GeminiGoogleSearchQueryPrice
 }
 
 func GetWebSearchPricePerThousand(modelName string, contextSize string) float64 {

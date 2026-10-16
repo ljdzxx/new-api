@@ -719,7 +719,7 @@ func GeminiToOpenAIRequest(geminiRequest *dto.GeminiChatRequest, info *relaycomm
 			} else if part.FunctionCall != nil {
 				// 处理 Gemini 的工具调用
 				toolCall := dto.ToolCallRequest{
-					ID:   fmt.Sprintf("call_%d", len(toolCalls)+1), // 生成唯一ID
+					ID:   geminiToolCallID(part.FunctionCall.ID, len(toolCalls)+1),
 					Type: "function",
 					Function: dto.FunctionRequest{
 						Name:      part.FunctionCall.FunctionName,
@@ -731,7 +731,7 @@ func GeminiToOpenAIRequest(geminiRequest *dto.GeminiChatRequest, info *relaycomm
 				// 处理 Gemini 的工具响应，创建单独的 tool 消息
 				toolMessage := dto.Message{
 					Role:       "tool",
-					ToolCallId: fmt.Sprintf("call_%d", len(toolCalls)), // 使用对应的调用ID
+					ToolCallId: geminiFunctionResponseID(part.FunctionResponse.ID, len(toolCalls)),
 				}
 				toolMessage.SetStringContent(toJSONString(part.FunctionResponse.Response))
 				messages = append(messages, toolMessage)
@@ -783,18 +783,22 @@ func GeminiToOpenAIRequest(geminiRequest *dto.GeminiChatRequest, info *relaycomm
 		var tools []dto.ToolCallRequest
 		for _, tool := range geminiRequest.GetTools() {
 			if tool.FunctionDeclarations != nil {
-				functionDeclarations, err := common.Any2Type[[]dto.FunctionRequest](tool.FunctionDeclarations)
+				functionDeclarations, err := common.Any2Type[[]dto.GeminiFunctionDeclaration](tool.FunctionDeclarations)
 				if err != nil {
 					common.SysError(fmt.Sprintf("failed to parse gemini function declarations: %v (type=%T)", err, tool.FunctionDeclarations))
 					continue
 				}
 				for _, function := range functionDeclarations {
+					parameters := function.Parameters
+					if function.ParametersJsonSchema != nil {
+						parameters = function.ParametersJsonSchema
+					}
 					openAITool := dto.ToolCallRequest{
 						Type: "function",
 						Function: dto.FunctionRequest{
 							Name:        function.Name,
 							Description: function.Description,
-							Parameters:  function.Parameters,
+							Parameters:  parameters,
 						},
 					}
 					tools = append(tools, openAITool)

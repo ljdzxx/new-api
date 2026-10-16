@@ -216,7 +216,7 @@ export default function MonitorSettings() {
       </label>
       <Typography.Text type='tertiary'>
         {t(
-          '逻辑测试仅调用该组的 logic_model；去除首尾空白后，按选定方式匹配，区分大小写。',
+          '逻辑测试仅调用该组的 logic_model；去除首尾空白后，按选定方式匹配，忽略大小写。',
         )}
       </Typography.Text>
       <Button theme='solid' loading={saving} onClick={save}>

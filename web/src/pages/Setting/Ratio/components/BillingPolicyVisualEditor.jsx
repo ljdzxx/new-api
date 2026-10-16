@@ -52,6 +52,13 @@ const toolPriceFields = [
   ['web_search.premium', 'Web Search 高价模型', 'per_thousand_calls', '25'],
   ['claude_web_search', 'Claude Web Search', 'per_thousand_calls', '10'],
   ['file_search', 'File Search', 'per_thousand_calls', '2.5'],
+  ['google_search', 'Gemini Google Search 查询', 'per_thousand_calls', '14'],
+  [
+    'google_search_grounded_prompt',
+    'Gemini Google Search 已增强提示',
+    'per_thousand_calls',
+    '35',
+  ],
   [
     'image_generation.low.1024x1024',
     '图片生成 low 1024x1024',

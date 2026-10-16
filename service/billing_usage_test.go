@@ -7,6 +7,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGeminiSettlementRetainsModalitiesAfterCompletionEstimate(t *testing.T) {
+	billing := dto.NewGeminiChatBillingUsage(&dto.GeminiUsageMetadata{
+		PromptTokenCount: 100, ToolUsePromptTokenCount: 5, CachedContentTokenCount: 30,
+		PromptTokensDetails:     []dto.GeminiPromptTokensDetails{{Modality: " image ", TokenCount: 40}},
+		CandidatesTokensDetails: []dto.GeminiPromptTokensDetails{{Modality: "audio", TokenCount: 10}},
+	})
+	billing = dto.CloneBillingUsageWithEstimatedCompletion(billing, 12)
+	usage := effectiveBillingUsage(&dto.Usage{PromptTokens: 210, CompletionTokens: 24, BillingUsage: billing})
+	require.Equal(t, 105, usage.PromptTokens)
+	require.Equal(t, 12, usage.CompletionTokens)
+	require.Equal(t, 30, usage.PromptTokensDetails.CachedTokens)
+	require.Equal(t, 40, usage.PromptTokensDetails.ImageTokens)
+	require.Equal(t, 10, usage.CompletionTokenDetails.AudioTokens)
+	require.True(t, usage.BillingUsage.Estimated)
+}
+
+func TestEmptyGeminiBillingSnapshotDoesNotOverrideEstimatedUsage(t *testing.T) {
+	usage := &dto.Usage{PromptTokens: 100, CompletionTokens: 10, BillingUsage: &dto.BillingUsage{
+		Source: dto.BillingUsageSourceGeminiChat, GeminiUsageMetadata: &dto.GeminiUsageMetadata{},
+	}}
+	require.Same(t, usage, effectiveBillingUsage(usage))
+}
+
 func TestEffectiveBillingUsagePrefersClaudeNativeUsage(t *testing.T) {
 	usage := &dto.Usage{
 		PromptTokens: 999, CompletionTokens: 999,

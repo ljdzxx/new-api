@@ -15,7 +15,7 @@ import (
 const monitorRecordTTL = 8 * 24 * time.Hour
 
 func monitorLogicMatches(answer, expected, mode string) bool {
-	answer, expected = strings.TrimSpace(answer), strings.TrimSpace(expected)
+	answer, expected = strings.ToLower(strings.TrimSpace(answer)), strings.ToLower(strings.TrimSpace(expected))
 	if expected == "" {
 		return false
 	}

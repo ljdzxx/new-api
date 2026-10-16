@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,8 +22,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const localPricingSQLitePathEnv = "NEW_API_PRICING_TEST_SQLITE"
-
 type localPricingOption struct {
 	Key   string
 	Value string
@@ -30,17 +29,29 @@ type localPricingOption struct {
 
 func loadLocalPricingOptions(t *testing.T) map[string]string {
 	t.Helper()
-	path := os.Getenv(localPricingSQLitePathEnv)
-	if path == "" {
-		path = filepath.Join("..", "one-api.db")
+	// The fixture defines the tiers asserted below. Never read developer or
+	// production pricing data implicitly: its prices and tier IDs can change.
+	fixture, err := os.ReadFile(filepath.Join("testdata", "sqlite_pricing_options.json"))
+	require.NoError(t, err)
+	var seed map[string]json.RawMessage
+	require.NoError(t, common.Unmarshal(fixture, &seed))
+	path := filepath.Join(t.TempDir(), "pricing.db")
+	seedDB, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	require.NoError(t, err)
+	seedSQL, err := seedDB.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = seedSQL.Close() })
+	require.NoError(t, seedDB.Table("options").AutoMigrate(&localPricingOption{}))
+	for key, value := range seed {
+		require.NoError(t, seedDB.Table("options").Create(&localPricingOption{Key: key, Value: string(value)}).Error)
 	}
 	absPath, err := filepath.Abs(path)
 	require.NoError(t, err)
-	if _, err = os.Stat(absPath); err != nil {
-		t.Skipf("local pricing SQLite is unavailable at %s; set %s to run this integration test", absPath, localPricingSQLitePathEnv)
-	}
 	db, err := gorm.Open(sqlite.Open("file:"+filepath.ToSlash(absPath)+"?mode=ro"), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	var rows []localPricingOption
 	require.NoError(t, db.Table("options").Select("key", "value").Where("key IN ?", []string{
 		"ModelBillingPolicy", "GlobalModelRatio", "GroupRatio",
@@ -150,6 +161,20 @@ func assertEveryConfiguredPolicyFieldIsBillable(t *testing.T, policy billing_pol
 func TestLocalSQLiteModelPricingEndToEnd(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	config := installLocalPricingOptions(t, loadLocalPricingOptions(t))
+
+	t.Run("fixture_tier_boundary", func(t *testing.T) {
+		for _, tc := range []struct {
+			input int
+			tier  string
+		}{{199, "short"}, {200, "长报文"}, {201, "长报文"}} {
+			ctx := newLocalPricingContext("/v1/chat/completions")
+			info := prepareLocalPriceData(t, ctx, "gpt-5.6-sol", tc.input)
+			summary := calculateTextQuotaSummary(ctx, info, &dto.Usage{PromptTokens: tc.input, CompletionTokens: 10, TotalTokens: tc.input + 10})
+			require.NoError(t, summary.PolicyError)
+			require.NotNil(t, summary.PolicyCalculation)
+			require.Equal(t, tc.tier, summary.PolicyCalculation.TierID)
+		}
+	})
 
 	for _, modelName := range []string{"gpt-5.6-sol", "claude-fable-5", "gemini-2.5-pro"} {
 		t.Run(modelName+"_all_policy_fields", func(t *testing.T) {

@@ -110,23 +110,12 @@ func clampThinkingBudgetByEffort(modelName string, effort string) int {
 	maxBudget := 0
 	if is25FlashLite {
 		maxBudget = flash25LiteMaxBudget
-	}
-	if isNew25Pro {
+	} else if isNew25Pro {
 		maxBudget = pro25MaxBudget
 	} else {
 		maxBudget = flash25MaxBudget
 	}
-	switch effort {
-	case "high":
-		maxBudget = maxBudget * 80 / 100
-	case "medium":
-		maxBudget = maxBudget * 50 / 100
-	case "low":
-		maxBudget = maxBudget * 20 / 100
-	case "minimal":
-		maxBudget = maxBudget * 5 / 100
-	}
-	return clampThinkingBudget(modelName, maxBudget)
+	return clampThinkingBudget(modelName, geminiThinkingBudgetForLevel(effort, maxBudget))
 }
 
 func ThinkingAdaptor(geminiRequest *dto.GeminiChatRequest, info *relaycommon.RelayInfo, oaiRequest ...dto.GeneralOpenAIRequest) {
@@ -143,7 +132,7 @@ func ThinkingAdaptor(geminiRequest *dto.GeminiChatRequest, info *relaycommon.Rel
 					clampedBudget := clampThinkingBudget(modelName, budgetTokens)
 					geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
 						ThinkingBudget:  common.GetPointer(clampedBudget),
-						IncludeThoughts: true,
+						IncludeThoughts: common.GetPointer(true),
 					}
 				}
 			}
@@ -162,11 +151,11 @@ func ThinkingAdaptor(geminiRequest *dto.GeminiChatRequest, info *relaycommon.Rel
 
 			if isUnsupported {
 				geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
-					IncludeThoughts: true,
+					IncludeThoughts: common.GetPointer(true),
 				}
 			} else {
 				geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
-					IncludeThoughts: true,
+					IncludeThoughts: common.GetPointer(true),
 				}
 				if geminiRequest.GenerationConfig.MaxOutputTokens != nil && *geminiRequest.GenerationConfig.MaxOutputTokens > 0 {
 					budgetTokens := model_setting.GetGeminiSettings().ThinkingAdapterBudgetTokensPercentage * float64(*geminiRequest.GenerationConfig.MaxOutputTokens)
@@ -187,7 +176,7 @@ func ThinkingAdaptor(geminiRequest *dto.GeminiChatRequest, info *relaycommon.Rel
 			}
 		} else if _, level, ok := reasoning.TrimEffortSuffix(info.UpstreamModelName); ok && level != "" {
 			geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{
-				IncludeThoughts: true,
+				IncludeThoughts: common.GetPointer(true),
 				ThinkingLevel:   level,
 			}
 			info.ReasoningEffort = level
@@ -269,10 +258,10 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 							tempThinkingConfig.ThinkingBudget = common.GetPointer(budgetInt)
 							if budgetInt > 0 {
 								// 有正数预算
-								tempThinkingConfig.IncludeThoughts = true
+								tempThinkingConfig.IncludeThoughts = common.GetPointer(true)
 							} else {
 								// 存在但为0或负数，禁用思考
-								tempThinkingConfig.IncludeThoughts = false
+								tempThinkingConfig.IncludeThoughts = common.GetPointer(false)
 							}
 							hasThinkingConfig = true
 						default:
@@ -282,7 +271,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 
 					if includeThoughts, exists := thinkingConfig["include_thoughts"]; exists {
 						if v, ok := includeThoughts.(bool); ok {
-							tempThinkingConfig.IncludeThoughts = v
+							tempThinkingConfig.IncludeThoughts = common.GetPointer(v)
 							hasThinkingConfig = true
 						} else {
 							return nil, errors.New("extra_body.google.thinking_config.include_thoughts must be a boolean")
@@ -306,7 +295,9 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 							if tempThinkingConfig.ThinkingBudget != nil {
 								geminiRequest.GenerationConfig.ThinkingConfig.ThinkingBudget = tempThinkingConfig.ThinkingBudget
 							}
-							geminiRequest.GenerationConfig.ThinkingConfig.IncludeThoughts = tempThinkingConfig.IncludeThoughts
+							if tempThinkingConfig.IncludeThoughts != nil {
+								geminiRequest.GenerationConfig.ThinkingConfig.IncludeThoughts = tempThinkingConfig.IncludeThoughts
+							}
 							if tempThinkingConfig.ThinkingLevel != "" {
 								geminiRequest.GenerationConfig.ThinkingConfig.ThinkingLevel = tempThinkingConfig.ThinkingLevel
 							}
@@ -365,7 +356,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 
 	// openaiContent.FuncToToolCalls()
 	if textRequest.Tools != nil {
-		functions := make([]dto.FunctionRequest, 0, len(textRequest.Tools))
+		functions := make([]dto.GeminiFunctionDeclaration, 0, len(textRequest.Tools))
 		googleSearch := false
 		codeExecution := false
 		urlContext := false
@@ -382,21 +373,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 				urlContext = true
 				continue
 			}
-			if tool.Function.Parameters != nil {
-
-				params, ok := tool.Function.Parameters.(map[string]interface{})
-				if ok {
-					if props, hasProps := params["properties"].(map[string]interface{}); hasProps {
-						if len(props) == 0 {
-							tool.Function.Parameters = nil
-						}
-					}
-				}
-			}
-			// Clean the parameters before appending
-			cleanedParams := cleanFunctionParameters(tool.Function.Parameters)
-			tool.Function.Parameters = cleanedParams
-			functions = append(functions, tool.Function)
+			functions = append(functions, convertGeminiFunctionDeclaration(c, info, tool.Function))
 		}
 		geminiTools := geminiRequest.GetTools()
 		if codeExecution {
@@ -433,11 +410,28 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		geminiRequest.GenerationConfig.ResponseMimeType = "application/json"
 
 		if len(textRequest.ResponseFormat.JsonSchema) > 0 {
-			// 先将json.RawMessage解析
+			// 按目标端点能力保留完整 JSON Schema。
 			var jsonSchema dto.FormatJsonSchema
-			if err := common.Unmarshal(textRequest.ResponseFormat.JsonSchema, &jsonSchema); err == nil {
-				cleanedSchema := removeAdditionalPropertiesWithDepth(jsonSchema.Schema, 0)
-				geminiRequest.GenerationConfig.ResponseSchema = cleanedSchema
+			if err := common.Unmarshal(textRequest.ResponseFormat.JsonSchema, &jsonSchema); err != nil {
+				return nil, fmt.Errorf("invalid response_format.json_schema: %w", err)
+			}
+			if len(geminiSchemaMisfits(jsonSchema.Schema)) > 0 && geminiSupportsJSONSchema(info) {
+				var raw struct {
+					Schema json.RawMessage `json:"schema"`
+				}
+				if err := common.Unmarshal(textRequest.ResponseFormat.JsonSchema, &raw); err != nil {
+					return nil, err
+				}
+				geminiRequest.GenerationConfig.ResponseJsonSchema = raw.Schema
+			} else {
+				if misfits := geminiSchemaMisfits(jsonSchema.Schema); len(misfits) > 0 {
+					logger.LogWarn(c, "Gemini v1 response schema downgraded: "+strings.Join(misfits, ", "))
+				}
+				if len(geminiSchemaMisfits(jsonSchema.Schema)) > 0 {
+					geminiRequest.GenerationConfig.ResponseSchema = cleanFunctionParameters(jsonSchema.Schema)
+				} else {
+					geminiRequest.GenerationConfig.ResponseSchema = removeAdditionalPropertiesWithDepth(jsonSchema.Schema, 0)
+				}
 			}
 		}
 	}
@@ -465,10 +459,10 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 			contentStr := message.StringContent()
 
 			// 1. 尝试解析为 JSON 对象
-			if err := json.Unmarshal([]byte(contentStr), &contentMap); err != nil {
+			if err := common.Unmarshal([]byte(contentStr), &contentMap); err != nil {
 				// 2. 如果失败，尝试解析为 JSON 数组
 				var contentSlice []interface{}
-				if err := json.Unmarshal([]byte(contentStr), &contentSlice); err == nil {
+				if err := common.Unmarshal([]byte(contentStr), &contentSlice); err == nil {
 					// 如果是数组，包装成对象
 					contentMap = map[string]interface{}{"result": contentSlice}
 				} else {
@@ -480,6 +474,9 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 			functionResp := &dto.GeminiFunctionResponse{
 				Name:     name,
 				Response: contentMap,
+			}
+			if message.ToolCallId != "" {
+				functionResp.ID, _ = common.Marshal(message.ToolCallId)
 			}
 
 			*parts = append(*parts, dto.GeminiPart{
@@ -500,12 +497,13 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 			for _, call := range message.ParseToolCalls() {
 				args := map[string]interface{}{}
 				if call.Function.Arguments != "" {
-					if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
+					if common.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
 						return nil, fmt.Errorf("invalid arguments for function %s, args: %s", call.Function.Name, call.Function.Arguments)
 					}
 				}
 				toolCall := dto.GeminiPart{
 					FunctionCall: &dto.FunctionCall{
+						ID:           common.GetPointer(call.ID),
 						FunctionName: call.Function.Name,
 						Arguments:    args,
 					},
@@ -639,6 +637,9 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		}
 	}
 
+	if err := normalizeGeminiThinkingConfig(&geminiRequest, info); err != nil {
+		return nil, err
+	}
 	return &geminiRequest, nil
 }
 
@@ -750,6 +751,7 @@ func cleanFunctionParametersWithDepth(params interface{}, depth int) interface{}
 		}
 
 		normalizeGeminiSchemaTypeAndNullable(cleanedMap)
+		sanitizeGeminiEnum(cleanedMap)
 
 		// Clean properties
 		if props, ok := cleanedMap["properties"].(map[string]interface{}); ok && props != nil {
@@ -804,6 +806,7 @@ func cleanFunctionParametersShallow(params interface{}) interface{} {
 			}
 		}
 		normalizeGeminiSchemaTypeAndNullable(cleanedMap)
+		sanitizeGeminiEnum(cleanedMap)
 		// Stop recursion and avoid retaining huge nested structures.
 		delete(cleanedMap, "properties")
 		delete(cleanedMap, "items")
@@ -994,13 +997,17 @@ func getResponseToolCall(item *dto.GeminiPart) *dto.ToolCallResponse {
 	var err error
 	// 移除 unescapeMapOrSlice 调用，直接使用 json.Marshal
 	// JSON 序列化/反序列化已经正确处理了转义字符
-	argsBytes, err = json.Marshal(item.FunctionCall.Arguments)
+	argsBytes, err = common.Marshal(item.FunctionCall.Arguments)
 
 	if err != nil {
 		return nil
 	}
+	callID := fmt.Sprintf("call_%s", common.GetUUID())
+	if item.FunctionCall.ID != nil && *item.FunctionCall.ID != "" {
+		callID = *item.FunctionCall.ID
+	}
 	return &dto.ToolCallResponse{
-		ID:   fmt.Sprintf("call_%s", common.GetUUID()),
+		ID:   callID,
 		Type: "function",
 		Function: dto.FunctionResponse{
 			Arguments: string(argsBytes),
@@ -1025,22 +1032,36 @@ func buildUsageFromGeminiMetadata(metadata dto.GeminiUsageMetadata, fallbackProm
 	usage.PromptTokensDetails.CachedTokens = metadata.CachedContentTokenCount
 
 	for _, detail := range metadata.PromptTokensDetails {
-		if detail.Modality == "AUDIO" {
+		if strings.EqualFold(strings.TrimSpace(detail.Modality), "AUDIO") {
 			usage.PromptTokensDetails.AudioTokens += detail.TokenCount
-		} else if detail.Modality == "TEXT" {
+		} else if strings.EqualFold(strings.TrimSpace(detail.Modality), "IMAGE") {
+			usage.PromptTokensDetails.ImageTokens += detail.TokenCount
+		} else if strings.EqualFold(strings.TrimSpace(detail.Modality), "TEXT") {
 			usage.PromptTokensDetails.TextTokens += detail.TokenCount
 		}
 	}
 	for _, detail := range metadata.ToolUsePromptTokensDetails {
-		if detail.Modality == "AUDIO" {
+		if strings.EqualFold(strings.TrimSpace(detail.Modality), "AUDIO") {
 			usage.PromptTokensDetails.AudioTokens += detail.TokenCount
-		} else if detail.Modality == "TEXT" {
+		} else if strings.EqualFold(strings.TrimSpace(detail.Modality), "IMAGE") {
+			usage.PromptTokensDetails.ImageTokens += detail.TokenCount
+		} else if strings.EqualFold(strings.TrimSpace(detail.Modality), "TEXT") {
 			usage.PromptTokensDetails.TextTokens += detail.TokenCount
 		}
 	}
 
+	for _, detail := range metadata.CandidatesTokensDetails {
+		switch strings.ToUpper(strings.TrimSpace(detail.Modality)) {
+		case "TEXT":
+			usage.CompletionTokenDetails.TextTokens += detail.TokenCount
+		case "IMAGE":
+			usage.CompletionTokenDetails.ImageTokens += detail.TokenCount
+		case "AUDIO":
+			usage.CompletionTokenDetails.AudioTokens += detail.TokenCount
+		}
+	}
 	if usage.TotalTokens > 0 && usage.CompletionTokens <= 0 {
-		usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
+		usage.CompletionTokens = max(usage.TotalTokens-usage.PromptTokens, 0)
 	}
 
 	if usage.PromptTokens > 0 && usage.PromptTokensDetails.TextTokens == 0 && usage.PromptTokensDetails.AudioTokens == 0 {
@@ -1069,7 +1090,24 @@ func patchGeminiZeroCompletionUsage(c *gin.Context, info *relaycommon.RelayInfo,
 		usage.CompletionTokens = imageCount * 1400
 	}
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	usage.BillingUsage = dto.NewEstimatedGeminiChatBillingUsage(usage)
+	if usage.BillingUsage != nil {
+		usage.BillingUsage = dto.CloneBillingUsageWithEstimatedCompletion(usage.BillingUsage, usage.CompletionTokens)
+	} else {
+		usage.BillingUsage = dto.NewEstimatedGeminiChatBillingUsage(usage)
+	}
+}
+
+func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) dto.Usage {
+	metadata := response.GetUsageMetadata()
+	if dto.HasGeminiUsageMetadataTokens(metadata) {
+		usage := buildUsageFromGeminiMetadata(*metadata, info.GetEstimatePromptTokens())
+		patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(response), geminiResponseInlineImageCount(response))
+		return usage
+	}
+	usage := service.ResponseText2Usage(c, geminiResponseUsageText(response), info.UpstreamModelName, info.GetEstimatePromptTokens())
+	patchGeminiZeroCompletionUsage(c, info, usage, "", geminiResponseInlineImageCount(response))
+	attachEstimatedGeminiBillingUsage(usage)
+	return *usage
 }
 
 func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse) *dto.OpenAITextResponse {
@@ -1199,6 +1237,7 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 		if isToolCall {
 			choice.FinishReason = constant.FinishReasonToolCalls
 		}
+		choice.Message.Annotations = geminiGroundingAnnotations(candidate.GroundingMetadata, candidate.Content, choice.Message.StringContent(), nil)
 
 		fullTextResponse.Choices = append(fullTextResponse.Choices, choice)
 	}
@@ -1356,19 +1395,33 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	var usage = &dto.Usage{}
 	var imageCount int
 	var hasBillableUsageMetadata bool
+	var accumulatedUsageMetadata *dto.GeminiUsageMetadata
+	var grounding geminiGroundingCounter
+	partialState := &geminiPartialStreamState{partialToolByCandidate: make(map[int64]*geminiPartialToolCall)}
+	var streamErr error
 	responseText := strings.Builder{}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
 		var geminiResponse dto.GeminiChatResponse
 		err := common.UnmarshalJsonStr(data, &geminiResponse)
 		if err != nil {
+			streamErr = fmt.Errorf("decode Gemini stream response: %w", err)
 			logger.LogError(c, "error unmarshalling stream response: "+err.Error())
 			return false
 		}
+		prepared, err := partialState.preparePartialFunctionCalls(&geminiResponse)
+		if err != nil {
+			streamErr = err
+			logger.LogError(c, "failed to reconstruct Gemini partial function call: "+err.Error())
+			return false
+		}
+		geminiResponse = *prepared
 
 		if len(geminiResponse.Candidates) == 0 && geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
 			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
 		}
+		grounding.observe(&geminiResponse)
+		grounding.commit(info)
 
 		// 统计图片数量
 		for _, candidate := range geminiResponse.Candidates {
@@ -1376,21 +1429,26 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				if part.InlineData != nil && part.InlineData.MimeType != "" {
 					imageCount++
 				}
-				if part.Text != "" {
-					responseText.WriteString(part.Text)
-				}
 			}
 		}
+		responseText.WriteString(geminiResponseUsageText(&geminiResponse))
 
 		// 更新使用量统计
-		if dto.HasGeminiUsageMetadataTokens(&geminiResponse.UsageMetadata) {
-			mappedUsage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+		if metadata := geminiResponse.GetUsageMetadata(); dto.HasGeminiUsageMetadataTokens(metadata) {
+			accumulatedUsageMetadata = dto.MergeGeminiUsageMetadataNonZero(accumulatedUsageMetadata, metadata)
+			mappedUsage := buildUsageFromGeminiMetadata(*accumulatedUsageMetadata, info.GetEstimatePromptTokens())
 			*usage = mappedUsage
 			hasBillableUsageMetadata = true
 		}
 
 		return callback(data, &geminiResponse)
 	})
+	if streamErr != nil {
+		return usage, types.NewOpenAIError(streamErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	if len(partialState.partialToolByCandidate) > 0 && (info.StreamStatus == nil || info.StreamStatus.IsNormalEnd()) {
+		return usage, types.NewOpenAIError(errors.New("Gemini stream ended with an incomplete function call"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
 
 	if !hasBillableUsageMetadata {
 		if info.ReceivedResponseCount > 0 {
@@ -1416,6 +1474,7 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	finishReason := constant.FinishReasonStop
 	toolCallIndexByChoice := make(map[int]map[string]int)
 	nextToolCallIndexByChoice := make(map[int]int)
+	groundingByChoice := make(map[int]*geminiGroundingStreamState)
 
 	usage, err := geminiStreamHandler(c, info, resp, func(data string, geminiResponse *dto.GeminiChatResponse) bool {
 		response, isStop := streamResponseGeminiChat2OpenAI(geminiResponse)
@@ -1423,6 +1482,22 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 		response.Id = id
 		response.Created = createAt
 		response.Model = info.UpstreamModelName
+		for choiceIdx := range response.Choices {
+			choice := &response.Choices[choiceIdx]
+			state := groundingByChoice[choice.Index]
+			if state == nil {
+				state = &geminiGroundingStreamState{seen: make(map[string]struct{})}
+				groundingByChoice[choice.Index] = state
+			}
+			state.rendered.WriteString(choice.Delta.GetContentString())
+			for _, candidate := range geminiResponse.Candidates {
+				if int(candidate.Index) == choice.Index {
+					state.observeCandidate(candidate)
+					choice.Delta.Annotations = state.annotations(candidate.GroundingMetadata)
+					break
+				}
+			}
+		}
 		if response.IsToolCall() {
 			finishReason = constant.FinishReasonToolCalls
 			if info.RelayFormat == types.RelayFormatClaude {
@@ -1458,6 +1533,8 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 		if info.SendResponseCount == 0 {
 			// send first response
 			emptyResponse := helper.GenerateStartEmptyResponse(id, createAt, info.UpstreamModelName, nil)
+			// Claude message_start is emitted from this first OpenAI chunk.
+			emptyResponse.Usage = response.Usage
 			if response.IsToolCall() {
 				if len(emptyResponse.Choices) > 0 && len(response.Choices) > 0 {
 					toolCalls := response.Choices[0].Delta.ToolCalls
@@ -1528,8 +1605,11 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
+	var grounding geminiGroundingCounter
+	grounding.observe(&geminiResponse)
+	grounding.commit(info)
 	if len(geminiResponse.Candidates) == 0 {
-		usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+		usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
 
 		var newAPIError *types.NewAPIError
 		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
@@ -1565,8 +1645,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	}
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
-	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
-	patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(&geminiResponse), geminiResponseInlineImageCount(&geminiResponse))
+	usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
 
 	fullTextResponse.Usage = usage
 
@@ -1606,6 +1685,11 @@ func geminiResponseUsageText(response *dto.GeminiChatResponse) string {
 	for _, candidate := range response.Candidates {
 		for _, part := range candidate.Content.Parts {
 			text.WriteString(part.Text)
+			if part.FunctionCall != nil {
+				text.WriteString(part.FunctionCall.FunctionName)
+				args, _ := common.Marshal(part.FunctionCall.Arguments)
+				text.Write(args)
+			}
 		}
 	}
 	return text.String()

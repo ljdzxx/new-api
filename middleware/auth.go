@@ -30,10 +30,7 @@ func tokenAuthMaskForLog(value string) string {
 	if value == "" {
 		return "<empty>"
 	}
-	if len(value) <= 8 {
-		return fmt.Sprintf("%s(len=%d)", value, len(value))
-	}
-	return fmt.Sprintf("%s...%s(len=%d)", value[:4], value[len(value)-4:], len(value))
+	return fmt.Sprintf("<redacted len=%d sha1=%s>", len(value), tokenAuthFingerprintForLog(value))
 }
 
 func tokenAuthFingerprintForLog(value string) string {
@@ -59,7 +56,26 @@ func logTokenAuthRawMessagesRequest(c *gin.Context) {
 	if c == nil || c.Request == nil || !tokenAuthDebugEnabled(c) || !strings.Contains(c.Request.URL.Path, "/v1/messages") {
 		return
 	}
-	dump, dumpErr := httputil.DumpRequest(c.Request, false)
+	request := c.Request.Clone(c.Request.Context())
+	for name, values := range request.Header {
+		if tokenAuthSensitiveLogField(name) {
+			for i, value := range values {
+				values[i] = tokenAuthMaskForLog(value)
+			}
+		}
+	}
+	query := request.URL.Query()
+	for name, values := range query {
+		if tokenAuthSensitiveLogField(name) {
+			for i, value := range values {
+				values[i] = tokenAuthMaskForLog(value)
+			}
+			query[name] = values
+		}
+	}
+	request.URL.RawQuery = query.Encode()
+	request.RequestURI = request.URL.RequestURI()
+	dump, dumpErr := httputil.DumpRequest(request, false)
 	if dumpErr != nil {
 		logger.LogError(c, "[token auth raw] dump request metadata failed: "+dumpErr.Error())
 	} else {
@@ -79,6 +95,11 @@ func logTokenAuthRawMessagesRequest(c *gin.Context) {
 		logger.LogError(c, "[token auth raw] reset request body storage failed: "+seekErr.Error())
 	}
 	logger.LogInfo(c, fmt.Sprintf("[token auth raw] request body bytes=%d:\n%s", len(body), string(body)))
+}
+
+func tokenAuthSensitiveLogField(name string) bool {
+	name = strings.ToLower(name)
+	return strings.Contains(name, "authorization") || strings.Contains(name, "key") || strings.Contains(name, "token") || strings.Contains(name, "secret") || strings.Contains(name, "cookie") || name == "sec-websocket-protocol"
 }
 
 func normalizeBearerToken(raw string) string {
@@ -395,7 +416,7 @@ func TokenAuth() func(c *gin.Context) {
 				c.Request.Header.Set("Authorization", "Bearer "+anthropicKey)
 				tokenSource = "x-api-key"
 			} else if anthropicKey != "" {
-				logTokenAuthDebug(c, "x-api-key ignored for user token auth because Authorization is present: authorization=%q x_api_key=%q", authorizationKey, anthropicKey)
+				logTokenAuthDebug(c, "x-api-key ignored for user token auth because Authorization is present: authorization=%q x_api_key=%q", tokenAuthMaskForLog(authorizationKey), tokenAuthMaskForLog(anthropicKey))
 			}
 		}
 		// gemini api 从query中获取key
@@ -420,7 +441,7 @@ func TokenAuth() func(c *gin.Context) {
 			tokenSource = "mj-api-secret"
 		}
 		candidates := tokenAuthCandidateKeys(rawToken)
-		logTokenAuthDebug(c, "token received: source=%s raw_token=%q raw_len=%d raw_sha1=%s candidates=%d path=%s", tokenSource, rawToken, len(rawToken), tokenAuthFingerprintForLog(rawToken), len(candidates), c.Request.URL.Path)
+		logTokenAuthDebug(c, "token received: source=%s raw_token=%q raw_len=%d raw_sha1=%s candidates=%d path=%s", tokenSource, tokenAuthMaskForLog(rawToken), len(rawToken), tokenAuthFingerprintForLog(rawToken), len(candidates), c.Request.URL.Path)
 
 		var (
 			token        *model.Token
@@ -433,13 +454,13 @@ func TokenAuth() func(c *gin.Context) {
 			err = fmt.Errorf("未提供令牌")
 		}
 		for attemptIndex, candidateKey := range candidates {
-			logTokenAuthDebug(c, "validating token candidate: source=%s attempt=%d key=%q key_len=%d key_sha1=%s legacy_fallback=%t", tokenSource, attemptIndex+1, candidateKey, len(candidateKey), tokenAuthFingerprintForLog(candidateKey), attemptIndex > 0)
+			logTokenAuthDebug(c, "validating token candidate: source=%s attempt=%d key=%q key_len=%d key_sha1=%s legacy_fallback=%t", tokenSource, attemptIndex+1, tokenAuthMaskForLog(candidateKey), len(candidateKey), tokenAuthFingerprintForLog(candidateKey), attemptIndex > 0)
 			token, err = model.ValidateUserToken(candidateKey)
 			if err == nil {
 				selectedKey = candidateKey
 				break
 			}
-			attemptErrs = append(attemptErrs, fmt.Sprintf("attempt=%d key=%q key_len=%d key_sha1=%s err=%s", attemptIndex+1, candidateKey, len(candidateKey), tokenAuthFingerprintForLog(candidateKey), err.Error()))
+			attemptErrs = append(attemptErrs, fmt.Sprintf("attempt=%d key=%q key_len=%d key_sha1=%s err=%s", attemptIndex+1, tokenAuthMaskForLog(candidateKey), len(candidateKey), tokenAuthFingerprintForLog(candidateKey), err.Error()))
 		}
 		if token != nil {
 			id := c.GetInt("id")
@@ -449,11 +470,11 @@ func TokenAuth() func(c *gin.Context) {
 			c.Set("debug_trace_token_key", token.Key)
 		}
 		if err != nil {
-			logTokenAuthDebug(c, "token validation failed: source=%s raw_token=%q raw_len=%d raw_sha1=%s attempts=[%s]", tokenSource, rawToken, len(rawToken), tokenAuthFingerprintForLog(rawToken), strings.Join(attemptErrs, "; "))
+			logTokenAuthDebug(c, "token validation failed: source=%s raw_token=%q raw_len=%d raw_sha1=%s attempts=[%s]", tokenSource, tokenAuthMaskForLog(rawToken), len(rawToken), tokenAuthFingerprintForLog(rawToken), strings.Join(attemptErrs, "; "))
 			abortWithOpenAiMessage(c, http.StatusUnauthorized, err.Error())
 			return
 		}
-		logTokenAuthDebug(c, "token validation succeeded: source=%s selected_attempt=%d selected_key=%q selected_key_len=%d selected_key_sha1=%s token_id=%d token_db_key=%q user_id=%d group=%s", tokenSource, attemptIndex+1, selectedKey, len(selectedKey), tokenAuthFingerprintForLog(selectedKey), token.Id, token.Key, token.UserId, token.Group)
+		logTokenAuthDebug(c, "token validation succeeded: source=%s selected_attempt=%d selected_key=%q selected_key_len=%d selected_key_sha1=%s token_id=%d token_db_key=%q user_id=%d group=%s", tokenSource, attemptIndex+1, tokenAuthMaskForLog(selectedKey), len(selectedKey), tokenAuthFingerprintForLog(selectedKey), token.Id, tokenAuthMaskForLog(token.Key), token.UserId, token.Group)
 
 		allowIps := token.GetIpLimits()
 		if len(allowIps) > 0 {

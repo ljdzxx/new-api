@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -89,6 +90,12 @@ func TestRelayHTTPRequestCancelsUpstream(t *testing.T) {
 						require.NoError(t, err)
 					} else {
 						require.Error(t, err)
+						if tc.name == "stream_header_timeout" {
+							var timeout *UpstreamResponseHeaderTimeout
+							require.True(t, errors.As(err, &timeout))
+							require.ErrorIs(t, err, context.DeadlineExceeded)
+							require.Equal(t, time.Second, timeout.After)
+						}
 					}
 				case <-time.After(3 * time.Second):
 					cancel()

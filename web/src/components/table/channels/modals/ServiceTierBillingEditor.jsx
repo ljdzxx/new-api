@@ -87,7 +87,9 @@ export default function ServiceTierBillingEditor({ value, onChange }) {
                       <Input
                         aria-label={t('模型')}
                         value={rule.model}
-                        placeholder='gpt-6-astra / *'
+                        placeholder={t('例如：{{example}}', {
+                          example: 'gpt-6-astra / *',
+                        })}
                         onChange={(v) => update(index, 'model', v)}
                       />
                     </td>
@@ -96,7 +98,9 @@ export default function ServiceTierBillingEditor({ value, onChange }) {
                         aria-label='service_tier'
                         value={rule.tier}
                         maxLength={64}
-                        placeholder='Ultrafast'
+                        placeholder={t('例如：{{example}}', {
+                          example: 'Ultrafast',
+                        })}
                         onChange={(v) => update(index, 'tier', v)}
                       />
                     </td>

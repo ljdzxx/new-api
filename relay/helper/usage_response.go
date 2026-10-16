@@ -195,6 +195,8 @@ var openAIUsageTokenPaths = []string{
 	"completion_tokens_details.text_tokens", "completion_tokens_details.audio_tokens", "completion_tokens_details.image_tokens",
 	"completion_tokens_details.reasoning_tokens", "input_tokens_details.cached_tokens", "input_tokens_details.cache_write_tokens",
 	"input_tokens_details.text_tokens", "input_tokens_details.audio_tokens", "input_tokens_details.image_tokens",
+	"output_tokens_details.text_tokens", "output_tokens_details.audio_tokens", "output_tokens_details.image_tokens",
+	"output_tokens_details.reasoning_tokens",
 	"claude_cache_creation_5_m_tokens", "claude_cache_creation_1_h_tokens",
 }
 
