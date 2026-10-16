@@ -32,6 +32,7 @@ export const CODEX_CLI_HEADER_PASSTHROUGH_HEADERS = [
   'Session_id',
   'Thread_id',
   'Session-Id',
+  'X-Session-Id',
   'Thread-Id',
   'X-Client-Request-Id',
   'User-Agent',

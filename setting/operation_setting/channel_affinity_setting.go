@@ -39,6 +39,7 @@ var codexCliPassThroughHeaders = []string{
 	"Session_id",
 	"Thread_id",
 	"Session-Id",
+	"X-Session-Id",
 	"Thread-Id",
 	"X-Client-Request-Id",
 	"User-Agent",
