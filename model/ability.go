@@ -45,6 +45,17 @@ func GetGroupEnabledModels(group string) []string {
 	return models
 }
 
+// GetGroupsEnabledModels returns the distinct models offered by enabled abilities.
+func GetGroupsEnabledModels(groups []string) ([]string, error) {
+	models := make([]string, 0)
+	if len(groups) == 0 {
+		return models, nil
+	}
+	err := DB.Model(&Ability{}).Where(map[string]any{"group": groups, "enabled": true}).
+		Distinct("model").Order("model").Pluck("model", &models).Error
+	return models, err
+}
+
 func GetEnabledModels() []string {
 	var models []string
 	// Find distinct models

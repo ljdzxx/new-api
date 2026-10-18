@@ -47,7 +47,7 @@ const RedemptionsFilters = ({
         setFormApi(api);
         formApiRef.current = api;
       }}
-      onSubmit={searchRedemptions}
+      onSubmit={() => searchRedemptions()}
       allowEmpty={true}
       autoComplete='off'
       layout='horizontal'
@@ -55,12 +55,22 @@ const RedemptionsFilters = ({
       stopValidateWithError={false}
       className='w-full md:w-auto order-1 md:order-2'
     >
-      <div className='flex flex-col md:flex-row items-center gap-2 w-full md:w-auto'>
+      <div className='flex flex-col md:flex-row md:flex-wrap items-center gap-2 w-full md:w-auto'>
         <div className='relative w-full md:w-64'>
           <Form.Input
             field='searchKeyword'
             prefix={<IconSearch />}
             placeholder={t('关键字(id或者名称)')}
+            showClear
+            pure
+            size='small'
+          />
+        </div>
+        <div className='relative w-full md:w-64'>
+          <Form.Input
+            field='searchKey'
+            prefix={<IconSearch />}
+            placeholder={t('兑换码')}
             showClear
             pure
             size='small'

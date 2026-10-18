@@ -19,6 +19,15 @@ var e2eTopUpSeq int64
 
 func setupUserLevelUpgradeE2E(t *testing.T, policyJSON string) {
 	t.Helper()
+	// SQLite can reuse IDs after fixture tables are emptied. Clear cached plans
+	// and subscription info so they cannot refer to rows from another test.
+	clearSubscriptionCaches := func() {
+		require.NoError(t, getSubscriptionPlanCache().Purge())
+		require.NoError(t, getSubscriptionPlanInfoCache().Purge())
+	}
+	t.Cleanup(clearSubscriptionCaches)
+	clearSubscriptionCaches()
+
 	if common.UsingSQLite {
 		require.NoError(t, ensureUsersTableSQLite())
 	} else {

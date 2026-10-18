@@ -97,7 +97,7 @@ func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total 
 	return redemptions, total, nil
 }
 
-func SearchRedemptions(keyword string, startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
+func SearchRedemptions(keyword string, key string, startIdx int, num int) (redemptions []*Redemption, total int64, err error) {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -111,11 +111,16 @@ func SearchRedemptions(keyword string, startIdx int, num int) (redemptions []*Re
 	// Build query based on keyword type
 	query := tx.Model(&Redemption{})
 
-	// Only try to convert to ID if the string represents a valid integer
-	if id, err := strconv.Atoi(keyword); err == nil {
-		query = query.Where("id = ? OR name LIKE ?", id, keyword+"%")
-	} else {
-		query = query.Where("name LIKE ?", keyword+"%")
+	if keyword != "" {
+		// Only try to convert to ID if the string represents a valid integer
+		if id, err := strconv.Atoi(keyword); err == nil {
+			query = query.Where("(id = ? OR name LIKE ?)", id, keyword+"%")
+		} else {
+			query = query.Where("name LIKE ?", keyword+"%")
+		}
+	}
+	if key != "" {
+		query = query.Where(map[string]interface{}{"key": key})
 	}
 
 	// Get total count

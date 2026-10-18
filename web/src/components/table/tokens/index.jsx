@@ -50,7 +50,7 @@ function TokensPage() {
   const openCCSwitchModalRef = useRef(null);
   const tokensData = useTokensData(
     (key) => openFluentNotificationRef.current?.(key),
-    (key) => openCCSwitchModalRef.current?.(key),
+    (token) => openCCSwitchModalRef.current?.(token),
   );
   const isMobile = useIsMobile();
   const latestRef = useRef({
@@ -65,8 +65,7 @@ function TokensPage() {
   const [selectedModel, setSelectedModel] = useState('');
   const [fluentNoticeOpen, setFluentNoticeOpen] = useState(false);
   const [prefillKey, setPrefillKey] = useState('');
-  const [ccSwitchVisible, setCCSwitchVisible] = useState(false);
-  const [ccSwitchKey, setCCSwitchKey] = useState('');
+  const [ccSwitchToken, setCCSwitchToken] = useState(null);
 
   // Keep latest data for handlers inside notifications
   useEffect(() => {
@@ -192,12 +191,8 @@ function TokensPage() {
   // assign after definition so hook callback can call it safely
   openFluentNotificationRef.current = openFluentNotification;
 
-  function openCCSwitchModal(key) {
-    if (modelOptions.length === 0) {
-      loadModels();
-    }
-    setCCSwitchKey(key || '');
-    setCCSwitchVisible(true);
+  function openCCSwitchModal(token) {
+    setCCSwitchToken(token);
   }
   openCCSwitchModalRef.current = openCCSwitchModal;
 
@@ -385,12 +380,14 @@ function TokensPage() {
         handleClose={closeEdit}
       />
 
-      <CCSwitchModal
-        visible={ccSwitchVisible}
-        onClose={() => setCCSwitchVisible(false)}
-        tokenKey={ccSwitchKey}
-        modelOptions={modelOptions}
-      />
+      {ccSwitchToken && (
+        <CCSwitchModal
+          key={ccSwitchToken.id}
+          onClose={() => setCCSwitchToken(null)}
+          token={ccSwitchToken}
+          fetchTokenKey={tokensData.fetchTokenKey}
+        />
+      )}
 
       <CardPro
         type='type1'

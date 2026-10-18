@@ -438,16 +438,9 @@ const renderOperations = (
         <Button
           size='small'
           type='tertiary'
-          onClick={() => {
-            if (chatsArray.length === 0) {
-              showError(t('请联系管理员配置聊天链接'));
-            } else {
-              const first = chatsArray[0];
-              onOpenLink(first.name, first.value, record);
-            }
-          }}
+          onClick={() => onOpenLink('CC Switch', 'ccswitch', record)}
         >
-          {t('聊天')}
+          {'CC Switch'}
         </Button>
         <Dropdown trigger='click' position='bottomRight' menu={chatsArray}>
           <Button

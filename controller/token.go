@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
@@ -92,6 +93,40 @@ func GetTokenKey(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"key": token.GetFullKey(),
 	})
+}
+
+// GetTokenModels lists models for configuring an owned token from the console.
+func GetTokenModels(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	userID := c.GetInt("id")
+	token, err := model.GetTokenByIds(id, userID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	user, err := model.GetUserCache(userID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	models, err := service.GetTokenAllowedModels(token, user.Group)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	acceptUnsetRatio := operation_setting.SelfUseModeEnabled || user.GetSetting().AcceptUnsetRatioModel
+	available := make([]string, 0, len(models))
+	for _, name := range models {
+		if isCompactVirtualModel(name) || (!acceptUnsetRatio && !hasModelPricing(name)) {
+			continue
+		}
+		available = append(available, name)
+	}
+	common.ApiSuccess(c, available)
 }
 
 func GetTokenStatus(c *gin.Context) {

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
 import {
   Modal,
   RadioGroup,
@@ -25,14 +25,19 @@ import {
   Input,
   Toast,
   Typography,
+  Button,
 } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
-import { selectFilter } from '../../../../helpers';
+import { API, selectFilter, getModelCategories } from '../../../../helpers';
+import {
+  buildCCSwitchURL,
+  getCCSwitchName,
+} from '../../../../helpers/ccSwitch';
+import { StatusContext } from '../../../../context/Status';
 
 const APP_CONFIGS = {
   claude: {
     label: 'Claude',
-    defaultName: 'My Claude',
     modelFields: [
       { key: 'model', label: '主模型' },
       { key: 'haikuModel', label: 'Haiku 模型' },
@@ -42,68 +47,98 @@ const APP_CONFIGS = {
   },
   codex: {
     label: 'Codex',
-    defaultName: 'My Codex',
     modelFields: [{ key: 'model', label: '主模型' }],
   },
   gemini: {
     label: 'Gemini',
-    defaultName: 'My Gemini',
     modelFields: [{ key: 'model', label: '主模型' }],
   },
 };
 
-function getServerAddress() {
+function getCachedStatus() {
   try {
-    const raw = localStorage.getItem('status');
-    if (raw) {
-      const status = JSON.parse(raw);
-      if (status.server_address) return status.server_address;
-    }
+    return JSON.parse(localStorage.getItem('status')) || {};
   } catch (_) {}
-  return window.location.origin;
+  return {};
 }
 
-function buildCCSwitchURL(app, name, models, apiKey) {
-  const serverAddress = getServerAddress();
-  const endpoint = app === 'codex' ? serverAddress + '/v1' : serverAddress;
-  const params = new URLSearchParams();
-  params.set('resource', 'provider');
-  params.set('app', app);
-  params.set('name', name);
-  params.set('endpoint', endpoint);
-  params.set('apiKey', apiKey);
-  for (const [k, v] of Object.entries(models)) {
-    if (v) params.set(k, v);
-  }
-  params.set('homepage', serverAddress);
-  params.set('enabled', 'true');
-  return `ccswitch://v1/import?${params.toString()}`;
-}
-
-export default function CCSwitchModal({
-  visible,
-  onClose,
-  tokenKey,
-  modelOptions,
-}) {
+export default function CCSwitchModal({ onClose, token, fetchTokenKey }) {
   const { t } = useTranslation();
+  const [statusState] = useContext(StatusContext);
+  const status = statusState?.status || getCachedStatus();
+  const defaultName = getCCSwitchName(
+    status.system_name ?? localStorage.getItem('system_name'),
+    token.name,
+  );
   const [app, setApp] = useState('claude');
-  const [name, setName] = useState(APP_CONFIGS.claude.defaultName);
+  const [name, setName] = useState(null);
   const [models, setModels] = useState({});
+  const [modelNames, setModelNames] = useState([]);
+  const [tokenKey, setTokenKey] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [reload, setReload] = useState(0);
+  const fetchTokenKeyRef = useRef(fetchTokenKey);
+  fetchTokenKeyRef.current = fetchTokenKey;
 
   const currentConfig = APP_CONFIGS[app];
 
   useEffect(() => {
-    if (visible) {
-      setModels({});
-      setApp('claude');
-      setName(APP_CONFIGS.claude.defaultName);
-    }
-  }, [visible]);
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    setModelNames([]);
+    setModels({});
+    setTokenKey('');
+    const load = async () => {
+      try {
+        const [res, key] = await Promise.all([
+          API.get(`/api/token/${token.id}/models`, {
+            skipErrorHandler: true,
+            disableDuplicate: true,
+          }),
+          fetchTokenKeyRef.current(token.id, { suppressError: true }),
+        ]);
+        if (!active) return;
+        if (!res.data?.success || !Array.isArray(res.data.data)) {
+          throw new Error(res.data?.message || t('加载模型列表失败'));
+        }
+        if (!key) throw new Error(t('获取令牌密钥失败'));
+        setModelNames(res.data.data);
+        setTokenKey(key);
+      } catch (error) {
+        if (active) setLoadError(error.message || t('加载模型列表失败'));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [token.id, reload, t]);
+
+  const modelOptions = useMemo(() => {
+    const categories = getModelCategories(t);
+    return modelNames.map((model) => {
+      const category = Object.entries(categories).find(
+        ([key, category]) =>
+          key !== 'all' && category.filter({ model_name: model }),
+      )?.[1];
+      return {
+        value: model,
+        label: (
+          <span className='flex items-center gap-1'>
+            {category?.icon}
+            {model}
+          </span>
+        ),
+      };
+    });
+  }, [modelNames, t]);
 
   const handleAppChange = (val) => {
     setApp(val);
-    setName(APP_CONFIGS[val].defaultName);
     setModels({});
   };
 
@@ -112,11 +147,23 @@ export default function CCSwitchModal({
   };
 
   const handleSubmit = () => {
-    if (!models.model) {
+    if (loading || loadError || !tokenKey || modelNames.length === 0) return;
+    if (
+      !models.model ||
+      Object.values(models).some(
+        (value) => value && !modelNames.includes(value),
+      )
+    ) {
       Toast.warning(t('请选择主模型'));
       return;
     }
-    const url = buildCCSwitchURL(app, name, models, 'sk-' + tokenKey);
+    const url = buildCCSwitchURL({
+      app,
+      name: name?.trim() || defaultName,
+      models,
+      apiKey: 'sk-' + tokenKey,
+      serverAddress: status.server_address?.trim() || window.location.origin,
+    });
     window.open(url, '_blank');
     onClose();
   };
@@ -133,11 +180,15 @@ export default function CCSwitchModal({
   return (
     <Modal
       title={t('填入 CC Switch')}
-      visible={visible}
+      visible
       onCancel={onClose}
       onOk={handleSubmit}
       okText={t('打开 CC Switch')}
       cancelText={t('取消')}
+      okButtonProps={{
+        disabled:
+          loading || !!loadError || !tokenKey || modelNames.length === 0,
+      }}
       maskClosable={false}
       width={480}
     >
@@ -161,11 +212,27 @@ export default function CCSwitchModal({
         <div>
           <div style={fieldLabelStyle}>{t('名称')}</div>
           <Input
-            value={name}
+            value={name ?? defaultName}
             onChange={setName}
-            placeholder={currentConfig.defaultName}
+            placeholder={defaultName}
           />
         </div>
+
+        {loadError ? (
+          <div>
+            <Typography.Text type='danger'>{loadError}</Typography.Text>
+            <Button onClick={() => setReload((value) => value + 1)}>
+              {t('重试')}
+            </Button>
+          </div>
+        ) : (
+          !loading &&
+          modelNames.length === 0 && (
+            <Typography.Text type='warning'>
+              {t('暂无可用模型')}
+            </Typography.Text>
+          )
+        )}
 
         {currentConfig.modelFields.map((field) => (
           <div key={field.key}>
@@ -178,13 +245,15 @@ export default function CCSwitchModal({
             <Select
               placeholder={t('请选择模型')}
               optionList={modelOptions}
+              loading={loading}
+              disabled={loading || !!loadError || modelNames.length === 0}
               value={models[field.key] || undefined}
               onChange={(val) => handleModelChange(field.key, val)}
               filter={selectFilter}
               style={{ width: '100%' }}
               showClear
               searchable
-              emptyContent={t('暂无数据')}
+              emptyContent={t('暂无可用模型')}
             />
           </div>
         ))}
