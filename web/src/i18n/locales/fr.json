@@ -1,5 +1,12 @@
 {
   "translation": {
+    "同步指定模型": "Synchroniser depuis un modèle",
+    "将所选模型的完整定价配置复制至本模型": "Copier la configuration tarifaire complète du modèle sélectionné vers ce modèle",
+    "模型价格同步成功": "Tarification du modèle synchronisée",
+    "同步模型价格失败": "Échec de la synchronisation de la tarification",
+    "确认同步": "Confirmer la synchronisation",
+    "请输入模型名称后点击查询": "Saisissez un nom de modèle, puis cliquez sur Rechercher",
+    "未找到匹配的已定价模型": "Aucun modèle correspondant avec une tarification configurée",
     "例如：{{example}}": "Exemple : {{example}}",
     "项目 ID（可选）": "ID du projet (facultatif)",
     "请输入 Google Cloud 项目 ID": "Saisissez l’ID de votre projet Google Cloud",

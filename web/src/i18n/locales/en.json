@@ -1,5 +1,12 @@
 {
   "translation": {
+    "同步指定模型": "Sync from a model",
+    "将所选模型的完整定价配置复制至本模型": "Copy the selected model’s complete pricing configuration to this model",
+    "模型价格同步成功": "Model pricing synced successfully",
+    "同步模型价格失败": "Failed to sync model pricing",
+    "确认同步": "Confirm sync",
+    "请输入模型名称后点击查询": "Enter a model name, then click Search",
+    "未找到匹配的已定价模型": "No matching models with configured pricing found",
     "例如：{{example}}": "Example: {{example}}",
     "项目 ID（可选）": "Project ID (optional)",
     "请输入 Google Cloud 项目 ID": "Enter your Google Cloud project ID",

@@ -1,5 +1,12 @@
 {
   "translation": {
+    "同步指定模型": "Đồng bộ từ mô hình",
+    "将所选模型的完整定价配置复制至本模型": "Sao chép toàn bộ cấu hình giá của mô hình đã chọn sang mô hình này",
+    "模型价格同步成功": "Đồng bộ giá mô hình thành công",
+    "同步模型价格失败": "Không thể đồng bộ giá mô hình",
+    "确认同步": "Xác nhận đồng bộ",
+    "请输入模型名称后点击查询": "Nhập tên mô hình rồi nhấp Tìm kiếm",
+    "未找到匹配的已定价模型": "Không tìm thấy mô hình phù hợp đã cấu hình giá",
     "例如：{{example}}": "Ví dụ: {{example}}",
     "项目 ID（可选）": "ID dự án (không bắt buộc)",
     "请输入 Google Cloud 项目 ID": "Nhập ID dự án Google Cloud",

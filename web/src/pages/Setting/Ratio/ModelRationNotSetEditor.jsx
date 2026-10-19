@@ -29,6 +29,8 @@ import {
   Button,
   Empty,
   Input,
+  Modal,
+  Radio,
   Table,
   Space,
   Tooltip,
@@ -66,6 +68,10 @@ export default function ModelRatioNotSetEditor({
   const [config, setConfig] = useState(null);
   const [query, setQuery] = useState('');
   const [editingModel, setEditingModel] = useState(null);
+  const [syncTarget, setSyncTarget] = useState(null);
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [searchedQuery, setSearchedQuery] = useState('');
+  const [selectedSource, setSelectedSource] = useState(null);
 
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
@@ -105,6 +111,62 @@ export default function ModelRatioNotSetEditor({
       .filter((name) => legacyModels[name]?.configured === false)
       .filter((name) => !keyword || name.toLowerCase().includes(keyword));
   }, [legacyModels, models, query]);
+
+  const sourceModels = useMemo(() => {
+    if (!searchedQuery) return [];
+    return Object.keys(config?.policies || {})
+      .filter(
+        (name) =>
+          name !== syncTarget && name.toLowerCase().includes(searchedQuery),
+      )
+      .sort((a, b) => a.localeCompare(b))
+      .map((name) => ({ name }));
+  }, [config, searchedQuery, syncTarget]);
+
+  const openModelSync = (name) => {
+    setSourceQuery('');
+    setSearchedQuery('');
+    setSelectedSource(null);
+    setSyncTarget(name);
+  };
+
+  const syncSelectedPrice = async () => {
+    if (
+      !syncTarget ||
+      !selectedSource ||
+      syncingModel ||
+      saving ||
+      loading ||
+      config?.state !== 'active' ||
+      !sourceModels.some(({ name }) => name === selectedSource)
+    )
+      return;
+    setSaving(true);
+    try {
+      // Preserve the full policy, including tiers and tool prices. The revision
+      // check prevents this snapshot from overwriting concurrent pricing edits.
+      const response = await API.put('/api/option/billing_policy', {
+        ...config,
+        policies: {
+          ...config.policies,
+          [syncTarget]: config.policies[selectedSource],
+        },
+      });
+      if (!response.data?.success) throw new Error(response.data?.message);
+      showSuccess(t('模型价格同步成功'));
+      setSyncTarget(null);
+      onBillingPolicyChanged?.();
+      await refresh();
+    } catch (error) {
+      showError(
+        error.response?.data?.message || error.message || t('同步模型价格失败'),
+      );
+      setSelectedSource(null);
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const syncLegacyPrice = async (name) => {
     if (syncingModel || saving || config?.state !== 'active') return;
@@ -241,12 +303,122 @@ export default function ModelRatioNotSetEditor({
                       </Button>
                     </span>
                   </Tooltip>
+                  <Tooltip
+                    content={
+                      config?.state !== 'active'
+                        ? t('请先完成迁移并激活新版计费后再同步')
+                        : t('将所选模型的完整定价配置复制至本模型')
+                    }
+                  >
+                    <span>
+                      <Button
+                        disabled={
+                          config?.state !== 'active' ||
+                          Boolean(syncingModel) ||
+                          saving ||
+                          loading ||
+                          Boolean(editingModel)
+                        }
+                        onClick={() => openModelSync(record.name)}
+                      >
+                        {t('同步指定模型')}
+                      </Button>
+                    </span>
+                  </Tooltip>
                 </Space>
               );
             },
           },
         ]}
       />
+      <Modal
+        title={t('同步指定模型')}
+        visible={Boolean(syncTarget)}
+        onCancel={() => {
+          if (!saving) setSyncTarget(null);
+        }}
+        onOk={syncSelectedPrice}
+        okText={t('确认同步')}
+        cancelText={t('取消')}
+        confirmLoading={saving}
+        okButtonProps={{
+          disabled:
+            !selectedSource ||
+            !sourceModels.some(({ name }) => name === selectedSource) ||
+            loading ||
+            saving ||
+            config?.state !== 'active',
+        }}
+        cancelButtonProps={{ disabled: saving }}
+        closable={!saving}
+        maskClosable={false}
+        width={640}
+        style={{ maxWidth: 'calc(100vw - 32px)' }}
+      >
+        <Paragraph>
+          {t('将所选模型的完整定价配置复制至本模型')}：
+          <Text strong className='font-mono'>
+            {syncTarget}
+          </Text>
+        </Paragraph>
+        <div className='mb-4 flex gap-2'>
+          <Input
+            prefix={<IconSearch />}
+            value={sourceQuery}
+            disabled={saving}
+            onChange={(value) => {
+              setSourceQuery(value);
+              setSearchedQuery('');
+              setSelectedSource(null);
+            }}
+            showClear
+            placeholder={t('请输入模型名称后点击查询')}
+          />
+          <Button
+            disabled={!sourceQuery.trim() || saving || loading}
+            onClick={() => {
+              setSearchedQuery(sourceQuery.trim().toLowerCase());
+              setSelectedSource(null);
+            }}
+          >
+            {t('查询')}
+          </Button>
+        </div>
+        <Table
+          key={searchedQuery}
+          dataSource={sourceModels}
+          rowKey='name'
+          pagination={{ pageSize: 10 }}
+          empty={
+            <Empty
+              description={
+                searchedQuery
+                  ? t('未找到匹配的已定价模型')
+                  : t('请输入模型名称后点击查询')
+              }
+            />
+          }
+          columns={[
+            {
+              title: t('选择'),
+              width: 64,
+              render: (_, record) => (
+                <Radio
+                  aria-label={record.name}
+                  checked={selectedSource === record.name}
+                  disabled={saving || loading}
+                  onChange={() => setSelectedSource(record.name)}
+                />
+              ),
+            },
+            {
+              title: t('模型名称'),
+              dataIndex: 'name',
+              render: (name) => <Text className='font-mono'>{name}</Text>,
+            },
+          ]}
+        />
+      </Modal>
       <BillingPolicyVisualEditor
         visible={Boolean(editingModel)}
         model={editingModel}
