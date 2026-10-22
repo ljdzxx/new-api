@@ -4,6 +4,7 @@ import (
  "fmt"
  "os"
  "sort"
+ "strings"
  "github.com/QuantumNous/new-api/relaykit/dto"
  "github.com/QuantumNous/new-api/relaykit/relayconvert"
  "github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
@@ -12,8 +13,11 @@ import (
  "github.com/tidwall/gjson"
 )
 func main() {
+ // Fixture resolver accepts inline data only; never fetch URLs or use credentials.
+ decode := func(raw string)(string,string,error){header,data,ok:=strings.Cut(raw,",");if !ok||!strings.HasPrefix(header,"data:"){return "","",fmt.Errorf("fixture requires data URI")};mime:=strings.TrimSuffix(strings.TrimPrefix(header,"data:"),";base64");return data,mime,nil}
+ relayconvert.SetMediaResolver(relayconvert.MediaResolver{GetBase64Data:func(_ context.Context,source types.FileSource,_ ...string)(string,string,error){return decode(source.GetRawData())},DecodeBase64FileData:decode})
  data,err:=os.ReadFile(os.Args[1]);if err!=nil{panic(err)}
- var cases []struct{Name string;Policy types.ConversionLossPolicy;Request dto.OpenAIResponsesRequest}
+ var cases []struct{Name string;Policy types.ConversionLossPolicy;Request dto.OpenAIResponsesRequest;CompareSchema bool `json:"compare_schema"`}
  if err=kitutil.Unmarshal(data,&cases);err!=nil{panic(err)}
  var output []map[string]any
  for _,test:=range cases {
@@ -27,6 +31,7 @@ func main() {
   if err==nil {
    body,_:=kitutil.Marshal(result.Value)
    record["contents"]=gjson.GetBytes(body,"contents").Value()
+   if test.CompareSchema {record["function_schema"]=gjson.GetBytes(body,"tools.0.functionDeclarations.0.parametersJsonSchema").Value();record["response_schema"]=gjson.GetBytes(body,"generationConfig.responseJsonSchema").Value()}
    record["tool_config"]=gjson.GetBytes(body,"toolConfig").Value()
    functions,hosted:=[]string{},[]string{}
    for _,tool:=range gjson.GetBytes(body,"tools").Array(){
@@ -38,5 +43,5 @@ func main() {
  }
  encoded,err:=kitutil.Marshal(output);if err!=nil{panic(err)}
  if err=os.WriteFile(os.Args[2],encoded,0600);err!=nil{panic(err)}
- fmt.Printf("Generated %d reference cases from upstream 718a4e7f97\n",len(output))
+ fmt.Printf("Generated %d reference cases from upstream 7d8b91268d\n",len(output))
 }

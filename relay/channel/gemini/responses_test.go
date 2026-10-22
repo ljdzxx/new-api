@@ -200,6 +200,9 @@ func TestGeminiResponsesStreamLifecycleAndUsage(t *testing.T) {
 		switch e.Get("type").String() {
 		case "response.output_item.added":
 			added[e.Get("output_index").Int()] = e.Get("item.id").String()
+			if e.Get("item.type").String() == "reasoning" {
+				require.Equal(t, "[]", e.Get("item.summary").Raw, "strict Responses clients require summary on the first reasoning item")
+			}
 		case "response.output_item.done":
 			done[e.Get("output_index").Int()] = e.Get("item.id").String()
 		}
