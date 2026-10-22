@@ -17,13 +17,12 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/relay/channel/openrouter"
+	"github.com/QuantumNous/new-api/relay/claudethinking"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relay/reasonmap"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
-	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -114,7 +113,7 @@ func maybeMarkClaudeRefusal(c *gin.Context, stopReason string) {
 	}
 }
 
-func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRequest) (*dto.ClaudeRequest, error) {
+func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRequest, relayInfos ...*relaycommon.RelayInfo) (*dto.ClaudeRequest, error) {
 	claudeTools := make([]any, 0, len(textRequest.Tools))
 
 	for _, tool := range textRequest.Tools {
@@ -223,94 +222,12 @@ func RequestOpenAI2ClaudeMessage(c *gin.Context, textRequest dto.GeneralOpenAIRe
 		claudeRequest.MaxTokens = &defaultMaxTokens
 	}
 
-	if baseModel, effortLevel, ok := reasoning.TrimEffortSuffix(textRequest.Model); ok && effortLevel != "" &&
-		(strings.HasPrefix(textRequest.Model, "claude-opus-4-6") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-7") ||
-			strings.HasPrefix(textRequest.Model, "claude-opus-4-8")) {
-		claudeRequest.Model = baseModel
-		claudeRequest.Thinking = &dto.Thinking{
-			Type: "adaptive",
-		}
-		claudeRequest.OutputConfig = json.RawMessage(fmt.Sprintf(`{"effort":"%s"}`, effortLevel))
-		if strings.HasPrefix(baseModel, "claude-opus-4-7") ||
-			strings.HasPrefix(baseModel, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject non-default temperature/top_p/top_k with 400
-			// and defaults display to "omitted"; restore the 4.6 visible summary.
-			claudeRequest.Thinking.Display = "summarized"
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
-		} else {
-			claudeRequest.TopP = nil
-			claudeRequest.Temperature = common.GetPointer[float64](1.0)
-		}
-	} else if model_setting.GetClaudeSettings().ThinkingAdapterEnabled &&
-		strings.HasSuffix(textRequest.Model, "-thinking") {
-
-		trimmedModel := strings.TrimSuffix(textRequest.Model, "-thinking")
-		if strings.HasPrefix(trimmedModel, "claude-opus-4-7") ||
-			strings.HasPrefix(trimmedModel, "claude-opus-4-8") {
-			// Opus 4.7/4.8 reject thinking.type="enabled"; use adaptive at high effort.
-			claudeRequest.Thinking = &dto.Thinking{Type: "adaptive", Display: "summarized"}
-			claudeRequest.OutputConfig = json.RawMessage(`{"effort":"high"}`)
-			claudeRequest.Temperature = nil
-			claudeRequest.TopP = nil
-			claudeRequest.TopK = nil
-		} else {
-			// 因为BudgetTokens 必须大于1024
-			if claudeRequest.MaxTokens == nil || *claudeRequest.MaxTokens < 1280 {
-				claudeRequest.MaxTokens = common.GetPointer[uint](1280)
-			}
-
-			// BudgetTokens 为 max_tokens 的 80%
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](int(float64(*claudeRequest.MaxTokens) * model_setting.GetClaudeSettings().ThinkingAdapterBudgetTokensPercentage)),
-			}
-			// TODO: 临时处理
-			// https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#important-considerations-when-using-extended-thinking
-			claudeRequest.TopP = nil
-			claudeRequest.Temperature = common.GetPointer[float64](1.0)
-		}
-		if !model_setting.ShouldPreserveThinkingSuffix(textRequest.Model) {
-			claudeRequest.Model = trimmedModel
-		}
+	var thinkingInfo *relaycommon.RelayInfo
+	if len(relayInfos) > 0 {
+		thinkingInfo = relayInfos[0]
 	}
-
-	if textRequest.ReasoningEffort != "" {
-		switch textRequest.ReasoningEffort {
-		case "low":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](1280),
-			}
-		case "medium":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](2048),
-			}
-		case "high":
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: common.GetPointer[int](4096),
-			}
-		}
-	}
-
-	// 指定了 reasoning 参数,覆盖 budgetTokens
-	if textRequest.Reasoning != nil {
-		var reasoning openrouter.RequestReasoning
-		if err := common.Unmarshal(textRequest.Reasoning, &reasoning); err != nil {
-			return nil, err
-		}
-
-		budgetTokens := reasoning.MaxTokens
-		if budgetTokens > 0 {
-			claudeRequest.Thinking = &dto.Thinking{
-				Type:         "enabled",
-				BudgetTokens: &budgetTokens,
-			}
-		}
+	if err := claudethinking.ApplyOpenAI(c, &claudeRequest, &textRequest, thinkingInfo); err != nil {
+		return nil, err
 	}
 
 	if textRequest.Stop != nil {

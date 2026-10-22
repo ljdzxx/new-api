@@ -5,12 +5,68 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/require"
 )
 
 func commonPointer[T any](value T) *T {
 	return &value
+}
+
+func TestRequestOpenAI2ClaudeMessage_UpstreamThinkingRules(t *testing.T) {
+	for _, tc := range []struct {
+		name, model, effort, reasoning, wantModel, wantType, wantEffort string
+	}{
+		{name: "omitted", model: "claude-opus-5-5", wantModel: "claude-opus-5-5"},
+		{name: "thinking default", model: "claude-opus-5-5-thinking", wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "medium"},
+		{name: "dotted default", model: "claude-opus-5.5-thinking", wantModel: "claude-opus-5.5", wantType: "adaptive", wantEffort: "medium"},
+		{name: "explicit low", model: "claude-opus-5-5", effort: "low", wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "low"},
+		{name: "explicit max", model: "claude-opus-5-5", effort: "max", wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "max"},
+		{name: "suffix wins", model: "claude-opus-5-5-medium", effort: "high", wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "medium"},
+		{name: "bare thinking preserves effort", model: "claude-opus-5-5-thinking", effort: "low", wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "low"},
+		{name: "budget low", model: "claude-opus-5-5", reasoning: `{"max_tokens":1024}`, wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "low"},
+		{name: "budget medium", model: "claude-opus-5-5", reasoning: `{"max_tokens":8192}`, wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "medium"},
+		{name: "budget high", model: "claude-opus-5-5", reasoning: `{"max_tokens":8193}`, wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "high"},
+		{name: "explicit false", model: "claude-opus-5-5", reasoning: `{"enabled":false}`, wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "low"},
+		{name: "explicit zero", model: "claude-opus-5-5", reasoning: `{"max_tokens":0}`, wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "low"},
+		{name: "nested enabled default", model: "claude-opus-5-5", reasoning: `{"enabled":true}`, wantModel: "claude-opus-5-5", wantType: "adaptive", wantEffort: "medium"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{OriginModelName: tc.model, ChannelMeta: &relaycommon.ChannelMeta{}}
+			req, err := RequestOpenAI2ClaudeMessage(nil, dto.GeneralOpenAIRequest{
+				Model: tc.model, ReasoningEffort: tc.effort, Reasoning: []byte(tc.reasoning),
+				Temperature: commonPointer(0.7), TopP: commonPointer(0.9), TopK: commonPointer(40),
+				Messages: []dto.Message{{Role: "user", Content: "hello"}},
+			}, info)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantModel, req.Model)
+			require.Equal(t, tc.wantEffort, req.GetEfforts())
+			require.Nil(t, req.Temperature)
+			require.Nil(t, req.TopP)
+			require.Nil(t, req.TopK)
+			if tc.wantType == "" {
+				require.Nil(t, req.Thinking)
+				require.Equal(t, "medium", info.ReasoningEffort)
+			} else {
+				require.NotNil(t, req.Thinking)
+				require.Equal(t, tc.wantType, req.Thinking.Type)
+				require.Nil(t, req.Thinking.BudgetTokens)
+				require.Equal(t, tc.wantEffort, info.ReasoningEffort)
+			}
+			body, err := common.Marshal(req)
+			require.NoError(t, err)
+			var payload map[string]any
+			require.NoError(t, common.Unmarshal(body, &payload))
+			if tc.wantType == "" {
+				require.NotContains(t, payload, "thinking")
+				require.NotContains(t, payload, "output_config")
+			} else {
+				require.NotContains(t, payload["thinking"], "budget_tokens")
+			}
+		})
+	}
 }
 
 func TestFormatClaudeResponseInfo_MessageStart(t *testing.T) {

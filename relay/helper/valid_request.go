@@ -120,6 +120,10 @@ func GetAndValidateEmbeddingRequest(c *gin.Context, relayMode int) (*dto.Embeddi
 // overflow the conversion and corrupt billing.
 const maxTokensLimit = math.MaxInt32 / 2
 
+// MaxTokensLimit lets request converters reuse the validation ceiling when
+// deriving max_tokens from another user-controlled field, such as a budget.
+const MaxTokensLimit = maxTokensLimit
+
 func exceedsMaxTokensLimit(values ...*uint) bool {
 	for _, v := range values {
 		if lo.FromPtrOr(v, uint(0)) > maxTokensLimit {
