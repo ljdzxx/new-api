@@ -197,6 +197,17 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 	if request.Input == nil {
 		return nil, errors.New("input is required")
 	}
+	// Content parts cannot be represented by this text embedding adaptor.
+	// Reject them before ParseInput can silently drop or stringify them.
+	if items, ok := request.Input.([]any); ok {
+		for _, item := range items {
+			if _, isPart := item.(map[string]any); isPart {
+				return nil, types.NewErrorWithStatusCode(
+					errors.New("gemini embedding models accept only plain text input; content parts are not supported"),
+					types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
+		}
+	}
 
 	inputs := request.ParseInput()
 	if len(inputs) == 0 {
