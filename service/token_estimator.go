@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/QuantumNous/new-api/common"
 )
 
 // Provider 定义模型厂商大类
@@ -35,7 +37,8 @@ type multipliers struct {
 var (
 	multipliersMap = map[Provider]multipliers{
 		Gemini: {
-			Word: 1.15, Number: 2.8, CJK: 0.68, Symbol: 0.38, MathSymbol: 1.05, URLDelim: 1.2, AtSign: 2.5, Emoji: 1.08, Newline: 1.15, Space: 0.2, BasePad: 0,
+			// Upstream tokenkit bb28f2ccad, calibrated on agent traffic.
+			Word: 0.89, Number: 2.42, CJK: 0.93, Symbol: 0.65, MathSymbol: 1.05, URLDelim: 1.3, AtSign: 2.5, Emoji: 1.08, Newline: 1.28, Space: 0, BasePad: 0,
 		},
 		Claude: {
 			Word: 1.13, Number: 1.63, CJK: 1.21, Symbol: 0.4, MathSymbol: 4.52, URLDelim: 1.26, AtSign: 2.82, Emoji: 2.6, Newline: 0.89, Space: 0.39, BasePad: 0,
@@ -67,6 +70,11 @@ func getMultipliers(p Provider) multipliers {
 
 // EstimateToken 计算 Token 数量
 func EstimateToken(provider Provider, text string) int {
+	count, _ := estimateTokenChecked(provider, text)
+	return count
+}
+
+func estimateTokenChecked(provider Provider, text string) (int, *common.QuotaClamp) {
 	m := getMultipliers(provider)
 	var count float64
 
@@ -144,7 +152,7 @@ func EstimateToken(provider Provider, text string) int {
 	}
 
 	// 向上取整并加上基础 padding
-	return int(math.Ceil(count)) + m.BasePad
+	return common.QuotaFromFloatChecked(math.Ceil(count) + float64(m.BasePad))
 }
 
 // 辅助：判断是否为 CJK 字符

@@ -48,3 +48,23 @@ func TestChatGeminiPreservesExplicitZero(t *testing.T) {
 		}
 	}
 }
+
+func TestResponsesPartialToolCallsEstimateOnce(t *testing.T) {
+	var counts []int
+	for _, frames := range [][]string{
+		{`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"x":"hello world"}}}]},"finishReason":"STOP"}]}`},
+		{
+			`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","partialArgs":[{"jsonPath":"$.x","stringValue":"hello "}],"willContinue":true}}]}}]}`,
+			`{"candidates":[{"content":{"parts":[{"functionCall":{"name":"lookup","args":{"x":"hello world"},"willContinue":false}}]},"finishReason":"STOP"}]}`,
+		},
+	} {
+		c, recorder, info := responsesTestContext()
+		info.IsStream = true
+		usage, err := GeminiResponsesStreamHandler(c, info, geminiSSE(frames...))
+		require.Nil(t, err, recorder.Body.String())
+		require.Positive(t, usage.CompletionTokens)
+		require.True(t, usage.BillingUsage.Estimated)
+		counts = append(counts, usage.CompletionTokens)
+	}
+	require.Equal(t, counts[0], counts[1], "fragmentation must not change estimated output tokens")
+}

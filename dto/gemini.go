@@ -67,46 +67,7 @@ type LatLng struct {
 }
 
 func (r *GeminiChatRequest) GetTokenCountMeta() *types.TokenCountMeta {
-	var files []*types.FileMeta = make([]*types.FileMeta, 0)
-
-	var maxTokens int
-
-	if r.GenerationConfig.MaxOutputTokens != nil && *r.GenerationConfig.MaxOutputTokens > 0 {
-		maxTokens = int(*r.GenerationConfig.MaxOutputTokens)
-	}
-
-	var inputTexts []string
-	for _, content := range r.Contents {
-		for _, part := range content.Parts {
-			if part.Text != "" {
-				inputTexts = append(inputTexts, part.Text)
-			}
-			if source := part.InlineData.ToFileSource(); source != nil {
-				mimeType := part.InlineData.MimeType
-				var fileType types.FileType
-				if strings.HasPrefix(mimeType, "image/") {
-					fileType = types.FileTypeImage
-				} else if strings.HasPrefix(mimeType, "audio/") {
-					fileType = types.FileTypeAudio
-				} else if strings.HasPrefix(mimeType, "video/") {
-					fileType = types.FileTypeVideo
-				} else {
-					fileType = types.FileTypeFile
-				}
-				files = append(files, &types.FileMeta{
-					FileType: fileType,
-					Source:   source,
-				})
-			}
-		}
-	}
-
-	inputText := strings.Join(inputTexts, "\n")
-	return &types.TokenCountMeta{
-		CombineText: inputText,
-		Files:       files,
-		MaxTokens:   maxTokens,
-	}
+	return r.geminiTokenCountMeta()
 }
 
 func (r *GeminiChatRequest) IsStream(c *gin.Context) bool {

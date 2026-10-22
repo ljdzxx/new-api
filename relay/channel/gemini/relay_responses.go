@@ -158,7 +158,6 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 		}
 		grounding.observe(response)
 		grounding.commit(info)
-		outputText.WriteString(geminiResponseUsageText(response))
 		imageCount += geminiResponseInlineImageCount(response)
 		if apiErr = geminiResponsesBlocked(c, response); apiErr != nil {
 			streamErr = apiErr
@@ -167,6 +166,9 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 		}
 		prepared, err := partial.preparePartialFunctionCalls(response)
 		if err == nil {
+			// Count the reconstructed call once, not each partialArgs frame
+			// (whose args may be nil or an overlapping cumulative snapshot).
+			outputText.WriteString(geminiResponseUsageText(prepared))
 			err = state.consume(prepared)
 		}
 		if err != nil {

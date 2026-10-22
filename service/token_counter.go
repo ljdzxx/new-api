@@ -222,6 +222,12 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 	}
 
 	model := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+	if strings.Contains(strings.ToLower(model), "gemini") {
+		if geminiMeta := dto.GeminiEstimateTokenMeta(info.Request); geminiMeta != nil {
+			meta = geminiMeta
+		}
+		return estimateGeminiRequestToken(c, meta, info, model)
+	}
 	tkm := 0
 
 	if meta.TokenType == types.TokenTypeTextNumber {
