@@ -22,6 +22,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	"github.com/QuantumNous/new-api/relay/channel/advancedcustom"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -202,10 +203,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				}
 				return
 			}
+			if relayFormat == types.RelayFormatGemini && c.GetBool(advancedcustom.StreamStartedKey) {
+				// Once Gemini SSE has started, keep errors in SSE framing rather
+				// than appending a bare JSON document to the stream.
+				if err := helper.ObjectData(c, gin.H{"error": gin.H{"code": newAPIError.StatusCode, "message": newAPIError.Error(), "status": "INTERNAL"}}); err != nil {
+					logger.LogWarn(c, "failed to write Gemini stream error: "+err.Error())
+				}
+				return
+			}
 			if types.IsSkipRetryError(newAPIError) || newAPIError.StatusCode < http.StatusInternalServerError {
 				c.Header("x-should-retry", "false")
 			}
-			if relayFormat == types.RelayFormatOpenAIResponses && !c.Writer.Written() {
+			if (relayFormat == types.RelayFormatOpenAIResponses || relayFormat == types.RelayFormatGemini && common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeAdvancedCustom) && !c.Writer.Written() {
 				// The upstream scanner may have prepared SSE headers before the
 				// first valid event. Uncommitted errors still use a JSON envelope.
 				c.Header("Content-Type", "application/json")

@@ -59,6 +59,8 @@ import {
   selectFilter,
 } from '../../../../helpers';
 import ServiceTierBillingEditor from './ServiceTierBillingEditor';
+import AdvancedCustomEditor from './AdvancedCustomEditor';
+import { writeAdvancedCustomSettings } from '../../../../helpers/advancedCustomSettings';
 import {
   readVertexChannelSettings,
   writeVertexChannelSettings,
@@ -327,6 +329,8 @@ const EditChannelModal = (props) => {
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
     vertex_project_id: '',
+    advanced_custom: undefined,
+    tool_loss_policy: 'allow',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
     aws_key_type: 'ak_sk',
     // 企业账户设置
@@ -1091,6 +1095,8 @@ const EditChannelModal = (props) => {
           data.azure_responses_version =
             parsedSettings.azure_responses_version || '';
           // 读取 Vertex 密钥格式
+          data.advanced_custom = parsedSettings.advanced_custom;
+          data.tool_loss_policy = parsedSettings.tool_loss_policy || 'allow';
           Object.assign(
             data,
             readVertexChannelSettings(data.type, parsedSettings),
@@ -2136,6 +2142,7 @@ const EditChannelModal = (props) => {
 
     // type === 41 (Vertex): 始终保存 vertex_key_type 到 settings，避免编辑时被重置
     settings = writeVertexChannelSettings(settings, localInputs);
+    settings = writeAdvancedCustomSettings(settings, localInputs);
 
     // type === 1 (OpenAI) 或 type === 14 (Claude): 设置字段透传控制（显式保存布尔值）
     if (localInputs.type === 1 || localInputs.type === 14) {
@@ -2205,6 +2212,8 @@ const EditChannelModal = (props) => {
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
     delete localInputs.vertex_project_id;
+    delete localInputs.advanced_custom;
+    delete localInputs.tool_loss_policy;
     // 顶层的 aws_key_type 不应发送给后端
     delete localInputs.aws_key_type;
     // 清理字段透传控制的临时字段
@@ -3243,6 +3252,39 @@ const EditChannelModal = (props) => {
                         formApi={formApiRef.current}
                         extraText={t('设置默认地区和特定模型的专用地区')}
                       />
+                    )}
+
+                    {inputs.type === 59 && (
+                      <>
+                        <AdvancedCustomEditor
+                          value={inputs.advanced_custom}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'advanced_custom',
+                              value,
+                            )
+                          }
+                        />
+                        <Form.Select
+                          field='tool_loss_policy'
+                          label={t('协议转换损失策略')}
+                          value={inputs.tool_loss_policy || 'allow'}
+                          optionList={[
+                            { value: 'allow', label: t('允许转换并记录差异') },
+                            {
+                              value: 'safe',
+                              label: t('拒绝改变工具语义的转换'),
+                            },
+                            { value: 'strict', label: t('拒绝所有有损转换') },
+                          ]}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'tool_loss_policy',
+                              value,
+                            )
+                          }
+                        />
+                      </>
                     )}
 
                     {inputs.type === 21 && (

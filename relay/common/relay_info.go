@@ -90,6 +90,8 @@ type TokenCountMeta struct {
 }
 
 type RelayInfo struct {
+	UpstreamUsageReported bool // An explicit upstream usage object, including all-zero counters.
+
 	TokenId           int
 	TokenKey          string
 	TokenGroup        string
@@ -222,6 +224,7 @@ type RelayInfo struct {
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
+	info.UpstreamUsageReported = false
 	// 渠道重试不继承前一次 Gemini 搜索计数。
 	if info.ResponsesUsageInfo != nil {
 		delete(info.ResponsesUsageInfo.BuiltInTools, GeminiGoogleSearchQueryTool)

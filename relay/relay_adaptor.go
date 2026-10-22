@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/advancedcustom"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
 	"github.com/QuantumNous/new-api/relay/channel/aws"
 	"github.com/QuantumNous/new-api/relay/channel/baidu"
@@ -12,7 +13,6 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/claude"
 	"github.com/QuantumNous/new-api/relay/channel/cloudflare"
 	"github.com/QuantumNous/new-api/relay/channel/codex"
-	"github.com/QuantumNous/new-api/relay/channel/xiaomi"
 	"github.com/QuantumNous/new-api/relay/channel/cohere"
 	"github.com/QuantumNous/new-api/relay/channel/coze"
 	"github.com/QuantumNous/new-api/relay/channel/deepseek"
@@ -45,6 +45,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/vertex"
 	"github.com/QuantumNous/new-api/relay/channel/volcengine"
 	"github.com/QuantumNous/new-api/relay/channel/xai"
+	"github.com/QuantumNous/new-api/relay/channel/xiaomi"
 	"github.com/QuantumNous/new-api/relay/channel/xunfei"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
@@ -53,6 +54,8 @@ import (
 
 func GetAdaptor(apiType int) channel.Adaptor {
 	switch apiType {
+	case constant.APITypeAdvancedCustom:
+		return &advancedcustom.Adaptor{}
 	case constant.APITypeAli:
 		return &ali.Adaptor{}
 	case constant.APITypeAnthropic:

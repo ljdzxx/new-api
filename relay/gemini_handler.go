@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relay/channel/advancedcustom"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -140,7 +141,7 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	var requestBody io.Reader
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	if info.ChannelType != constant.ChannelTypeAdvancedCustom && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
@@ -175,6 +176,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		// 使用 ConvertGeminiRequest 转换请求格式
 		convertedRequest, err := adaptor.ConvertGeminiRequest(c, info, request)
 		if err != nil {
+			if info.ChannelType == constant.ChannelTypeAdvancedCustom {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeConvertRequestFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
 		relaycommon.AppendRequestConversionFromRequest(info, convertedRequest)
@@ -225,6 +229,12 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	usage, openaiErr := adaptor.DoResponse(c, resp.(*http.Response), info)
 	if openaiErr != nil {
+		if info.ChannelType == constant.ChannelTypeAdvancedCustom && c.GetBool(advancedcustom.StreamStartedKey) {
+			types.ErrOptionWithSkipRetry()(openaiErr)
+			if partial, ok := usage.(*dto.Usage); ok && partial != nil {
+				service.PostTextConsumeQuota(c, info, partial, nil)
+			}
+		}
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
 		return openaiErr
 	}

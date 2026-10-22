@@ -4,6 +4,9 @@ import (
 	"math/rand"
 	"sort"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
@@ -15,6 +18,22 @@ func ModelHealthApplies(c *gin.Context) bool {
 }
 
 func FilterModelHealthForRequest(c *gin.Context, channels []*model.Channel, name string) ([]*model.Channel, error) {
+	if c != nil && c.Request != nil && c.Request.URL != nil {
+		filtered := make([]*model.Channel, 0, len(channels))
+		for _, ch := range channels {
+			if ch != nil && ch.Type == constant.ChannelTypeAdvancedCustom {
+				var settings dto.ChannelOtherSettings
+				if common.UnmarshalJsonStr(ch.OtherSettings, &settings) != nil {
+					continue
+				}
+				if _, ok := settings.AdvancedCustom.MatchPath(c.Request.URL.Path); !ok {
+					continue
+				}
+			}
+			filtered = append(filtered, ch)
+		}
+		channels = filtered
+	}
 	if !ModelHealthApplies(c) {
 		return channels, nil
 	}
@@ -35,14 +54,11 @@ func CheckModelHealthForRequest(c *gin.Context, ch *model.Channel, name string) 
 // Filter before choosing a priority so blocked top-priority channels cannot hide
 // healthy lower-priority channels. This works with both DB and memory routing.
 func selectChannelWithModelHealth(c *gin.Context, group, name string, retry int, allowed map[string]struct{}) (*model.Channel, error) {
-	if !ModelHealthApplies(c) {
-		return model.GetRandomSatisfiedChannelWithNameFilter(group, name, retry, allowed)
-	}
 	channels, err := model.ListSatisfiedChannelsWithNameFilter(group, name, allowed)
 	if err != nil {
 		return nil, err
 	}
-	channels, err = model.FilterModelHealthChannels(channels, name)
+	channels, err = FilterModelHealthForRequest(c, channels, name)
 	if err != nil || len(channels) == 0 {
 		return nil, err
 	}
@@ -63,10 +79,16 @@ func selectChannelWithModelHealth(c *gin.Context, group, name string, retry int,
 	}
 	selected := make([]*model.Channel, 0)
 	total := 0
+	// Preserve the database selector's historical +10 weight when health
+	// filtering is disabled; memory routing uses its existing smoothing below.
+	dbAdjustment := 0
+	if !common.MemoryCacheEnabled && !ModelHealthApplies(c) {
+		dbAdjustment = 10
+	}
 	for _, ch := range channels {
 		if ch.GetPriority() == ordered[retry] {
 			selected = append(selected, ch)
-			total += ch.GetWeight()
+			total += ch.GetWeight() + dbAdjustment
 		}
 	}
 	factor, adjustment := 1, 0
@@ -77,7 +99,7 @@ func selectChannelWithModelHealth(c *gin.Context, group, name string, retry int,
 	}
 	weight := rand.Intn(total * factor)
 	for _, ch := range selected {
-		weight -= ch.GetWeight()*factor + adjustment
+		weight -= (ch.GetWeight()+dbAdjustment)*factor + adjustment
 		if weight < 0 {
 			return ch, nil
 		}

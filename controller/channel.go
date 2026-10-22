@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -450,6 +451,28 @@ func validateTwoFactorAuth(twoFA *model.TwoFA, code string) bool {
 func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
+	}
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
+		var settings dto.ChannelOtherSettings
+		if err := common.UnmarshalJsonStr(channel.OtherSettings, &settings); err != nil {
+			return fmt.Errorf("invalid advanced_custom settings: %w", err)
+		}
+		if err := settings.AdvancedCustom.Validate(); err != nil {
+			return err
+		}
+		switch settings.ToolLossPolicy {
+		case "", "allow", "safe", "strict":
+		default:
+			return fmt.Errorf("invalid conversion loss policy")
+		}
+		for _, route := range settings.AdvancedCustom.Routes {
+			if strings.HasPrefix(route.UpstreamPath, "/") {
+				base, err := url.Parse(channel.GetBaseURL())
+				if err != nil || base.Host == "" || (base.Scheme != "https" && base.Scheme != "http") || base.User != nil || base.RawQuery != "" || base.Fragment != "" {
+					return fmt.Errorf("advanced custom relative routes require an HTTP(S) base URL without query or fragment")
+				}
+			}
+		}
 	}
 	if channel.ModelRatio != nil && *channel.ModelRatio < 0 {
 		return fmt.Errorf("渠道模型倍率不能小于 0")

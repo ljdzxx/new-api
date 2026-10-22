@@ -189,6 +189,7 @@ const (
 )
 
 type ChannelOtherSettings struct {
+	AdvancedCustom *AdvancedCustomConfig      `json:"advanced_custom,omitempty"`
 	ToolLossPolicy types.ConversionLossPolicy `json:"tool_loss_policy,omitempty"`
 
 	VertexProjectID                       string                    `json:"vertex_project_id,omitempty"` // Optional project for Vertex API key mode.

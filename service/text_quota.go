@@ -75,6 +75,7 @@ type textQuotaSummary struct {
 	PolicyCalculation         *billing_policy.BillingCalculation
 	PolicyError               error
 	MissingUsagePreConsumed   bool
+	WebSearchBillingModel     string
 }
 
 func cacheWriteTokensTotal(summary textQuotaSummary) int {
@@ -107,7 +108,11 @@ func billingPolicyToolUsage(ctx *gin.Context, summary textQuotaSummary) map[stri
 	usage := make(map[string]int64)
 	if summary.WebSearchCallCount > 0 {
 		key := billing_policy.ToolWebSearchPremium
-		if strings.HasPrefix(summary.ModelName, "o3") || strings.HasPrefix(summary.ModelName, "o4") || strings.HasPrefix(summary.ModelName, "gpt-5") {
+		searchModel := summary.WebSearchBillingModel
+		if searchModel == "" {
+			searchModel = summary.ModelName
+		}
+		if strings.HasPrefix(searchModel, "o3") || strings.HasPrefix(searchModel, "o4") || strings.HasPrefix(searchModel, "gpt-5") {
 			key = billing_policy.ToolWebSearchStandard
 		}
 		usage[key] = int64(summary.WebSearchCallCount)
@@ -172,7 +177,7 @@ func preConsumedQuotaForRelay(relayInfo *relaycommon.RelayInfo) int {
 }
 
 func shouldKeepPreConsumedQuotaForMissingStreamUsage(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, totalTokens int) (int, bool) {
-	if relayInfo == nil || !relayInfo.IsStream || totalTokens != 0 {
+	if relayInfo == nil || !relayInfo.IsStream || totalTokens != 0 || relayInfo.UpstreamUsageReported {
 		return 0, false
 	}
 	if relayInfo.GetFinalRequestRelayFormat() != types.RelayFormatOpenAIResponses {
@@ -341,7 +346,12 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	if relayInfo.ResponsesUsageInfo != nil {
 		if webSearchTool, exists := relayInfo.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolWebSearchPreview]; exists && webSearchTool.CallCount > 0 {
 			summary.WebSearchCallCount = webSearchTool.CallCount
-			summary.WebSearchPrice = operation_setting.GetWebSearchPricePerThousand(summary.ModelName, webSearchTool.SearchContextSize)
+			searchModel := summary.ModelName
+			if relayInfo.ChannelMeta != nil && relayInfo.ChannelType == constant.ChannelTypeAdvancedCustom {
+				searchModel = relayInfo.UpstreamModelName
+			}
+			summary.WebSearchPrice = operation_setting.GetWebSearchPricePerThousand(searchModel, webSearchTool.SearchContextSize)
+			summary.WebSearchBillingModel = searchModel
 			dWebSearchQuota = decimal.NewFromFloat(summary.WebSearchPrice).
 				Mul(decimal.NewFromInt(int64(webSearchTool.CallCount))).
 				Div(decimal.NewFromInt(1000)).Mul(dGroupRatio).Mul(dQuotaPerUnit)

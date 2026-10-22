@@ -47,6 +47,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 	if normalized != "" {
 		return normalized
 	}
+	if channel != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
+		return string(constant.EndpointTypeGemini)
+	}
 	if strings.HasSuffix(modelName, ratio_setting.CompactModelSuffix) {
 		return string(constant.EndpointTypeOpenAIResponseCompact)
 	}
@@ -136,6 +139,15 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 		testModel = ratio_setting.WithCompactModelSuffix(testModel)
 	}
 
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
+		config := channel.GetOtherSettings().AdvancedCustom
+		if config != nil && len(config.Routes) > 0 {
+			requestPath = strings.ReplaceAll(config.Routes[0].IncomingPath, "{model}", testModel)
+			if isStream {
+				requestPath = strings.ReplaceAll(requestPath, ":generateContent", ":streamGenerateContent")
+			}
+		}
+	}
 	c.Request = &http.Request{
 		Method: "POST",
 		URL:    &url.URL{Path: requestPath}, // 使用动态路径
@@ -389,7 +401,9 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 		}
 	default:
 		// Chat/Completion 等其他请求类型
-		if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
+		if geminiReq, ok := request.(*dto.GeminiChatRequest); ok {
+			convertedRequest, err = adaptor.ConvertGeminiRequest(c, info, geminiReq)
+		} else if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
 			convertedRequest, err = adaptor.ConvertOpenAIRequest(c, info, generalReq)
 		} else {
 			return testResult{
@@ -658,6 +672,9 @@ func setChannelTestRequestBody(c *gin.Context, request dto.Request) error {
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {
+	if channel != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
+		return &dto.GeminiChatRequest{Contents: []dto.GeminiChatContent{{Role: "user", Parts: []dto.GeminiPart{{Text: "hi"}}}}, GenerationConfig: dto.GeminiChatGenerationConfig{MaxOutputTokens: common.GetPointer(uint(16))}}
+	}
 	testResponsesInput := json.RawMessage(`[{"role":"user","content":[{"type":"input_text","text":"hi"}]}]`)
 
 	// 根据端点类型构建不同的测试请求
