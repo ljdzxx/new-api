@@ -94,7 +94,7 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 
 旧 `screenshot_url`、`max_output_tokens` 配置被忽略，重新保存配置后去除。
 
-监控不提供“测试最大输出 token”配置，也不在 Responses / Messages 探测请求中发送 `max_output_tokens` / `max_tokens`。旧配置中的此字段会被忽略，重新保存时移除。SVG、逻辑题与可用性检测均采用此行为。Messages 转发仍遵循本站 Claude 模型默认参数设置；模型提供方的输出能力限制和单次请求超时独立生效。
+监控不提供“测试最大输出 token”配置。Responses 探测请求不发送 `max_output_tokens` / `max_tokens`；Messages 协议要求显式携带 `max_tokens`，因此探测请求使用本站 Claude 模型默认参数设置中的模型专属值或 `default` 值（初始为 8192），确保请求体透传时也包含该字段。默认值必须大于 0 且不超过中转请求的 max-tokens 校验上限，否则检测返回 `invalid_max_tokens`，不发起请求。旧监控配置中的测试输出限制字段会被忽略，重新保存时移除。SVG、逻辑题与可用性检测均采用上述行为；模型提供方的输出能力限制和单次请求超时独立生效。
 
 ## 旧截图部署（历史参考）
 

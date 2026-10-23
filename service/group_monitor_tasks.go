@@ -15,7 +15,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/groupmonitor"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	monitorconfig "github.com/QuantumNous/new-api/setting/group_monitor"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 )
@@ -67,7 +69,13 @@ func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, mode
 	}
 	payload := map[string]any{"model": model, "input": prompt, "stream": true, "store": false}
 	if protocol == "messages" {
-		payload = map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "stream": true}
+		// Messages requires max_tokens even when the gateway forwards the body verbatim.
+		maxTokens := model_setting.GetClaudeSettings().GetDefaultMaxTokens(model)
+		if maxTokens <= 0 || maxTokens > relayhelper.MaxTokensLimit {
+			result.Error = "invalid_max_tokens"
+			return result, ""
+		}
+		payload = map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "stream": true, "max_tokens": maxTokens}
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {

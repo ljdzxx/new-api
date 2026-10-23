@@ -280,6 +280,15 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio := globalRatioConfig.effective(int64(promptTokens))
 
 	groupRatioInfo := HandleGroupRatio(c, info)
+	quotaSetting := operation_setting.GetQuotaSetting()
+	preConsumePolicy := "formula"
+	preConsumePolicyEnabled := quotaSetting != nil && quotaSetting.EnablePreConsumeMinBalance
+	if preConsumePolicyEnabled {
+		preConsumePolicy = "minimum_balance"
+	}
+	logPreConsumeCalculation := !usePrice && (globalModelRatio != 1 || common.DebugTraceEnabledForContext(c) || preConsumePolicyEnabled)
+	preConsumeCalculationPath := "formula"
+	var preConsumeDetails, preConsumeFormula string
 
 	var preConsumedQuota int
 	var modelRatio float64
@@ -352,8 +361,12 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			requestContext := billingPolicyRequestContext(c)
 			requestContext.ModelPriceMultiplier = serviceTierRatio
 			estimatedOutputTokens := meta.MaxTokens
+			outputEstimateSource := "max_tokens"
 			if estimatedOutputTokens == 0 && groupRatioInfo.GroupRatio != 0 && globalModelRatio != 0 {
 				estimatedOutputTokens = defaultBillingPolicyPreConsumeOutputTokens
+				outputEstimateSource = "default"
+			} else if estimatedOutputTokens == 0 {
+				outputEstimateSource = "zero_ratio"
 			}
 			scaledInputTokens, err := scaleTokensByGlobalModelRatioStrict(common.Max(promptTokens, common.PreConsumedQuota), globalModelRatio)
 			if err != nil {
@@ -399,39 +412,28 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 			audioCompletionRatio = values.AudioCompletionRatio
 			policyPreConsumeCalculated = true
 			activePolicyTier = calculation.TierID
+			if logPreConsumeCalculation {
+				preConsumeCalculationPath = "billing_policy"
+				// Use the actual calculation, including tier prices and adjustments,
+				// instead of reconstructing a legacy input-only formula.
+				preConsumeDetails = fmt.Sprintf("billing_mode=%s matched_tier=%q raw_input_tokens=%d estimated_output_tokens=%d output_estimate_source=%s scaled_input_tokens=%d scaled_output_tokens=%d line_items=%s service_tier_multiplier=%.10g subtotal_usd=%s policy_adjustment_multiplier=%s total_usd=%s",
+					calculation.Mode, calculation.TierID, common.Max(promptTokens, common.PreConsumedQuota), estimatedOutputTokens, outputEstimateSource,
+					scaledInputTokens, scaledOutputTokens, common.GetJsonString(calculation.LineItems),
+					calculation.ModelPriceMultiplier, calculation.SubtotalUSD, calculation.AdjustmentMultiplier, calculation.TotalUSD)
+				preConsumeFormula = fmt.Sprintf("round_half_away_from_zero(%s USD * quota_per_unit %.10g * group_ratio %.10g)", calculation.TotalUSD, common.QuotaPerUnit, groupRatioInfo.GroupRatio)
+			}
 		} else {
 			ratio := modelRatio * groupRatioInfo.GroupRatio * serviceTierRatio
 			preConsumedQuota, err = common.QuotaFromFloatStrict(float64(scaledPreConsumedTokens) * ratio)
 			if err != nil {
 				return types.PriceData{}, err
 			}
-		}
-		quotaSetting := operation_setting.GetQuotaSetting()
-		preConsumePolicy := "formula"
-		preConsumePolicyEnabled := false
-		if quotaSetting != nil && quotaSetting.EnablePreConsumeMinBalance {
-			preConsumePolicy = "minimum_balance"
-			preConsumePolicyEnabled = true
-		}
-		// Keep this diagnostic visible whenever the optional minimum-balance
-		// policy is enabled, even when the effective global ratio is 1. The
-		// actual funding path is logged by BillingSession after wallet/subscription
-		// selection; this field records the pricing policy that was configured
-		// while the pre-consume quota was calculated.
-		if globalModelRatio != 1 || common.DebugTraceEnabledForContext(c) || preConsumePolicyEnabled {
-			channelID := 0
-			if info.ChannelMeta != nil {
-				channelID = info.ChannelMeta.ChannelId
+			if logPreConsumeCalculation {
+				preConsumeDetails = fmt.Sprintf("raw_preconsume_tokens=%d scaled_preconsume_tokens=%d model_ratio=%.10g service_tier_multiplier=%.10g policy_adjustment_multiplier=%.10g",
+					preConsumedTokens, scaledPreConsumedTokens, modelRatio, serviceTierRatio, policyAdjustmentMultiplier)
+				preConsumeFormula = fmt.Sprintf("truncate(%d tokens * (model_ratio %.10g * group_ratio %.10g * service_tier_multiplier %.10g))",
+					scaledPreConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, serviceTierRatio)
 			}
-			logger.LogInfo(c, fmt.Sprintf(
-				"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s pre_consume_calculation_path=formula pre_consume_policy=%s pre_consume_policy_enabled=%t system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f raw_preconsume_tokens=%d scaled_preconsume_tokens=%d raw_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %.6f scaled_formula=%d tokens * model_ratio %.6f * group_ratio %.6f = quota %d",
-				info.UserId, channelID, info.TokenId, info.OriginModelName,
-				preConsumePolicy, preConsumePolicyEnabled,
-				systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio,
-				preConsumedTokens, scaledPreConsumedTokens,
-				preConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, float64(preConsumedTokens)*modelRatio*groupRatioInfo.GroupRatio,
-				scaledPreConsumedTokens, modelRatio, groupRatioInfo.GroupRatio, preConsumedQuota,
-			))
 		}
 	} else {
 		if meta.ImagePriceRatio != 0 {
@@ -452,8 +454,12 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 		if err != nil {
 			return types.PriceData{}, err
 		}
+		if logPreConsumeCalculation {
+			preConsumeFormula = fmt.Sprintf("truncate(%s * policy_adjustment_multiplier %.10g)", preConsumeFormula, policyAdjustmentMultiplier)
+		}
 	}
 
+	calculatedPreConsumeQuota := preConsumedQuota
 	// check if free model pre-consume is disabled
 	if !operation_setting.GetQuotaSetting().EnableFreeModelPreConsume {
 		// if model price or ratio is 0, do not pre-consume quota
@@ -471,6 +477,23 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 				freeModel = true
 			}
 		}
+	}
+
+	// Log after adjustments and free-model handling so quota_to_pre_consume
+	// matches PriceData. BillingSession separately logs the actual reservation
+	// after minimum-balance/trust and wallet/subscription selection.
+	if logPreConsumeCalculation {
+		channelID := 0
+		if info.ChannelMeta != nil {
+			channelID = info.ChannelMeta.ChannelId
+		}
+		logger.LogInfo(c, fmt.Sprintf(
+			"global model ratio token scaling pre-consume: user_id=%d channel_id=%d token_id=%d model=%s pre_consume_calculation_path=%s pre_consume_policy=%s pre_consume_policy_enabled=%t system_global_model_ratio=%.6f user_global_model_ratio=%.6f channel_model_ratio=%.6f effective_global_model_ratio=%.6f %s quota_formula=%q calculated_quota=%d free_model=%t quota_to_pre_consume=%d",
+			info.UserId, channelID, info.TokenId, info.OriginModelName,
+			preConsumeCalculationPath, preConsumePolicy, preConsumePolicyEnabled,
+			systemGlobalModelRatio, userGlobalModelRatio, channelModelRatio, globalModelRatio,
+			preConsumeDetails, preConsumeFormula, calculatedPreConsumeQuota, freeModel, preConsumedQuota,
+		))
 	}
 
 	priceData := types.PriceData{

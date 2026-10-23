@@ -12,11 +12,14 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/groupmonitor"
+	relayhelper "github.com/QuantumNous/new-api/relay/helper"
 	monitorconfig "github.com/QuantumNous/new-api/setting/group_monitor"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-redis/redis/v8"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,6 +67,10 @@ func TestMonitorRequestUsesResponsesWithoutOutputLimit(t *testing.T) {
 }
 
 func TestMonitorMessagesProtocol(t *testing.T) {
+	settings := model_setting.GetClaudeSettings()
+	original := settings.DefaultMaxTokens
+	settings.DefaultMaxTokens = map[string]int{"default": 8192, "claude-opus-5-5": 4096}
+	t.Cleanup(func() { settings.DefaultMaxTokens = original })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/v1/messages", r.URL.Path)
 		require.Equal(t, "test", r.Header.Get("x-api-key"))
@@ -71,7 +78,14 @@ func TestMonitorMessagesProtocol(t *testing.T) {
 		require.Empty(t, r.Header.Get("Authorization"))
 		var body map[string]any
 		require.NoError(t, common.DecodeJson(r.Body, &body))
-		require.NotContains(t, body, "max_tokens")
+		expectedMaxTokens := 8192
+		if body["model"] == "claude-opus-5-5" {
+			expectedMaxTokens = 4096
+		}
+		if !assert.Equal(t, float64(expectedMaxTokens), body["max_tokens"]) {
+			http.Error(w, "max_tokens is required", http.StatusBadRequest)
+			return
+		}
 		require.NotContains(t, body, "max_output_tokens")
 		require.Equal(t, []any{map[string]any{"role": "user", "content": "question"}}, body["messages"])
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -80,14 +94,29 @@ func TestMonitorMessagesProtocol(t *testing.T) {
 	defer server.Close()
 	cfg := monitorconfig.Default()
 	cfg.BaseURL = server.URL + "/v1/responses"
-	r, answer := runMonitorResponse(context.Background(), cfg, "test", "claude-model", "question", "messages")
-	require.True(t, r.OK, r.Error)
-	require.Equal(t, "42", answer)
-	require.NotNil(t, r.TTFT)
+	for _, model := range []string{"claude-model", "claude-opus-5-5"} {
+		r, answer := runMonitorResponse(context.Background(), cfg, "test", model, "question", "messages")
+		require.True(t, r.OK, r.Error)
+		require.Equal(t, "42", answer)
+		require.NotNil(t, r.TTFT)
+	}
 	for _, body := range []string{`{"type":"error"}`, `{"type":"message_delta","delta":{"stop_reason":"max_tokens"}}`, `{"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}`} {
 		var result MonitorResult
 		_, err := readMonitorSSE(strings.NewReader("data: "+body+"\n\n"), time.Now(), &result, "messages")
 		require.Error(t, err)
+	}
+}
+
+func TestMonitorMessagesRejectsInvalidMaxTokens(t *testing.T) {
+	settings := model_setting.GetClaudeSettings()
+	original := settings.DefaultMaxTokens
+	t.Cleanup(func() { settings.DefaultMaxTokens = original })
+	for _, limit := range []int{-1, 0, relayhelper.MaxTokensLimit + 1} {
+		settings.DefaultMaxTokens = map[string]int{"default": limit}
+		result, answer := runMonitorResponse(context.Background(), monitorconfig.Default(), "test", "claude-opus-5-5", "OK", "messages")
+		require.False(t, result.OK)
+		require.Equal(t, "invalid_max_tokens", result.Error)
+		require.Empty(t, answer)
 	}
 }
 
