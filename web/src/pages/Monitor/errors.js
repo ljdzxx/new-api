@@ -23,8 +23,11 @@ export function monitorFailureMessage(code, t) {
     case 'expected_sse_response':
     case 'invalid_sse_json':
       return t('模型响应格式不正确');
-    case 'response_not_completed':
     case 'response_incomplete':
+      return t('输出达到 token 上限，测试未完成');
+    case 'invalid_max_tokens':
+      return t('监控输出 token 额度无效，请检查监控与 Claude 模型设置');
+    case 'response_not_completed':
     case 'response.incomplete':
       return t('模型响应未完整结束');
     case 'response.failed':

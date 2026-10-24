@@ -40,7 +40,7 @@ func TestMonitorResponseTimeoutIsDistinct(t *testing.T) {
 	cfg.BaseURL = server.URL
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	result, _ := runMonitorResponse(ctx, cfg, "secret", "m", "test")
+	result, _ := runMonitorResponse(ctx, cfg, "secret", "m", "test", "responses", "probe")
 	require.False(t, result.OK)
 	require.Equal(t, "probe_timeout", result.Error)
 	require.ErrorIs(t, result.diagnostic, context.DeadlineExceeded)

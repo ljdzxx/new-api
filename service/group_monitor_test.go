@@ -61,7 +61,7 @@ func TestMonitorRequestUsesResponsesWithoutOutputLimit(t *testing.T) {
 	defer server.Close()
 	cfg := monitorconfig.Default()
 	cfg.BaseURL = server.URL
-	r, _ := runMonitorResponse(context.Background(), cfg, "test", "model", "OK")
+	r, _ := runMonitorResponse(context.Background(), cfg, "test", "model", "OK", "responses", "probe")
 	require.True(t, r.OK)
 	require.NotNil(t, r.TTFT)
 }
@@ -95,7 +95,7 @@ func TestMonitorMessagesProtocol(t *testing.T) {
 	cfg := monitorconfig.Default()
 	cfg.BaseURL = server.URL + "/v1/responses"
 	for _, model := range []string{"claude-model", "claude-opus-5-5"} {
-		r, answer := runMonitorResponse(context.Background(), cfg, "test", model, "question", "messages")
+		r, answer := runMonitorResponse(context.Background(), cfg, "test", model, "question", "messages", "logic")
 		require.True(t, r.OK, r.Error)
 		require.Equal(t, "42", answer)
 		require.NotNil(t, r.TTFT)
@@ -113,7 +113,7 @@ func TestMonitorMessagesRejectsInvalidMaxTokens(t *testing.T) {
 	t.Cleanup(func() { settings.DefaultMaxTokens = original })
 	for _, limit := range []int{-1, 0, relayhelper.MaxTokensLimit + 1} {
 		settings.DefaultMaxTokens = map[string]int{"default": limit}
-		result, answer := runMonitorResponse(context.Background(), monitorconfig.Default(), "test", "claude-opus-5-5", "OK", "messages")
+		result, answer := runMonitorResponse(context.Background(), monitorconfig.Default(), "test", "claude-opus-5-5", "OK", "messages", "probe")
 		require.False(t, result.OK)
 		require.Equal(t, "invalid_max_tokens", result.Error)
 		require.Empty(t, answer)

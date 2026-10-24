@@ -50,7 +50,7 @@ func TestMonitorPartialReplySurvivesFailedStream(t *testing.T) {
 		}))
 		cfg := monitorconfig.Default()
 		cfg.BaseURL = server.URL
-		result, answer := runMonitorResponse(context.Background(), cfg, "test", "model", "draw", protocol)
+		result, answer := runMonitorResponse(context.Background(), cfg, "test", "model", "draw", protocol, "svg")
 		server.Close()
 		require.False(t, result.OK)
 		require.Equal(t, "response_not_completed", result.Error)

@@ -266,6 +266,16 @@ export default function GroupTests({ group }) {
               {record.detailError && (
                 <Banner type='warning' description={record.detailError} />
               )}
+              {record.max_tokens > 0 && (
+                <p>
+                  {t('监控请求 max_tokens（渠道覆盖前）')}：{record.max_tokens}
+                </p>
+              )}
+              {record.stop_reason && (
+                <p>
+                  {t('模型停止原因')}：{record.stop_reason}
+                </p>
+              )}
               {record.error && (
                 <p className='monitor-error'>
                   {record.error === 'answer_mismatch'

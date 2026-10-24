@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -118,7 +117,7 @@ func GetAndValidateEmbeddingRequest(c *gin.Context, relayMode int) (*dto.Embeddi
 // maxTokensLimit bounds user-supplied max token fields. These values feed
 // pre-consume quota math (preConsumedTokens * ratio); an unbounded value can
 // overflow the conversion and corrupt billing.
-const maxTokensLimit = math.MaxInt32 / 2
+const maxTokensLimit = common.MaxTokensLimit
 
 // MaxTokensLimit lets request converters reuse the validation ceiling when
 // deriving max_tokens from another user-controlled field, such as a budget.

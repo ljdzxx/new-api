@@ -54,6 +54,10 @@ type Config struct {
 	LogicAnswer      string           `json:"logic_answer"`
 	LogicMatchMode   string           `json:"logic_match_mode"`
 	LogicMinutes     int              `json:"logic_minutes"`
+
+	// Zero preserves the existing Claude default; SVG can override monitor-wide budgets.
+	MessagesMaxTokens    int `json:"messages_max_tokens"`
+	SVGMessagesMaxTokens int `json:"svg_messages_max_tokens"`
 }
 
 func Default() Config {
@@ -142,6 +146,9 @@ func ValidURL(raw string) bool {
 }
 
 func Validate(c Config) error {
+	if err := c.ValidateMessagesMaxTokens(); err != nil {
+		return err
+	}
 	if c.SVGPublicBaseURL != "" && (!ValidURL(c.SVGPublicBaseURL) || !strings.HasPrefix(c.SVGPublicBaseURL, "https://")) {
 		return fmt.Errorf("SVG 公开访问地址必须为 HTTPS 地址，不能包含查询参数")
 	}
@@ -216,6 +223,19 @@ func Validate(c Config) error {
 	}
 	if c.LogicEnabled && (strings.TrimSpace(c.LogicPrompt) == "" || strings.TrimSpace(c.LogicAnswer) == "") {
 		return fmt.Errorf("逻辑检测需要题目和预期答案")
+	}
+	return nil
+}
+
+// Zero inherits the monitor-wide budget, then the model's Claude default.
+func (c Config) ValidateMessagesMaxTokens() error {
+	for _, field := range []struct {
+		name  string
+		value int
+	}{{"messages_max_tokens", c.MessagesMaxTokens}, {"svg_messages_max_tokens", c.SVGMessagesMaxTokens}} {
+		if field.value < 0 || field.value > common.MaxTokensLimit {
+			return fmt.Errorf("%s must be between 0 and %d", field.name, common.MaxTokensLimit)
+		}
 	}
 	return nil
 }

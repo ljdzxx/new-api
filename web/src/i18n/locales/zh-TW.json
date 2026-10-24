@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Anthropic 监控最大输出 token": "Anthropic 監控最大輸出 token",
+    "Anthropic SVG 最大输出 token": "Anthropic SVG 最大輸出 token",
+    "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "僅用於 Messages 協議。0 表示使用 Claude 模型預設值；請設定上游支援的額度，不影響一般使用者請求。",
+    "仅用于 Messages 协议的 SVG 测试。0 表示继承 Anthropic 监控额度；复杂绘图可单独提高额度。": "僅用於 Messages 協議的 SVG 測試。0 表示繼承 Anthropic 監控額度；複雜繪圖可單獨提高額度。",
+    "输出达到 token 上限，测试未完成": "輸出達到 token 上限，測試未完成",
+    "监控输出 token 额度无效，请检查监控与 Claude 模型设置": "監控輸出 token 額度無效，請檢查監控與 Claude 模型設定",
+    "监控请求 max_tokens（渠道覆盖前）": "監控請求 max_tokens（渠道覆寫前）",
+    "模型停止原因": "模型停止原因",
     "同步指定模型": "同步指定模型",
     "将所选模型的完整定价配置复制至本模型": "將所選模型的完整定價設定複製至本模型",
     "模型价格同步成功": "模型價格同步成功",

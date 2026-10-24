@@ -94,7 +94,15 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 
 旧 `screenshot_url`、`max_output_tokens` 配置被忽略，重新保存配置后去除。
 
-监控不提供“测试最大输出 token”配置。Responses 探测请求不发送 `max_output_tokens` / `max_tokens`；Messages 协议要求显式携带 `max_tokens`，因此探测请求使用本站 Claude 模型默认参数设置中的模型专属值或 `default` 值（初始为 8192），确保请求体透传时也包含该字段。默认值必须大于 0 且不超过中转请求的 max-tokens 校验上限，否则检测返回 `invalid_max_tokens`，不发起请求。旧监控配置中的测试输出限制字段会被忽略，重新保存时移除。SVG、逻辑题与可用性检测均采用上述行为；模型提供方的输出能力限制和单次请求超时独立生效。
+Messages（Anthropic）监控支持独立输出额度，不修改普通用户请求的 Claude 缺省设置：
+
+- `messages_max_tokens`：所有 Messages 监控请求的通用额度，默认 `0`，表示使用本站 Claude 模型专属值或 `default` 值（初始为 8192）。
+- `svg_messages_max_tokens`：Messages SVG 测试专属额度，默认 `0`，表示继承通用额度。优先级为 SVG 专属值 → 监控通用值 → Claude 模型缺省值。普通探针和逻辑题不使用 SVG 专属值。
+- 两个配置均为整数，范围为 `0` 到中转请求共用的 `MaxTokensLimit`（1073741823）；这是输入安全上限，不代表模型能力。实际额度必须符合上游模型限制。例如，上游支持时可仅将 SVG 专属值设为 `32768`。
+
+Messages 请求显式携带解析后的 `max_tokens`，正文透传时也会保留。最终值必须大于 0 且不超过中转请求上限，否则检测返回 `invalid_max_tokens`，不发起请求。Responses 请求仍不发送 `max_output_tokens` / `max_tokens`。旧配置省略这两个字段时保持原行为；旧 `max_output_tokens` 字段仍被忽略。单次请求超时独立生效。
+
+新测试记录保存监控发送的 `max_tokens`（渠道参数覆盖前）和 Messages 返回的 `stop_reason`，并在详情展示；历史记录的值不随配置修改而变化。旧记录没有这些字段时不补猜测值。收到 `stop_reason=max_tokens` 时仍记为 `request_failed` / `response_incomplete`，但页面明确显示“输出达到 token 上限，测试未完成”，并保留部分应答。该提示同样适用于已有的 `response_incomplete` 记录。后台 `group monitor failure` 日志也包含 `max_tokens`、`stop_reason`。
 
 ## 旧截图部署（历史参考）
 

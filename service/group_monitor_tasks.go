@@ -40,6 +40,8 @@ type MonitorResult struct {
 	TTFT          *float64 `json:"ttft,omitempty"`
 	Answer        string   `json:"answer,omitempty"`
 	Expected      string   `json:"expected,omitempty"`
+	MaxTokens     int      `json:"max_tokens,omitempty"` // Budget sent by the monitor, before channel overrides.
+	StopReason    string   `json:"stop_reason,omitempty"`
 }
 
 func monitorResponsesURL(base string) string {
@@ -57,11 +59,10 @@ func monitorEndpoint(base, protocol string) string {
 
 // Responses emits lifecycle events before text. These count as first events,
 // consistently with the configured real-request TTFT definition.
-func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, model, prompt string, protocols ...string) (MonitorResult, string) {
+func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, model, prompt, protocol, kind string) (MonitorResult, string) {
 	result := MonitorResult{At: time.Now().UnixMilli()}
-	protocol := "responses"
-	if len(protocols) > 0 && protocols[0] != "" {
-		protocol = protocols[0]
+	if protocol == "" {
+		protocol = "responses"
 	}
 	if protocol != "responses" && protocol != "messages" {
 		result.Error = "unsupported_protocol"
@@ -70,12 +71,23 @@ func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, mode
 	payload := map[string]any{"model": model, "input": prompt, "stream": true, "store": false}
 	if protocol == "messages" {
 		// Messages requires max_tokens even when the gateway forwards the body verbatim.
-		maxTokens := model_setting.GetClaudeSettings().GetDefaultMaxTokens(model)
+		if err := cfg.ValidateMessagesMaxTokens(); err != nil {
+			result.Error, result.diagnostic = "invalid_max_tokens", err
+			return result, ""
+		}
+		maxTokens := cfg.MessagesMaxTokens
+		if kind == "svg" && cfg.SVGMessagesMaxTokens != 0 {
+			maxTokens = cfg.SVGMessagesMaxTokens
+		}
+		if maxTokens == 0 {
+			maxTokens = model_setting.GetClaudeSettings().GetDefaultMaxTokens(model)
+		}
 		if maxTokens <= 0 || maxTokens > relayhelper.MaxTokensLimit {
 			result.Error = "invalid_max_tokens"
 			return result, ""
 		}
 		payload = map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "stream": true, "max_tokens": maxTokens}
+		result.MaxTokens = maxTokens
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {
@@ -194,6 +206,9 @@ func readMonitorSSE(reader io.Reader, start time.Time, result *MonitorResult, pr
 					text = delta.Text
 				}
 			case "message_delta":
+				if delta.StopReason != "" {
+					result.StopReason = delta.StopReason
+				}
 				if delta.StopReason == "max_tokens" {
 					return fmt.Errorf("response_incomplete")
 				}
@@ -375,7 +390,7 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 			prompt = cfg.SVGPrompt + "\nReturn a self-contained HTML document or SVG drawing with inline styles, without scripts or external resources."
 		}
 		probeCtx, done := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		result, answer := runMonitorResponse(probeCtx, cfg, key, model, prompt, cfg.Groups[group].Protocol)
+		result, answer := runMonitorResponse(probeCtx, cfg, key, model, prompt, cfg.Groups[group].Protocol, kind)
 		done()
 		result.Group = group
 		result.ID = fmt.Sprintf("%013d-%s", result.At, owner)
@@ -407,7 +422,7 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 				detail = strings.ReplaceAll(detail, key, "[redacted]")
 			}
 			// Quote diagnostic fields to keep each failure on one log line.
-			common.SysError(fmt.Sprintf("group monitor failure: job=%q group=%q model=%q kind=%q code=%q detail=%q", owner, group, model, kind, result.Error, detail))
+			common.SysError(fmt.Sprintf("group monitor failure: job=%q group=%q model=%q kind=%q code=%q max_tokens=%d stop_reason=%q detail=%q", owner, group, model, kind, result.Error, result.MaxTokens, result.StopReason, detail))
 		}
 		resultCtx, resultDone := context.WithTimeout(context.Background(), 3*time.Second)
 		defer resultDone()

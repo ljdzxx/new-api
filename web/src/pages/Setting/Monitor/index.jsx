@@ -155,6 +155,12 @@ export default function MonitorSettings() {
         {field('timeout_seconds', t('单次请求超时（秒）'), 'number', 5, 600)}
         {field('concurrency', t('检测并发数'), 'number', 1, 10)}
         {field(
+          'messages_max_tokens',
+          t('Anthropic 监控最大输出 token'),
+          'number',
+          0,
+        )}
+        {field(
           'history_keep',
           t('每组每类测试历史最多记录数'),
           'number',
@@ -165,12 +171,23 @@ export default function MonitorSettings() {
       </div>
       <Typography.Text type='tertiary'>
         {t(
+          '仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。',
+        )}
+      </Typography.Text>
+      <Typography.Text type='tertiary'>
+        {t(
           '逻辑题与 SVG 分别按数量和天数保留，任一超限即清理记录及详情；R2 文件数量单独设置，本地文件不自动删除。',
         )}
       </Typography.Text>
       <Typography.Title heading={5}>{t('SVG 绘图检测')}</Typography.Title>
       <div className='grid md:grid-cols-2 gap-4'>
         {field('svg_minutes', t('SVG 检测频率（分钟）'), 'number', 1, 10080)}
+        {field(
+          'svg_messages_max_tokens',
+          t('Anthropic SVG 最大输出 token'),
+          'number',
+          0,
+        )}
         {field('svg_keep', t('R2 每组保留 SVG 记录数量'), 'number', 1, 100)}
         {field('svg_output_dir', t('SVG 本地输出目录'))}
         {field('svg_public_base_url', t('SVG 公开访问地址（可选）'))}
@@ -183,6 +200,11 @@ export default function MonitorSettings() {
           168,
         )}
       </div>
+      <Typography.Text type='tertiary'>
+        {t(
+          '仅用于 Messages 协议的 SVG 测试。0 表示继承 Anthropic 监控额度；复杂绘图可单独提高额度。',
+        )}
+      </Typography.Text>
       <Typography.Text type='tertiary'>
         {t(
           '先保存题目、原始回复、结果和 HTML 到本地，再上传 R2。相对目录以 Go 服务工作目录为基准；本地文件保留用于排查，R2 按配置数量清理。',

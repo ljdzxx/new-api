@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Anthropic 监控最大输出 token": "Số token đầu ra tối đa của giám sát Anthropic",
+    "Anthropic SVG 最大输出 token": "Số token đầu ra tối đa cho SVG Anthropic",
+    "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "Chỉ dùng cho giao thức Messages. 0 sử dụng giá trị mặc định của mô hình Claude. Chọn giới hạn được nhà cung cấp hỗ trợ; không ảnh hưởng đến yêu cầu thông thường của người dùng.",
+    "仅用于 Messages 协议的 SVG 测试。0 表示继承 Anthropic 监控额度；复杂绘图可单独提高额度。": "Chỉ dùng cho kiểm tra SVG qua giao thức Messages. 0 kế thừa giới hạn giám sát Anthropic; có thể tăng riêng cho hình vẽ phức tạp.",
+    "输出达到 token 上限，测试未完成": "Đầu ra đã đạt giới hạn token; kiểm tra chưa hoàn tất",
+    "监控输出 token 额度无效，请检查监控与 Claude 模型设置": "Giới hạn token đầu ra giám sát không hợp lệ; kiểm tra cài đặt giám sát và mô hình Claude",
+    "监控请求 max_tokens（渠道覆盖前）": "max_tokens của yêu cầu giám sát (trước khi kênh ghi đè)",
+    "模型停止原因": "Lý do mô hình dừng",
     "同步指定模型": "Đồng bộ từ mô hình",
     "将所选模型的完整定价配置复制至本模型": "Sao chép toàn bộ cấu hình giá của mô hình đã chọn sang mô hình này",
     "模型价格同步成功": "Đồng bộ giá mô hình thành công",

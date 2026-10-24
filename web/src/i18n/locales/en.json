@@ -1,5 +1,13 @@
 {
   "translation": {
+    "Anthropic 监控最大输出 token": "Anthropic monitor maximum output tokens",
+    "Anthropic SVG 最大输出 token": "Anthropic SVG maximum output tokens",
+    "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "Messages protocol only. Set to 0 to use the Claude model default. Choose a budget supported by the upstream provider; regular user requests are unaffected.",
+    "仅用于 Messages 协议的 SVG 测试。0 表示继承 Anthropic 监控额度；复杂绘图可单独提高额度。": "SVG tests using the Messages protocol only. Set to 0 to inherit the Anthropic monitor budget; complex drawings can use a higher budget.",
+    "输出达到 token 上限，测试未完成": "Output reached the token limit; the test did not complete",
+    "监控输出 token 额度无效，请检查监控与 Claude 模型设置": "Invalid monitor output token budget; check monitor and Claude model settings",
+    "监控请求 max_tokens（渠道覆盖前）": "Monitor request max_tokens (before channel overrides)",
+    "模型停止原因": "Model stop reason",
     "同步指定模型": "Sync from a model",
     "将所选模型的完整定价配置复制至本模型": "Copy the selected model’s complete pricing configuration to this model",
     "模型价格同步成功": "Model pricing synced successfully",
