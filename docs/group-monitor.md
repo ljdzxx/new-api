@@ -22,6 +22,8 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
     "model": ["gpt-5.5", "gpt-5.6-sol"],
     "svg_model": "gpt-6-astra",
     "logic_model": "gpt-6-astra",
+    "logic_effort": "high",
+    "svg_effort": "medium",
     "logic_prompt": "数列 2、4、8、16 的下一项是什么？只输出数字。",
     "logic_answer": "32",
     "logic_match_mode": "exact",
@@ -49,6 +51,7 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 
 - `protocol`：填写 `responses` 或 `messages`，分别使用 OpenAI Responses 或 Anthropic Messages 协议。不要填写 `responses|messages`。
 - `svg_model` / `logic_model`：每组的绘图、逻辑专用模型，可不在 `model` 列表内。
+- `logic_effort` / `svg_effort`：分别设置该组逻辑题、SVG 绘图的推理强度，互不继承，可用性探针不携带此参数。省略、`null`、空字符串或仅空白时不发送，保留原有上游默认行为；非空字符串去除首尾空白后发送，最长 64 字节。Responses 映射为 `reasoning.effort`，Messages 映射为 `output_config.effort`，不额外强制开启 `thinking` 或改变 token 额度。填写对应模型支持的值（例如 `low`、`medium`、`high`）；本站不硬编码模型枚举，也不把 `xhigh` 等值自动改写为其他等级，最终支持情况由上游判断。两个字段保存后保留在分组 JSON 中。
 - `svg_test` / `logic_test`：该组是否执行对应测试；启用时必须填写对应专用模型。
 - `logic_prompt` / `logic_answer` / `logic_match_mode`：该组的逻辑题目、预期答案和匹配方式，逐字段覆盖“逻辑题检测”中的全局默认值。每个字段省略、为 `null`、空字符串或仅含空白时，继承对应全局值；可只覆盖其中一项。匹配方式为 `exact` 或 `contains`，全局匹配方式也为空时默认 `exact`。上例中 `codex-pro` 使用自己的三个字段，`default-logic` 全部继承全局设置。
 - `active`：控制分组展示和后台检测。设为 `false` 后，该组从公开页面及其趋势、作品接口隐藏，并停止发起可用性探针、SVG 和逻辑检测；已经发出的检测请求会完成本次执行。真实用户请求的指标仍会采集，历史数据继续遵循保留策略。改回 `true` 后恢复展示和检测，省略时默认为 `true`。调度器每 15 秒读取一次当前节点配置，多节点部署需等待 master 同步设置。
@@ -70,6 +73,18 @@ SVG 测试使用 HTML 预览，不需要 Chrome、Playwright、截图服务或 D
 点击逻辑题方块打开详情；点击 SVG 方块联动“预览”列，并可通过“查看所选测试详情”读取题目与回复。默认预览最新已上传 HTML。R2 每组按设置保留最近 N 次 SVG 记录（包括失败记录），上传后及 master 每分钟清理一次整套文件；旧版 HTML/PNG 对象一起兼容清理。旧作品仍可按 HTML 预览，旧版只保存 latest 的记录不能追溯为完整历史。预览已清理时明确显示无预览，不会跳到其他作品。
 
 临时链接有效期为 1–168 小时；链接过期不代表对象删除。同一作品的 iframe 在定时刷新时保持原导航地址，避免每次重新签名后反复加载。配置“SVG 公开访问地址”后，新作品使用稳定的域名 URL；上传仍使用原 S3 Endpoint。旧作品通过本站兼容预览接口添加缩放处理，浏览器短期缓存，原 R2 文件不改写。详见 [R2 CDN 配置指南](monitor-r2-cdn.md)。
+
+## 请求超时
+
+三类任务分别设置请求总超时，单位为秒：
+
+- `probe_timeout_seconds`：可用性探针超时。
+- `logic_timeout_seconds`：逻辑测试超时。
+- `svg_timeout_seconds`：SVG 绘图超时，可根据绘图复杂度设置为 1800、3600 秒或更长。
+
+三个设置均为至少 5 秒的整数，不设业务上限，后台输入框也不限制最大值。首次读取旧配置时，缺失或 null 的新字段继承原 `timeout_seconds`，没有旧值时默认为 120 秒；显式填写的独立设置优先。保存后移除旧字段，三个设置互不影响。例如旧值 480 秒会迁移为三个 480 秒，不会自动延长已有配置。
+
+超时覆盖整个模型请求（包括流式输出），收到新内容不会重置计时。任务总时限为对应请求超时加 3 分钟，Redis 任务锁有效期为对应请求超时加 4 分钟，为作品保存和任务收尾预留时间。极大秒数仅在转换为 Go 时间类型时按可表示范围饱和处理，避免时间计算溢出。修改配置影响随后启动的任务，已运行任务保留启动时的时限。上游服务及中间代理的独立超时仍然生效。
 
 ## 统计口径
 

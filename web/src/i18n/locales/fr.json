@@ -1,5 +1,10 @@
 {
   "translation": {
+    "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort et svg_effort définissent séparément l’effort de raisonnement des tests de logique et des dessins SVG. Les valeurs omises, null ou vides ne sont pas envoyées. Utilisez des valeurs prises en charge par le modèle en amont, comme low, medium ou high. Les sondes de disponibilité ne sont pas affectées.",
+    "可用性探针超时（秒）": "Délai des sondes de disponibilité (secondes)",
+    "逻辑测试超时（秒）": "Délai des tests de logique (secondes)",
+    "SVG 绘图超时（秒）": "Délai des dessins SVG (secondes)",
+    "可用性探针、逻辑测试和 SVG 绘图分别设置请求总超时，至少 5 秒，不设上限；持续流式输出不会重置计时。": "Définissez un délai total distinct pour les sondes de disponibilité, les tests de logique et les dessins SVG. Minimum 5 secondes, sans limite supérieure ; la sortie en continu ne réinitialise pas le délai.",
     "Anthropic 监控最大输出 token": "Nombre maximal de tokens de sortie du moniteur Anthropic",
     "Anthropic SVG 最大输出 token": "Nombre maximal de tokens de sortie SVG Anthropic",
     "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "Protocole Messages uniquement. 0 utilise la valeur par défaut du modèle Claude. Choisissez une limite prise en charge par le fournisseur ; les requêtes utilisateur ordinaires ne sont pas affectées.",

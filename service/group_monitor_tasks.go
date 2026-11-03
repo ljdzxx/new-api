@@ -59,7 +59,7 @@ func monitorEndpoint(base, protocol string) string {
 
 // Responses emits lifecycle events before text. These count as first events,
 // consistently with the configured real-request TTFT definition.
-func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, model, prompt, protocol, kind string) (MonitorResult, string) {
+func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, model, prompt, protocol, kind, effort string) (MonitorResult, string) {
 	result := MonitorResult{At: time.Now().UnixMilli()}
 	if protocol == "" {
 		protocol = "responses"
@@ -88,6 +88,13 @@ func runMonitorResponse(ctx context.Context, cfg monitorconfig.Config, key, mode
 		}
 		payload = map[string]any{"model": model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "stream": true, "max_tokens": maxTokens}
 		result.MaxTokens = maxTokens
+	}
+	if effort = strings.TrimSpace(effort); effort != "" && (kind == "logic" || kind == "svg") {
+		if protocol == "messages" {
+			payload["output_config"] = map[string]string{"effort": effort}
+		} else {
+			payload["reasoning"] = map[string]string{"effort": effort}
+		}
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {
@@ -360,7 +367,8 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 	}
 	go func() {
 		defer func() { <-active }()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.TimeoutSeconds)*time.Second+3*time.Minute)
+		timeout := cfg.RequestTimeout(kind)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout+3*time.Minute)
 		defer cancel()
 		lockModel := model
 		if kind == "svg" {
@@ -368,7 +376,7 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 		}
 		lease := groupmonitor.Key(group, lockModel, kind+":lock")
 		owner := uuid.NewString()
-		ok, err := common.RDB.SetNX(ctx, lease, owner, time.Duration(cfg.TimeoutSeconds)*time.Second+4*time.Minute).Result()
+		ok, err := common.RDB.SetNX(ctx, lease, owner, timeout+4*time.Minute).Result()
 		if err != nil || !ok {
 			return
 		}
@@ -389,8 +397,9 @@ func tryMonitorJob(active chan struct{}, cfg monitorconfig.Config, group, model,
 		if kind == "svg" {
 			prompt = cfg.SVGPrompt + "\nReturn a self-contained HTML document or SVG drawing with inline styles, without scripts or external resources."
 		}
-		probeCtx, done := context.WithTimeout(ctx, time.Duration(cfg.TimeoutSeconds)*time.Second)
-		result, answer := runMonitorResponse(probeCtx, cfg, key, model, prompt, cfg.Groups[group].Protocol, kind)
+		probeCtx, done := context.WithTimeout(ctx, timeout)
+		g := cfg.Groups[group]
+		result, answer := runMonitorResponse(probeCtx, cfg, key, model, prompt, g.Protocol, kind, g.TestEffort(kind))
 		done()
 		result.Group = group
 		result.ID = fmt.Sprintf("%013d-%s", result.At, owner)

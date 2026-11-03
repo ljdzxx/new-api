@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -16,6 +17,8 @@ type Group struct {
 	Key            string   `json:"key"`
 	SVGModel       string   `json:"svg_model"`
 	LogicModel     string   `json:"logic_model"`
+	LogicEffort    string   `json:"logic_effort,omitempty"`
+	SVGEffort      string   `json:"svg_effort,omitempty"`
 	LogicPrompt    *string  `json:"logic_prompt,omitempty"`
 	LogicAnswer    *string  `json:"logic_answer,omitempty"`
 	LogicMatchMode *string  `json:"logic_match_mode,omitempty"`
@@ -31,29 +34,43 @@ func (g Group) TestSVG() bool   { return g.SVGTest != nil && *g.SVGTest }
 func (g Group) TestLogic() bool { return g.LogicTest != nil && *g.LogicTest }
 func boolPointer(v bool) *bool  { return &v }
 
+func (g Group) TestEffort(kind string) string {
+	switch kind {
+	case "logic":
+		return strings.TrimSpace(g.LogicEffort)
+	case "svg":
+		return strings.TrimSpace(g.SVGEffort)
+	default:
+		return ""
+	}
+}
+
 type Config struct {
-	Enabled          bool             `json:"enabled"`
-	Groups           map[string]Group `json:"groups"`
-	BaseURL          string           `json:"base_url"`
-	ProbeMinutes     int              `json:"probe_minutes"`
-	TimeoutSeconds   int              `json:"timeout_seconds"`
-	Concurrency      int              `json:"concurrency"`
-	HistoryKeep      int              `json:"history_keep"`
-	HistoryDays      int              `json:"history_days"`
-	SVGEnabled       bool             `json:"svg_enabled,omitempty"` // legacy configuration migration only
-	SVGModel         string           `json:"svg_model,omitempty"`
-	SVGPrompt        string           `json:"svg_prompt"`
-	SVGMinutes       int              `json:"svg_minutes"`
-	SVGKeep          int              `json:"svg_keep"`
-	SVGPrefix        string           `json:"svg_prefix"`
-	SVGURLHours      int              `json:"svg_url_hours"`
-	SVGPublicBaseURL string           `json:"svg_public_base_url"`
-	SVGOutputDir     string           `json:"svg_output_dir"`
-	LogicEnabled     bool             `json:"logic_enabled,omitempty"`
-	LogicPrompt      string           `json:"logic_prompt"`
-	LogicAnswer      string           `json:"logic_answer"`
-	LogicMatchMode   string           `json:"logic_match_mode"`
-	LogicMinutes     int              `json:"logic_minutes"`
+	Enabled             bool             `json:"enabled"`
+	Groups              map[string]Group `json:"groups"`
+	BaseURL             string           `json:"base_url"`
+	ProbeMinutes        int              `json:"probe_minutes"`
+	TimeoutSeconds      int              `json:"timeout_seconds,omitempty"` // legacy configuration migration only
+	ProbeTimeoutSeconds *int             `json:"probe_timeout_seconds"`
+	LogicTimeoutSeconds *int             `json:"logic_timeout_seconds"`
+	SVGTimeoutSeconds   *int             `json:"svg_timeout_seconds"`
+	Concurrency         int              `json:"concurrency"`
+	HistoryKeep         int              `json:"history_keep"`
+	HistoryDays         int              `json:"history_days"`
+	SVGEnabled          bool             `json:"svg_enabled,omitempty"` // legacy configuration migration only
+	SVGModel            string           `json:"svg_model,omitempty"`
+	SVGPrompt           string           `json:"svg_prompt"`
+	SVGMinutes          int              `json:"svg_minutes"`
+	SVGKeep             int              `json:"svg_keep"`
+	SVGPrefix           string           `json:"svg_prefix"`
+	SVGURLHours         int              `json:"svg_url_hours"`
+	SVGPublicBaseURL    string           `json:"svg_public_base_url"`
+	SVGOutputDir        string           `json:"svg_output_dir"`
+	LogicEnabled        bool             `json:"logic_enabled,omitempty"`
+	LogicPrompt         string           `json:"logic_prompt"`
+	LogicAnswer         string           `json:"logic_answer"`
+	LogicMatchMode      string           `json:"logic_match_mode"`
+	LogicMinutes        int              `json:"logic_minutes"`
 
 	// Zero preserves the existing Claude default; SVG can override monitor-wide budgets.
 	MessagesMaxTokens    int `json:"messages_max_tokens"`
@@ -102,6 +119,15 @@ func Get() Config {
 // Explicit false values override legacy global switches. Old logic tests use
 // the first configured model when migrating to one dedicated model per group.
 func (c *Config) Normalize() {
+	// Missing fields inherit the old shared timeout once. Explicit values,
+	// including invalid zero values, must survive normalization for validation.
+	for _, field := range []**int{&c.ProbeTimeoutSeconds, &c.LogicTimeoutSeconds, &c.SVGTimeoutSeconds} {
+		if *field == nil {
+			seconds := c.legacyTimeoutSeconds()
+			*field = &seconds
+		}
+	}
+	c.TimeoutSeconds = 0
 	if c.HistoryKeep == 0 {
 		c.HistoryKeep = 48
 	}
@@ -115,6 +141,8 @@ func (c *Config) Normalize() {
 		c.LogicMatchMode = "exact"
 	}
 	for name, g := range c.Groups {
+		g.LogicEffort = strings.TrimSpace(g.LogicEffort)
+		g.SVGEffort = strings.TrimSpace(g.SVGEffort)
 		if g.Protocol == "" {
 			g.Protocol = "responses"
 		}
@@ -174,6 +202,11 @@ func Validate(c Config) error {
 		if len(g.SVGModel) > 200 || len(g.LogicModel) > 200 {
 			return fmt.Errorf("测试模型名称过长")
 		}
+		for _, field := range []struct{ name, value string }{{"logic_effort", g.LogicEffort}, {"svg_effort", g.SVGEffort}} {
+			if len(strings.TrimSpace(field.value)) > 64 {
+				return fmt.Errorf("分组 %s 的 %s 最多 64 字节", name, field.name)
+			}
+		}
 		if g.TestSVG() && (strings.TrimSpace(g.SVGModel) == "" || strings.TrimSpace(c.SVGPrompt) == "") {
 			return fmt.Errorf("分组 %s 的 SVG 测试需要 svg_model、题目", name)
 		}
@@ -206,8 +239,13 @@ func Validate(c Config) error {
 			return fmt.Errorf("检测频率必须为 1–10080 分钟")
 		}
 	}
-	if c.TimeoutSeconds < 5 || c.TimeoutSeconds > 600 || c.Concurrency < 1 || c.Concurrency > 10 {
-		return fmt.Errorf("超时或并发数超出允许范围")
+	for _, kind := range []string{"probe", "logic", "svg"} {
+		if c.requestTimeoutSeconds(kind) < 5 {
+			return fmt.Errorf("%s_timeout_seconds 必须为至少 5 秒的整数", kind)
+		}
+	}
+	if c.Concurrency < 1 || c.Concurrency > 10 {
+		return fmt.Errorf("检测并发数必须为 1–10")
 	}
 	if c.SVGKeep < 1 || c.SVGKeep > 100 || c.SVGURLHours < 1 || c.SVGURLHours > 168 {
 		return fmt.Errorf("作品保留数量为 1–100，URL 有效期为 1–168 小时")
@@ -225,6 +263,40 @@ func Validate(c Config) error {
 		return fmt.Errorf("逻辑检测需要题目和预期答案")
 	}
 	return nil
+}
+
+func (c Config) legacyTimeoutSeconds() int {
+	if c.TimeoutSeconds != 0 {
+		return c.TimeoutSeconds
+	}
+	return 120
+}
+
+func (c Config) requestTimeoutSeconds(kind string) int {
+	var seconds *int
+	switch kind {
+	case "logic":
+		seconds = c.LogicTimeoutSeconds
+	case "svg":
+		seconds = c.SVGTimeoutSeconds
+	default:
+		seconds = c.ProbeTimeoutSeconds
+	}
+	if seconds != nil {
+		return *seconds
+	}
+	return c.legacyTimeoutSeconds()
+}
+
+// RequestTimeout has no business limit. Saturate only at time.Duration's
+// representation limit, reserving room for the job and lease cleanup periods.
+func (c Config) RequestTimeout(kind string) time.Duration {
+	const maxTimeout = time.Duration(1<<63-1) - 4*time.Minute
+	seconds := c.requestTimeoutSeconds(kind)
+	if int64(seconds) > int64(maxTimeout/time.Second) {
+		return maxTimeout
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 // Zero inherits the monitor-wide budget, then the model's Claude default.

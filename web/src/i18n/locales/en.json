@@ -1,5 +1,10 @@
 {
   "translation": {
+    "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort and svg_effort set reasoning effort separately for logic tests and SVG drawings. Omitted, null, or blank values are not sent. Use values supported by the upstream model, such as low, medium, or high. Availability probes are unaffected.",
+    "可用性探针超时（秒）": "Availability probe timeout (seconds)",
+    "逻辑测试超时（秒）": "Logic test timeout (seconds)",
+    "SVG 绘图超时（秒）": "SVG drawing timeout (seconds)",
+    "可用性探针、逻辑测试和 SVG 绘图分别设置请求总超时，至少 5 秒，不设上限；持续流式输出不会重置计时。": "Set separate total request timeouts for availability probes, logic tests, and SVG drawings. Minimum 5 seconds, with no upper limit; ongoing streaming output does not reset the timer.",
     "Anthropic 监控最大输出 token": "Anthropic monitor maximum output tokens",
     "Anthropic SVG 最大输出 token": "Anthropic SVG maximum output tokens",
     "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "Messages protocol only. Set to 0 to use the Claude model default. Choose a budget supported by the upstream provider; regular user requests are unaffected.",

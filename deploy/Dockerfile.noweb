@@ -1,0 +1,19 @@
+FROM golang:1.25-alpine AS builder
+
+ENV CGO_ENABLED=0 GOEXPERIMENT=greenteagc
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -tags noweb -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o /out/new-api
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata libasan8 wget \
+    && rm -rf /var/lib/apt/lists/*
+ENV TZ=Asia/Shanghai
+WORKDIR /data
+COPY --from=builder /out/new-api /new-api
+HEALTHCHECK --interval=5s --timeout=3s --start-period=20s --retries=12 \
+    CMD wget -q -O - "http://127.0.0.1:${PORT}/api/status" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || exit 1
+ENTRYPOINT ["/new-api"]

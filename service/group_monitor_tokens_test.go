@@ -57,7 +57,7 @@ func TestMonitorMessagesBudgetsOnWire(t *testing.T) {
 			defer server.Close()
 			cfg := monitorconfig.Default()
 			cfg.BaseURL, cfg.MessagesMaxTokens, cfg.SVGMessagesMaxTokens = server.URL, tc.general, tc.svg
-			result, _ := runMonitorResponse(context.Background(), cfg, "test", tc.model, "draw", tc.protocol, tc.kind)
+			result, _ := runMonitorResponse(context.Background(), cfg, "test", tc.model, "draw", tc.protocol, tc.kind, "")
 			require.True(t, result.OK, result.Error)
 			require.Equal(t, tc.want, result.MaxTokens)
 			if tc.protocol == "messages" {
@@ -83,7 +83,7 @@ func TestMonitorInvalidBudgetsNeverSendRequest(t *testing.T) {
 			} else {
 				cfg.MessagesMaxTokens = value
 			}
-			result, _ := runMonitorResponse(context.Background(), cfg, "test", "model", "draw", "messages", "svg")
+			result, _ := runMonitorResponse(context.Background(), cfg, "test", "model", "draw", "messages", "svg", "")
 			require.False(t, result.OK)
 			require.Equal(t, "invalid_max_tokens", result.Error)
 			require.Zero(t, result.MaxTokens)

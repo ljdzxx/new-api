@@ -1,5 +1,10 @@
 {
   "translation": {
+    "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。",
+    "可用性探针超时（秒）": "可用性探针超时（秒）",
+    "逻辑测试超时（秒）": "逻辑测试超时（秒）",
+    "SVG 绘图超时（秒）": "SVG 绘图超时（秒）",
+    "可用性探针、逻辑测试和 SVG 绘图分别设置请求总超时，至少 5 秒，不设上限；持续流式输出不会重置计时。": "可用性探针、逻辑测试和 SVG 绘图分别设置请求总超时，至少 5 秒，不设上限；持续流式输出不会重置计时。",
     "Anthropic 监控最大输出 token": "Anthropic 监控最大输出 token",
     "Anthropic SVG 最大输出 token": "Anthropic SVG 最大输出 token",
     "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。",

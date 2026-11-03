@@ -113,6 +113,8 @@ export default function MonitorSettings() {
               model: ['gpt-5.5', 'gpt-5.6-sol'],
               svg_model: 'gpt-6-astra',
               logic_model: 'gpt-6-astra',
+              logic_effort: 'high',
+              svg_effort: 'medium',
               logic_prompt: '2, 4, 8, 16, ?',
               logic_answer: '32',
               logic_match_mode: 'exact',
@@ -140,6 +142,11 @@ export default function MonitorSettings() {
       </Typography.Text>
       <Typography.Text type='tertiary'>
         {t(
+          'logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。',
+        )}
+      </Typography.Text>
+      <Typography.Text type='tertiary'>
+        {t(
           'order 为展示顺序（整数），默认排序时越小越靠前；未填写时为 0，相同值按分组名称排序。',
         )}
       </Typography.Text>
@@ -152,7 +159,7 @@ export default function MonitorSettings() {
           1,
           10080,
         )}
-        {field('timeout_seconds', t('单次请求超时（秒）'), 'number', 5, 600)}
+        {field('probe_timeout_seconds', t('可用性探针超时（秒）'), 'number', 5)}
         {field('concurrency', t('检测并发数'), 'number', 1, 10)}
         {field(
           'messages_max_tokens',
@@ -171,6 +178,11 @@ export default function MonitorSettings() {
       </div>
       <Typography.Text type='tertiary'>
         {t(
+          '可用性探针、逻辑测试和 SVG 绘图分别设置请求总超时，至少 5 秒，不设上限；持续流式输出不会重置计时。',
+        )}
+      </Typography.Text>
+      <Typography.Text type='tertiary'>
+        {t(
           '仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。',
         )}
       </Typography.Text>
@@ -182,6 +194,7 @@ export default function MonitorSettings() {
       <Typography.Title heading={5}>{t('SVG 绘图检测')}</Typography.Title>
       <div className='grid md:grid-cols-2 gap-4'>
         {field('svg_minutes', t('SVG 检测频率（分钟）'), 'number', 1, 10080)}
+        {field('svg_timeout_seconds', t('SVG 绘图超时（秒）'), 'number', 5)}
         {field(
           'svg_messages_max_tokens',
           t('Anthropic SVG 最大输出 token'),
@@ -223,6 +236,7 @@ export default function MonitorSettings() {
         )}
       </Typography.Text>
       {field('logic_minutes', t('逻辑检测频率（分钟）'), 'number', 1, 10080)}
+      {field('logic_timeout_seconds', t('逻辑测试超时（秒）'), 'number', 5)}
       {area('logic_prompt', t('逻辑题目'))}
       {area('logic_answer', t('预期答案'))}
       <label className='flex flex-col gap-2'>

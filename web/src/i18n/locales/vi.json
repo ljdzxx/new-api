@@ -1,5 +1,10 @@
 {
   "translation": {
+    "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort và svg_effort đặt riêng mức độ suy luận cho kiểm tra logic và vẽ SVG. Giá trị bị bỏ qua, null hoặc để trống sẽ không được gửi. Dùng giá trị mà mô hình thượng nguồn hỗ trợ, như low, medium hoặc high. Kiểm tra khả dụng không bị ảnh hưởng.",
+    "可用性探针超时（秒）": "Thời gian chờ kiểm tra khả dụng (giây)",
+    "逻辑测试超时（秒）": "Thời gian chờ kiểm tra logic (giây)",
+    "SVG 绘图超时（秒）": "Thời gian chờ vẽ SVG (giây)",
+    "可用性探针、逻辑测试和 SVG 绘图分别设置请求总超时，至少 5 秒，不设上限；持续流式输出不会重置计时。": "Đặt riêng tổng thời gian chờ yêu cầu cho kiểm tra khả dụng, kiểm tra logic và vẽ SVG. Tối thiểu 5 giây, không có giới hạn trên; đầu ra truyền liên tục không đặt lại bộ đếm thời gian.",
     "Anthropic 监控最大输出 token": "Số token đầu ra tối đa của giám sát Anthropic",
     "Anthropic SVG 最大输出 token": "Số token đầu ra tối đa cho SVG Anthropic",
     "仅用于 Messages 协议。0 表示使用 Claude 模型缺省值；请设置上游支持的额度，不影响普通用户请求。": "Chỉ dùng cho giao thức Messages. 0 sử dụng giá trị mặc định của mô hình Claude. Chọn giới hạn được nhà cung cấp hỗ trợ; không ảnh hưởng đến yêu cầu thông thường của người dùng.",
