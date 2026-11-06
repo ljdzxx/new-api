@@ -38,7 +38,6 @@ const ImageGenerationV2 = () => {
   const [imageSiteUrl, setImageSiteUrl] = useState('');
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('');
   const [loadedToken, setLoadedToken] = useState(null);
 
   const usableTokens = useMemo(
@@ -49,9 +48,6 @@ const ImageGenerationV2 = () => {
     (token) => String(token.id) === selectedTokenId,
   );
   const modelsReady = Boolean(selectedToken && loadedToken === selectedToken);
-  const modelOptions = modelsReady
-    ? models.map((model) => ({ label: model, value: model }))
-    : [];
 
   const tokenOptions = useMemo(
     () =>
@@ -102,7 +98,6 @@ const ImageGenerationV2 = () => {
   useEffect(() => {
     let cancelled = false;
     setModels([]);
-    setSelectedModel('');
     setLoadedToken(null);
     setModelsLoading(Boolean(selectedToken));
     if (!selectedToken) return;
@@ -126,7 +121,6 @@ const ImageGenerationV2 = () => {
           ...new Set(res.data.data.map((model) => model.id).filter(Boolean)),
         ].sort();
         setModels(availableModels);
-        setSelectedModel(availableModels[0] || '');
         setLoadedToken(selectedToken);
       } catch (error) {
         if (!cancelled) showError(error);
@@ -145,8 +139,8 @@ const ImageGenerationV2 = () => {
       Toast.warning(t('请先选择生图令牌'));
       return;
     }
-    if (!modelsReady || modelsLoading || !models.includes(selectedModel)) {
-      Toast.warning(t('请选择模型'));
+    if (!modelsReady || modelsLoading || models.length === 0) {
+      Toast.warning(t('暂无可用模型'));
       return;
     }
     setJumping(true);
@@ -154,7 +148,7 @@ const ImageGenerationV2 = () => {
       const rawKey = await fetchTokenKey(selectedTokenId);
       const targetUrl = `${IMAGE_SITE_URL}?apiKey=${encodeURIComponent(
         `sk-${rawKey}`,
-      )}&apiMode=images&model=${encodeURIComponent(selectedModel)}`;
+      )}&apiMode=images&model=${encodeURIComponent(models.join(','))}`;
       setImageSiteUrl(targetUrl);
     } catch (error) {
       Toast.error({
@@ -186,20 +180,6 @@ const ImageGenerationV2 = () => {
             emptyContent={t('暂无可用令牌')}
             filter
           />
-          <Text strong className='shrink-0'>
-            {t('模型选择')}
-          </Text>
-          <Select
-            className='flex-1 min-w-0 md:max-w-[360px]'
-            placeholder={t('请选择模型')}
-            loading={modelsLoading}
-            disabled={!modelsReady || jumping || tokensLoading}
-            optionList={modelOptions}
-            value={modelsReady ? selectedModel || undefined : undefined}
-            onChange={(value) => setSelectedModel(String(value || ''))}
-            emptyContent={t('暂无可用模型')}
-            filter
-          />
           <div className='flex items-center gap-2 shrink-0'>
             <Button
               icon={<RefreshCcw size={15} />}
@@ -211,9 +191,12 @@ const ImageGenerationV2 = () => {
               type='primary'
               theme='solid'
               icon={<Sparkles size={16} />}
-              loading={jumping}
+              loading={jumping || modelsLoading}
               disabled={
-                tokensLoading || modelsLoading || !modelsReady || !selectedModel
+                tokensLoading ||
+                modelsLoading ||
+                !modelsReady ||
+                models.length === 0
               }
               onClick={handleStart}
             >
@@ -224,6 +207,11 @@ const ImageGenerationV2 = () => {
         {tokens.length > 0 && usableTokens.length === 0 && (
           <Text type='warning' size='small' className='block mt-2'>
             {t('暂无可用令牌')}
+          </Text>
+        )}
+        {modelsReady && models.length === 0 && (
+          <Text type='warning' size='small' className='block mt-2'>
+            {t('暂无可用模型')}
           </Text>
         )}
       </div>
