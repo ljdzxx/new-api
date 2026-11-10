@@ -565,6 +565,7 @@ func TestNonMockTextConsumeQuotaStillBillsAndLogsRealTokenName(t *testing.T) {
 		CompletionTokens: 5,
 		TotalTokens:      15,
 	}
+	relayInfo.RecordUpstreamUsage(usage)
 
 	service.PostTextConsumeQuota(c, relayInfo, usage, nil)
 

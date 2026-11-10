@@ -135,7 +135,12 @@ func TestAdvancedCustomGeminiRelaySettlement(t *testing.T) {
 				assertGeminiResponsesRefund(t, db)
 				return
 			}
-			require.Positive(t, logs[0].Quota)
+			if mode == "missing_terminal" || mode == "client_disconnect" {
+				require.Zero(t, logs[0].Quota, "no upstream usage was reported")
+				assertGeminiResponsesRefund(t, db)
+			} else {
+				require.Positive(t, logs[0].Quota)
+			}
 			require.Equal(t, mode == "client_disconnect", gjson.Get(logs[0].Other, "stream_canceled_by_downstream").Bool())
 			var user model.User
 			var token model.Token

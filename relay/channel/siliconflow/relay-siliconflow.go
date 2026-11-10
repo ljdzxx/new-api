@@ -1,10 +1,10 @@
 package siliconflow
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -21,7 +21,7 @@ func siliconflowRerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	}
 	service.CloseResponseBodyGracefully(resp)
 	var siliconflowResp SFRerankResponse
-	err = json.Unmarshal(responseBody, &siliconflowResp)
+	err = common.Unmarshal(responseBody, &siliconflowResp)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -30,6 +30,7 @@ func siliconflowRerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 		CompletionTokens: siliconflowResp.Meta.Tokens.OutputTokens,
 		TotalTokens:      siliconflowResp.Meta.Tokens.InputTokens + siliconflowResp.Meta.Tokens.OutputTokens,
 	}
+	info.RecordUpstreamUsageFromJSON(usage, responseBody, "meta.tokens")
 	rerankResp := &dto.RerankResponse{
 		Results: siliconflowResp.Results,
 		Usage:   *usage,
@@ -38,7 +39,7 @@ func siliconflowRerankHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 		rerankResp.Usage = *helper.ScaleOpenAIUsageForRelayResponse(usage, info)
 	}
 
-	jsonResponse, err := json.Marshal(rerankResp)
+	jsonResponse, err := common.Marshal(rerankResp)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}

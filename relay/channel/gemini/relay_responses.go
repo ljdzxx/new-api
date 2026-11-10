@@ -155,6 +155,7 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 		// erase the charge already incurred upstream.
 		if incoming := response.GetUsageMetadata(); incoming != nil {
 			metadata = dto.MergeGeminiUsageMetadataNonZero(metadata, incoming)
+			recordGeminiUpstreamUsage(info, metadata)
 		}
 		grounding.observe(response)
 		grounding.commit(info)

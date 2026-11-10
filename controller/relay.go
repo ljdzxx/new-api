@@ -1497,6 +1497,8 @@ func RelayTask(c *gin.Context) {
 			BillingPolicyRevision:      policyRevision,
 			BillingPolicy:              policyJSON,
 		}
+		tokenBilling := service.TaskUsesTokenBilling(task)
+		task.PrivateData.BillingContext.TokenBilling = &tokenBilling
 		task.Quota = result.Quota
 		task.Data = result.TaskData
 		task.Action = relayInfo.Action

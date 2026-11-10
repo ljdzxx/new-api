@@ -274,7 +274,7 @@ func (s *responseState) observeUsage(response gjson.Result) error {
 		usage.BillingUsage = &dto.BillingUsage{Source: dto.BillingUsageSourceOAIResponses, Semantic: dto.BillingUsageSemanticOpenAI, OpenAIUsage: &native}
 	}
 	s.usage = usage
-	s.info.UpstreamUsageReported = true
+	s.info.RecordUpstreamUsage(usage)
 	return nil
 }
 func (s *responseState) finalUsage() *dto.Usage {

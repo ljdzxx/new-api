@@ -34,6 +34,7 @@ func ChatCompletionsToResponsesHandler(c *gin.Context, info *relaycommon.RelayIn
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
+	info.RecordUpstreamUsageFromJSON(&chatResp.Usage, responseBody, "usage")
 	responsesResp, usage, err := service.ChatCompletionsResponseToResponsesResponse(&chatResp)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
@@ -77,6 +78,7 @@ func ChatCompletionsToResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 		if chunk.Model != "" {
 			model = chunk.Model
 		}
+		info.RecordUpstreamUsage(chunk.Usage)
 		if service.ValidUsage(chunk.Usage) {
 			*usage = *chunk.Usage
 			normalizeUsageForResponses(usage)

@@ -189,6 +189,15 @@ func CloneBillingUsage(usage *BillingUsage) *BillingUsage {
 	return &clone
 }
 
+// CloneUsage keeps an independent copy of the counters and native billing data.
+func CloneUsage(usage *Usage) *Usage {
+	clone := cloneOpenAIUsage(usage)
+	if clone != nil {
+		clone.BillingUsage = CloneBillingUsage(usage.BillingUsage)
+	}
+	return clone
+}
+
 func cloneOpenAIUsage(usage *Usage) *Usage {
 	if usage == nil {
 		return nil

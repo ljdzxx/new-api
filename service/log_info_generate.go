@@ -197,6 +197,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	isLocalCountTokens := common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens)
+	adminInfo["upstream_usage_reported"] = relayInfo.UpstreamUsageReported
 	if isLocalCountTokens {
 		adminInfo["local_count_tokens"] = isLocalCountTokens
 	}

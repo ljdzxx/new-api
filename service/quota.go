@@ -123,6 +123,9 @@ func calculateAudioQuota(info QuotaInfo) (int, *common.QuotaClamp) {
 }
 
 func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.RealtimeUsage) error {
+	if usage == nil || (usage.TotalTokens == 0 && usage.InputTokens == 0 && usage.OutputTokens == 0) {
+		return nil
+	}
 	if relayInfo.UsePrice {
 		return nil
 	}
@@ -353,6 +356,12 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 }
 
 func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent string) {
+	usage = usageForSettlement(relayInfo, usage)
+	if usage == nil {
+		// Reuse the zero-usage settlement and refund path, including its log.
+		PostTextConsumeQuota(ctx, relayInfo, nil, []string{extraContent})
+		return
+	}
 
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 	textInputTokens := usage.PromptTokensDetails.TextTokens

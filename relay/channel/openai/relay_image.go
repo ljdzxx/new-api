@@ -62,6 +62,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
+	info.RecordUpstreamUsageFromJSON(&usageResp.Usage, responseBody, "usage")
 	return &usageResp.Usage, nil
 }
 
@@ -132,6 +133,7 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 		}
 		if err := common.Unmarshal(raw, &chunk); err == nil {
 			normalizeOpenAIUsage(&chunk.Usage)
+			info.RecordUpstreamUsageFromJSON(&chunk.Usage, []byte(data), "usage")
 			if service.ValidUsage(&chunk.Usage) {
 				usage = &chunk.Usage
 			}
@@ -251,6 +253,7 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 	}
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
+	info.RecordUpstreamUsageFromJSON(&usageResp.Usage, responseBody, "usage")
 	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
 	updateOpenAIImageCount(info, imageCount)
 

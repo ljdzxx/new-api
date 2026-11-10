@@ -2,7 +2,6 @@ package ollama
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,7 +32,7 @@ func openAIChatToOllamaChat(c *gin.Context, r *dto.GeneralOpenAIRequest) (*Ollam
 		} else if r.ResponseFormat.Type == "json_schema" {
 			if len(r.ResponseFormat.JsonSchema) > 0 {
 				var schema any
-				_ = json.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
+				_ = common.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
 				chatReq.Format = schema
 			}
 		}
@@ -128,7 +127,7 @@ func openAIChatToOllamaChat(c *gin.Context, r *dto.GeneralOpenAIRequest) (*Ollam
 				for _, tc := range parsed {
 					var args interface{}
 					if tc.Function.Arguments != "" {
-						_ = json.Unmarshal([]byte(tc.Function.Arguments), &args)
+						_ = common.Unmarshal([]byte(tc.Function.Arguments), &args)
 					}
 					if args == nil {
 						args = map[string]any{}
@@ -181,7 +180,7 @@ func openAIToGenerate(c *gin.Context, r *dto.GeneralOpenAIRequest) (*OllamaGener
 			gen.Format = "json"
 		} else if r.ResponseFormat.Type == "json_schema" {
 			var schema any
-			_ = json.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
+			_ = common.Unmarshal(r.ResponseFormat.JsonSchema, &schema)
 			gen.Format = schema
 		}
 	}
@@ -273,6 +272,9 @@ func ollamaEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 		data = append(data, dto.OpenAIEmbeddingResponseItem{Index: i, Object: "embedding", Embedding: emb})
 	}
 	usage := &dto.Usage{PromptTokens: oResp.PromptEvalCount, CompletionTokens: 0, TotalTokens: oResp.PromptEvalCount}
+	if dto.HasOpenAIUsageTokens(usage) {
+		info.RecordUpstreamUsage(usage)
+	}
 	embResp := &dto.OpenAIEmbeddingResponse{Object: "list", Data: data, Model: info.UpstreamModelName, Usage: *usage}
 	out, _ := common.Marshal(embResp)
 	if helper.ShouldScaleResponseUsage(info) {
@@ -517,7 +519,7 @@ func FetchOllamaVersion(baseURL, apiKey string) (string, error) {
 		Version string `json:"version"`
 	}
 
-	if err := json.Unmarshal(body, &versionResp); err != nil {
+	if err := common.Unmarshal(body, &versionResp); err != nil {
 		return "", fmt.Errorf("解析响应失败: %v", err)
 	}
 

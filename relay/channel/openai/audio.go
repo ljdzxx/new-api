@@ -42,6 +42,9 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 				if err != nil {
 					logger.LogError(c, err.Error())
 				}
+				if err == nil {
+					info.RecordUpstreamUsageFromJSON(&simpleResponse.Usage, common.StringToByteSlice(data), "usage")
+				}
 				if simpleResponse.Usage.TotalTokens != 0 {
 					usage.PromptTokens = simpleResponse.Usage.InputTokens
 					usage.CompletionTokens = simpleResponse.OutputTokens
@@ -133,6 +136,7 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		Usage *dto.Usage `json:"usage"`
 	}
 	if err := common.Unmarshal(responseBody, &responseData); err == nil && responseData.Usage != nil {
+		info.RecordUpstreamUsage(responseData.Usage)
 		if responseData.Usage.TotalTokens > 0 {
 			usage := responseData.Usage
 			if usage.PromptTokens == 0 {

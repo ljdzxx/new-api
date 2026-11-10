@@ -685,11 +685,10 @@ func TestCalculateTextQuotaSummaryMissingResponsesStreamUsage(t *testing.T) {
 		preConsumed int
 		usage       dto.Usage
 		wantQuota   int
-		wantKeep    bool
 	}{
-		{name: "client disconnected after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000, wantQuota: 5000, wantKeep: true},
-		{name: "upstream eof after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonEOF, preConsumed: 5000, wantQuota: 5000, wantKeep: true},
-		{name: "handler write error after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonHandlerStop, withError: true, preConsumed: 5000, wantQuota: 5000, wantKeep: true},
+		{name: "client disconnected after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000},
+		{name: "upstream eof after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonEOF, preConsumed: 5000},
+		{name: "handler write error after output", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonHandlerStop, withError: true, preConsumed: 5000},
 		{name: "handler stop without error refunds", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonHandlerStop, preConsumed: 5000},
 		{name: "normal done refunds missing usage", billable: true, format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonDone, preConsumed: 5000},
 		{name: "no billable output refunds", format: types.RelayFormatOpenAIResponses, reason: relaycommon.StreamEndReasonClientGone, preConsumed: 5000},
@@ -702,7 +701,6 @@ func TestCalculateTextQuotaSummaryMissingResponsesStreamUsage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			summary := calculateTextQuotaSummary(newContext(tt.billable), newRelayInfo(tt.format, tt.reason, tt.withError, tt.preConsumed), &tt.usage)
 			require.Equal(t, tt.wantQuota, summary.Quota)
-			require.Equal(t, tt.wantKeep, summary.MissingUsagePreConsumed)
 		})
 	}
 }

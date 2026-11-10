@@ -65,6 +65,7 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
+	info.RecordUpstreamUsage(responsesResp.Usage)
 	if usage == nil || usage.TotalTokens == 0 {
 		text := service.ExtractOutputTextFromResponses(&responsesResp)
 		usage = service.ResponseText2Usage(c, text, info.UpstreamModelName, info.GetEstimatePromptTokens())
@@ -448,6 +449,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 					createAt = int64(streamResp.Response.CreatedAt)
 				}
 				if streamResp.Response.Usage != nil {
+					info.RecordUpstreamUsage(streamResp.Response.Usage)
 					if streamResp.Response.Usage.InputTokens != 0 {
 						usage.PromptTokens = streamResp.Response.Usage.InputTokens
 						usage.InputTokens = streamResp.Response.Usage.InputTokens

@@ -53,6 +53,7 @@ func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response, info *re
 
 	usage := dto.Usage{}
 	if compactResp.Usage != nil {
+		info.RecordUpstreamUsage(compactResp.Usage)
 		usage.PromptTokens = compactResp.Usage.InputTokens
 		usage.CompletionTokens = compactResp.Usage.OutputTokens
 		usage.TotalTokens = compactResp.Usage.TotalTokens

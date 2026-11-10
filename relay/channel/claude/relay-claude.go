@@ -818,6 +818,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
+	defer recordClaudeStreamUsage(info, claudeInfo, &claudeResponse)
 	if claudeResponse.StopReason != "" {
 		maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
 	}
@@ -863,6 +864,15 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		}
 	}
 	return nil
+}
+
+func recordClaudeStreamUsage(info *relaycommon.RelayInfo, state *ClaudeResponseInfo, response *dto.ClaudeResponse) {
+	if response.Usage == nil && (response.Message == nil || response.Message.Usage == nil) {
+		return
+	}
+	usage := dto.CloneUsage(state.Usage)
+	attachClaudeBillingUsage(usage)
+	info.RecordUpstreamUsage(usage)
 }
 
 // FinalizeStreamUsage also supports interrupted streams without writing a success event.
@@ -1008,6 +1018,7 @@ func updateClaudePassThroughUsage(c *gin.Context, info *relaycommon.RelayInfo, c
 		maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
 	}
 	FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
+	recordClaudeStreamUsage(info, claudeInfo, &claudeResponse)
 	if claudeResponse.Type == "message_start" && claudeResponse.Message != nil {
 		info.UpstreamModelName = claudeResponse.Message.Model
 	}
@@ -1207,6 +1218,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
 		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
 		claudeInfo.Usage.BillingUsage = dto.NewClaudeMessagesBillingUsage(claudeResponse.Usage)
+		info.RecordUpstreamUsage(claudeInfo.Usage)
 	}
 	var responseData []byte
 	switch info.RelayFormat {

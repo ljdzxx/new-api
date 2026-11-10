@@ -128,6 +128,7 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			usage.PromptTokens = baiduResponse.Usage.PromptTokens
 			usage.CompletionTokens = baiduResponse.Usage.TotalTokens - baiduResponse.Usage.PromptTokens
 		}
+		info.RecordUpstreamUsageFromJSON(&baiduResponse.Usage, []byte(data), "usage")
 		response := streamResponseBaidu2OpenAI(&baiduResponse)
 		err = helper.ObjectDataWithScaledUsage(c, info, types.RelayFormatOpenAI, response)
 		if err != nil {
@@ -146,7 +147,7 @@ func baiduHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &baiduResponse)
+	err = common.Unmarshal(responseBody, &baiduResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
@@ -154,7 +155,8 @@ func baiduHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
 	}
 	fullTextResponse := responseBaidu2OpenAI(&baiduResponse)
-	jsonResponse, err := json.Marshal(fullTextResponse)
+	info.RecordUpstreamUsageFromJSON(&fullTextResponse.Usage, responseBody, "usage")
+	jsonResponse, err := common.Marshal(fullTextResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
@@ -177,7 +179,7 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &baiduResponse)
+	err = common.Unmarshal(responseBody, &baiduResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
@@ -185,7 +187,8 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
 	}
 	fullTextResponse := embeddingResponseBaidu2OpenAI(&baiduResponse)
-	jsonResponse, err := json.Marshal(fullTextResponse)
+	info.RecordUpstreamUsageFromJSON(&fullTextResponse.Usage, responseBody, "usage")
+	jsonResponse, err := common.Marshal(fullTextResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}

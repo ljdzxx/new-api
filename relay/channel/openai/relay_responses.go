@@ -55,6 +55,7 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	// compute usage
 	usage := dto.Usage{}
 	if responsesResponse.Usage != nil {
+		info.RecordUpstreamUsage(responsesResponse.Usage)
 		usage.PromptTokens = responsesResponse.Usage.InputTokens
 		usage.CompletionTokens = responsesResponse.Usage.OutputTokens
 		usage.TotalTokens = responsesResponse.Usage.TotalTokens
@@ -101,6 +102,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		var streamResponse dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
 			lastEventType = streamResponse.Type
+			if streamResponse.Response != nil {
+				info.RecordUpstreamUsage(streamResponse.Response.Usage)
+			}
 			if streamResponse.Type == "" {
 				streamErr = types.NewOpenAIError(fmt.Errorf("upstream sent a Responses event without a type"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
 				sr.Stop(streamErr)

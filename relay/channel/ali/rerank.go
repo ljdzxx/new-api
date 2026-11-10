@@ -1,10 +1,10 @@
 package ali
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -41,7 +41,7 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 	service.CloseResponseBodyGracefully(resp)
 
 	var aliResponse AliRerankResponse
-	err = json.Unmarshal(responseBody, &aliResponse)
+	err = common.Unmarshal(responseBody, &aliResponse)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError), nil
 	}
@@ -60,6 +60,7 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 		CompletionTokens: 0,
 		TotalTokens:      aliResponse.Usage.TotalTokens,
 	}
+	info.RecordUpstreamUsageFromJSON(&usage, responseBody, "usage")
 	rerankResponse := dto.RerankResponse{
 		Results: aliResponse.Output.Results,
 		Usage:   usage,
@@ -68,7 +69,7 @@ func RerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayI
 		rerankResponse.Usage = *helper.ScaleOpenAIUsageForRelayResponse(&usage, info)
 	}
 
-	jsonResponse, err := json.Marshal(rerankResponse)
+	jsonResponse, err := common.Marshal(rerankResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}

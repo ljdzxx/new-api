@@ -1101,6 +1101,7 @@ func patchGeminiZeroCompletionUsage(c *gin.Context, info *relaycommon.RelayInfo,
 
 func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) dto.Usage {
 	metadata := response.GetUsageMetadata()
+	recordGeminiUpstreamUsage(info, metadata)
 	if dto.HasGeminiUsageMetadataTokens(metadata) {
 		usage := buildUsageFromGeminiMetadata(*metadata, info.GetEstimatePromptTokens())
 		patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(response), geminiResponseInlineImageCount(response))
@@ -1110,6 +1111,13 @@ func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, r
 	patchGeminiZeroCompletionUsage(c, info, usage, "", geminiResponseInlineImageCount(response))
 	attachEstimatedGeminiBillingUsage(usage)
 	return *usage
+}
+
+func recordGeminiUpstreamUsage(info *relaycommon.RelayInfo, metadata *dto.GeminiUsageMetadata) {
+	if metadata != nil {
+		usage := buildUsageFromGeminiMetadata(*metadata, 0)
+		info.RecordUpstreamUsage(&usage)
+	}
 }
 
 func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse) *dto.OpenAITextResponse {
@@ -1436,8 +1444,9 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		responseText.WriteString(geminiResponseUsageText(&geminiResponse))
 
 		// 更新使用量统计
-		if metadata := geminiResponse.GetUsageMetadata(); dto.HasGeminiUsageMetadataTokens(metadata) {
+		if metadata := geminiResponse.GetUsageMetadata(); metadata != nil {
 			accumulatedUsageMetadata = dto.MergeGeminiUsageMetadataNonZero(accumulatedUsageMetadata, metadata)
+			recordGeminiUpstreamUsage(info, accumulatedUsageMetadata)
 			mappedUsage := buildUsageFromGeminiMetadata(*accumulatedUsageMetadata, info.GetEstimatePromptTokens())
 			*usage = mappedUsage
 			hasBillableUsageMetadata = true

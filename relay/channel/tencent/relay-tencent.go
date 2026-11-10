@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -111,6 +110,8 @@ func tencentStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *htt
 			continue
 		}
 
+		upstreamUsage := responseTencent2OpenAI(&tencentResponse).Usage
+		info.RecordUpstreamUsageFromJSON(&upstreamUsage, []byte(data), "Usage")
 		response := streamResponseTencent2OpenAI(&tencentResponse)
 		if len(response.Choices) != 0 {
 			responseText += response.Choices[0].Delta.GetContentString()
@@ -140,7 +141,7 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &tencentSb)
+	err = common.Unmarshal(responseBody, &tencentSb)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -164,6 +165,7 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)
 	service.IOCopyBytesGracefully(c, resp, jsonResponse)
+	info.RecordUpstreamUsageFromJSON(&fullTextResponse.Usage, responseBody, "Response.Usage")
 	return &fullTextResponse.Usage, nil
 }
 
@@ -199,7 +201,7 @@ func getTencentSign(req TencentChatRequest, adaptor *Adaptor, secId, secKey stri
 	canonicalHeaders := fmt.Sprintf("content-type:%s\nhost:%s\nx-tc-action:%s\n",
 		"application/json", host, strings.ToLower(adaptor.Action))
 	signedHeaders := "content-type;host;x-tc-action"
-	payload, _ := json.Marshal(req)
+	payload, _ := common.Marshal(req)
 	hashedRequestPayload := sha256hex(string(payload))
 	canonicalRequest := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
 		httpRequestMethod,

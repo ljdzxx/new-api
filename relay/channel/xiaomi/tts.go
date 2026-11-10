@@ -89,7 +89,7 @@ func getTTSContentType(format string) string {
 	}
 }
 
-func handleTTSResponse(c *gin.Context, resp *http.Response, _ *relaycommon.RelayInfo) (any, *types.NewAPIError) {
+func handleTTSResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (any, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("invalid xiaomi TTS response"),
@@ -136,5 +136,6 @@ func handleTTSResponse(c *gin.Context, resp *http.Response, _ *relaycommon.Relay
 
 	c.Data(http.StatusOK, getTTSContentType(audioFormat), audioData)
 
+	info.RecordUpstreamUsageFromJSON(&ttsResp.Usage, body, "usage")
 	return &ttsResp.Usage, nil
 }

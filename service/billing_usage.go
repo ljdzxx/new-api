@@ -4,7 +4,21 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 )
+
+// Adaptors may return estimates for protocol conversion. Token settlement only
+// accepts the separately captured upstream counters.
+func usageForSettlement(info *relaycommon.RelayInfo, responseUsage *dto.Usage) *dto.Usage {
+	if info.PriceData.UsePrice {
+		return effectiveBillingUsage(responseUsage)
+	}
+	usage := info.GetUpstreamUsage()
+	if usage != nil && usage.BillingUsage == nil && usage.UsageSemantic != dto.BillingUsageSemanticAnthropic {
+		usage = usageFromOpenAIBillingUsage(&dto.BillingUsage{Source: dto.BillingUsageSourceOAIChat, OpenAIUsage: usage})
+	}
+	return effectiveBillingUsage(usage)
+}
 
 func effectiveBillingUsage(usage *dto.Usage) *dto.Usage {
 	if billingUsage, ok := usageFromBillingUsage(usage); ok {

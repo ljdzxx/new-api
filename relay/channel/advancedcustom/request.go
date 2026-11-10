@@ -37,7 +37,7 @@ func convertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *
 	info.ResetConversionDiagnostics()
 	// Retry attempts must not inherit search counts or emitted-stream state.
 	info.ResponsesUsageInfo = &relaycommon.ResponsesUsageInfo{}
-	info.UpstreamUsageReported = false
+	info.ResetUpstreamUsage()
 	c.Set(StreamStartedKey, false)
 	p := &conversion{c: c, info: info}
 	config := request.GenerationConfig

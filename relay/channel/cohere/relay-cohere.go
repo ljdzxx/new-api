@@ -2,7 +2,6 @@ package cohere
 
 import (
 	"bufio"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -119,7 +118,7 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			}
 			data = strings.TrimSuffix(data, "\r")
 			var cohereResp CohereResponse
-			err := json.Unmarshal([]byte(data), &cohereResp)
+			err := common.Unmarshal([]byte(data), &cohereResp)
 			if err != nil {
 				common.SysLog("error unmarshalling stream response: " + err.Error())
 				return true
@@ -141,6 +140,8 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				if cohereResp.Response != nil {
 					usage.PromptTokens = cohereResp.Response.Meta.BilledUnits.InputTokens
 					usage.CompletionTokens = cohereResp.Response.Meta.BilledUnits.OutputTokens
+					usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+					info.RecordUpstreamUsageFromJSON(usage, []byte(data), "response.meta.billed_units")
 				}
 			} else {
 				openaiResp.Choices = []dto.ChatCompletionsStreamResponseChoice{
@@ -154,7 +155,7 @@ func cohereStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				}
 				responseText += cohereResp.Text
 			}
-			jsonStr, err := json.Marshal(openaiResp)
+			jsonStr, err := common.Marshal(openaiResp)
 			if err != nil {
 				common.SysLog("error marshalling stream response: " + err.Error())
 				return true
@@ -180,7 +181,7 @@ func cohereHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 	service.CloseResponseBodyGracefully(resp)
 	var cohereResp CohereResponseResult
-	err = json.Unmarshal(responseBody, &cohereResp)
+	err = common.Unmarshal(responseBody, &cohereResp)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -189,6 +190,7 @@ func cohereHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	usage.CompletionTokens = cohereResp.Meta.BilledUnits.OutputTokens
 	usage.TotalTokens = cohereResp.Meta.BilledUnits.InputTokens + cohereResp.Meta.BilledUnits.OutputTokens
 
+	info.RecordUpstreamUsageFromJSON(&usage, responseBody, "meta.billed_units")
 	var openaiResp dto.TextResponse
 	openaiResp.Id = cohereResp.ResponseId
 	openaiResp.Created = createdTime
@@ -204,7 +206,7 @@ func cohereHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		},
 	}
 
-	jsonResponse, err := json.Marshal(openaiResp)
+	jsonResponse, err := common.Marshal(openaiResp)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -227,7 +229,7 @@ func cohereRerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 	service.CloseResponseBodyGracefully(resp)
 	var cohereResp CohereRerankResponseResult
-	err = json.Unmarshal(responseBody, &cohereResp)
+	err = common.Unmarshal(responseBody, &cohereResp)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -242,6 +244,7 @@ func cohereRerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		usage.TotalTokens = cohereResp.Meta.BilledUnits.InputTokens + cohereResp.Meta.BilledUnits.OutputTokens
 	}
 
+	info.RecordUpstreamUsageFromJSON(&dto.Usage{PromptTokens: cohereResp.Meta.BilledUnits.InputTokens, CompletionTokens: cohereResp.Meta.BilledUnits.OutputTokens, TotalTokens: cohereResp.Meta.BilledUnits.InputTokens + cohereResp.Meta.BilledUnits.OutputTokens}, responseBody, "meta.billed_units")
 	var rerankResp dto.RerankResponse
 	rerankResp.Results = cohereResp.Results
 	rerankResp.Usage = usage
@@ -249,7 +252,7 @@ func cohereRerankHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		rerankResp.Usage = *helper.ScaleOpenAIUsageForRelayResponse(&usage, info)
 	}
 
-	jsonResponse, err := json.Marshal(rerankResp)
+	jsonResponse, err := common.Marshal(rerankResp)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}

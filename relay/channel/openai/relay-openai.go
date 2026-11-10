@@ -144,7 +144,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 			// Usage can arrive before the final chunk, especially for audio models.
 			// Retain the latest upstream totals without holding back its output.
-			if service.ValidUsage(streamResponse.Usage) {
+			if streamResponse.Usage != nil {
+				applyUsagePostProcessing(info, streamResponse.Usage, common.StringToByteSlice(data))
+				info.RecordUpstreamUsage(streamResponse.Usage)
 				usage = streamResponse.Usage
 				containStreamUsage = true
 			}
@@ -281,6 +283,8 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	}
 
 	usageModified := false
+	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
+	info.RecordUpstreamUsageFromJSON(&simpleResponse.Usage, responseBody, "usage")
 	if simpleResponse.Usage.PromptTokens == 0 {
 		completionTokens := simpleResponse.Usage.CompletionTokens
 		if completionTokens == 0 {

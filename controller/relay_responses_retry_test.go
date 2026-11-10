@@ -325,12 +325,9 @@ func TestResponsesRelayClientDisconnectPreservesSettlementWithoutChannelError(t 
 			require.NoError(t, db.Where("type = ?", model.LogTypeConsume).Find(&logs).Error)
 			require.Len(t, logs, 1)
 			require.True(t, gjson.Get(logs[0].Other, "stream_canceled_by_downstream").Bool(), logs[0].Other)
-			if output {
-				require.Positive(t, logs[0].CompletionTokens)
-				require.Positive(t, logs[0].Quota)
-			} else {
-				require.Zero(t, logs[0].Quota)
-			}
+			require.Zero(t, logs[0].CompletionTokens, "output text without upstream usage is not billable")
+			require.Zero(t, logs[0].Quota)
+			require.Equal(t, "missing_upstream_usage", gjson.Get(logs[0].Other, "billing_skipped_reason").String())
 			var user model.User
 			require.NoError(t, db.First(&user, 42).Error)
 			require.Equal(t, 1000000-logs[0].Quota, user.Quota, "settlement must survive the deferred refund")

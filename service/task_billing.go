@@ -176,6 +176,37 @@ func taskModelName(task *model.Task) string {
 	return task.Properties.OriginModelName
 }
 
+// TaskUsesTokenBilling distinguishes token reservations from fixed-price and
+// duration-based jobs, whose success responses need not contain token usage.
+func TaskUsesTokenBilling(task *model.Task) bool {
+	if bc := task.PrivateData.BillingContext; bc != nil {
+		if bc.PerCallBilling {
+			return false
+		}
+		if bc.TokenBilling != nil {
+			return *bc.TokenBilling
+		}
+		if bc.BillingPolicy != "" {
+			var policy billing_policy.Policy
+			if common.UnmarshalJsonStr(bc.BillingPolicy, &policy) == nil {
+				return policy.Mode == "per_token" || policy.Mode == "tiered"
+			}
+		}
+		if bc.ModelRatio > 0 {
+			return true
+		}
+	}
+	name := taskModelName(task)
+	if common.StringsContains(constant.TaskPricePatches, name) {
+		return false
+	}
+	if _, fixedPrice := ratio_setting.GetModelPrice(name, false); fixedPrice {
+		return false
+	}
+	ratio, configured, _ := ratio_setting.GetModelRatio(name)
+	return configured && ratio > 0
+}
+
 // RefundTaskQuota 统一的任务失败退款逻辑。
 // 当异步任务失败时，将预扣的 quota 退还给用户（支持钱包和订阅），并退还令牌额度。
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) {
@@ -315,6 +346,9 @@ func claimTaskQuota(task *model.Task, oldQuota, newQuota int) (bool, error) {
 // 与预扣费的差额进行补扣或退还。支持钱包和订阅计费来源。
 func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTokens int) {
 	if totalTokens <= 0 {
+		if TaskUsesTokenBilling(task) {
+			RecalculateTaskQuota(ctx, task, 0, "未收到上游可计费用量，本次不扣费")
+		}
 		return
 	}
 
