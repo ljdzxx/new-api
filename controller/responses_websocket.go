@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -262,15 +263,7 @@ func (call *responsesWSCall) RoundTrip(c *gin.Context, info *relaycommon.RelayIn
 		if err != nil {
 			return nil, err
 		}
-		dialer := *websocket.DefaultDialer
-		dialer.HandshakeTimeout = responsesWSWriteTimeout
-		if client != nil {
-			if transport, ok := client.Transport.(*http.Transport); ok {
-				dialer.Proxy = transport.Proxy
-				dialer.NetDialContext = transport.DialContext
-				dialer.TLSClientConfig = transport.TLSClientConfig
-			}
-		}
+		dialer := newResponsesWSDialer(client)
 		headers := req.Header.Clone()
 		headers.Del("Content-Type")
 		headers.Del("Accept")
@@ -319,6 +312,30 @@ func (call *responsesWSCall) RoundTrip(c *gin.Context, info *relaycommon.RelayIn
 	}
 	return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: reader, Request: req}, nil
 }
+
+func newResponsesWSDialer(client *http.Client) *websocket.Dialer {
+	dialer := *websocket.DefaultDialer
+	dialer.HandshakeTimeout = responsesWSWriteTimeout
+	if client != nil {
+		if transport, ok := client.Transport.(*http.Transport); ok && transport != nil {
+			// Clone initializes the transport's HTTP/2 configuration safely and
+			// gives this dialer its own TLS config without changing HTTP requests.
+			transport = transport.Clone()
+			dialer.Proxy = transport.Proxy
+			dialer.NetDialContext = transport.DialContext
+			dialer.TLSClientConfig = transport.TLSClientConfig
+		}
+	}
+	if dialer.TLSClientConfig == nil {
+		dialer.TLSClientConfig = &tls.Config{}
+	} else {
+		dialer.TLSClientConfig = dialer.TLSClientConfig.Clone()
+	}
+	// Gorilla performs an HTTP/1.1 Upgrade; it cannot speak negotiated h2.
+	dialer.TLSClientConfig.NextProtos = []string{"http/1.1"}
+	return &dialer
+}
+
 func responsesWSTerminal(kind string) bool {
 	switch kind {
 	case "response.completed", "response.failed", "response.incomplete", "response.cancelled", "response.canceled", "response.done":

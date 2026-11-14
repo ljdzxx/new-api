@@ -138,6 +138,10 @@ async function proxyToBackend(request, env) {
   }
 
   const resp = await fetch(new Request(upstream.toString(), init));
+  // Preserve the upgraded connection; rebuilding a 101 drops resp.webSocket.
+  if (resp.status === 101) {
+    return resp;
+  }
   const outHeaders = new Headers(resp.headers);
 
   // 动态接口默认不缓存

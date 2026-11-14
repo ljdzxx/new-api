@@ -2,6 +2,104 @@
 
 检查日期：2026-11-14。项目：new-api。
 
+## 生产复测（2026-11-14）
+
+目标为用户提供的 api.jucodex.com，模型 gpt-6.1-sol，使用用户授权的 API token。复测时间为 2026-11-14 22:30–22:36（Asia/Shanghai）；本地对照提交为 2f0cb1373f。无法通过外部接口证明生产二进制的精确 commit，以下结论以实际响应为准。密钥未写入仓库或测试报告，未修改生产渠道开关及配置。
+
+**结论：HTTP/SSE 工具往返和新增绑定拒绝逻辑已在生产观察到；WebSocket 公网握手未通过；不能宣称所有子代理能力已经端到端验收。**
+
+| 项目 | 生产结果 | 结论与边界 |
+| --- | --- | --- |
+| Responses JSON | 200 / completed，输出 HTTP_PROBE_OK | 基础 HTTP 请求正常。请求中的 store:true 不代表当前账号支持服务端历史续轮。 |
+| SSE 协作工具六步往返 | 六次均 200 / completed；最终输出 PARENT_CHILD_ROUNDTRIP_OK | 自定义 namespace 创建任务调用 → 子会话 custom 工具调用 → 工具结果回传 → 父会话 followup_task → 子会话后续请求 → 父会话最终结果均通过，call_id/namespace 可关联。 |
+| 工具载荷 | 文本载荷中的 9007199254740993 与嵌套 encrypted_content 哨兵完整返回；另一个 schema 数字 enum 探针也返回精确整数 | 支持这些样例的黑盒语义验证；未捕获上游原始 JSON，不能证明所有数值、字段顺序和重复字段都无损。 |
+| 无绑定 previous_response_id | 409，previous_response_id binding is unavailable，并返回 x-should-retry:false | 新增拒绝逻辑已生效。未用第二个 token 或更换渠道凭据测试隔离。 |
+| 已返回 ID 的 HTTP 续轮 | 400，previous_response_id requires an OpenAI API-key account for HTTP requests | 通过了本地未知 ID 拒绝路径，但当前上游账号不支持该种 HTTP 续轮；完整历史重放的六步链路正常。不能据此证明跨实例缓存及账号稳定性。 |
+| 顶层 multi_agent | 400，Unsupported parameter: multi_agent | 带该字段的请求被拒绝，和基础请求形成差异；与字段保留修复相符。当前上游接口未接受此参数，没有验证服务端托管代理。 |
+| 原名 collaboration.spawn_agent | 400，reserved for use by this model and must match the configured schema | 两个手写 schema 变体均被拒绝，不能用此探针证明实际 Codex 工具 schema 兼容。六步成功链路使用 production_probe namespace，工具编排由测试脚本执行，没有启动真实 Codex 子代理进程。 |
+| Responses WebSocket | 多次握手均 HTTP 400 / Bad Request，未得到 101；独立 HTTP/1.1 手工握手同样失败 | 失败发生在发送 response.create 之前，尚未检查渠道 responses_websocket_enabled，也没有验证上游 WS、注入、取消及计费。 |
+| compact hosted 拒绝 | 503 / model_not_found，gpt-6.1-sol-openai-compact 无可用渠道 | 分发先于 compact 内容验证，当前配置无法触达新增的 400 校验；不是该校验通过。 |
+| function_call_output 直接 JSON object | 400，expected one of a string or array of objects | 当前上游拒绝直接 object；六步链路使用受接受的字符串及 input_text 数组。不能把该协议类型错误归因于 JSON 精度修复。 |
+
+### WebSocket 排查依据
+
+使用 websockets 16.0 与独立 HTTP/1.1 握手发出合法 Connection: Upgrade、Upgrade: websocket、Sec-WebSocket-Version: 13 和随机 16 字节 base64 key；去掉压缩、补充 Beta 头均未成功。诊断响应包含 Sec-WebSocket-Version: 13 和 X-Oneapi-Request-Id，与当前 Gorilla upgrader 的 400 输出一致。
+
+结合 controller/responses_websocket.go 先 Upgrade、后读取 create 并校验渠道的顺序，公网入口上的 WebSocket Upgrade 请求头未完整转发到应用是优先排查项。外部黑盒结果不能确定具体是哪一层反向代理，也不能直接证明生产渠道开关状态。应按请求 ID 对照入口代理与应用日志，检查到应用的 HTTP 版本及 Upgrade/Connection/version/key 头，再尝试 101 后的推理。不要仅通过打开渠道开关来处理当前握手 400。
+
+### SSH 源站复核（2026-11-14 22:58–23:01，Asia/Shanghai）
+
+用户安装四服务只读诊断脚本后，已通过 SSH 复核 new-api slave，而非此前只读白名单指向的 sub2api slave。容器 new-api-slave 运行于 13001，healthy，重启次数 0；镜像为 new-api-local:slave，image ID 为 sha256:2535857750f4e81927c89ec06db70d9f6afa5bc36c19ede1ec6c7769ba32a306，创建于 2026-11-14T14:02:40Z。镜像没有 revision 标签，/api/status 也未返回非空版本号，不能证明精确 commit。
+
+同一 API token 的握手对照结果：
+
+| 路径 | 结果 |
+| --- | --- |
+| SSH 受限探针 → 127.0.0.1:13001/v1/responses | **101 Switching Protocols** |
+| 本机测试端 → 167.160.90.42:443，TLS SNI/Host 为 alb.jucodex.com | **400**，请求 ID 202611141459024431674916V9V9WTZ |
+| 本机测试端 → api.jucodex.com 公网入口 | **400**，请求 ID 20261114145902491079944T0qxRm2y |
+
+读取 nginx -T 的过滤结果确认：/etc/nginx/conf.d/alb.jucodex.com.conf 的 newapi_backend 指向 127.0.0.1:13001；TLS server 设置 proxy_set_header Connection ""，普通 API 正则 location 没有转发 Upgrade；只有 /v1/realtime 的专用 location 配置了 Upgrade 与 $connection_upgrade。/v1/responses 命中普通 API 规则。**已确认该源站 Nginx 配置存在 Responses WebSocket 握手阻断，应用本机握手正常。** 直接连接源站也复现 400，因此该问题不需要经过 Cloudflare 即可复现；不据此推断所有边缘配置均正确。
+
+建议在 alb.jucodex.com 的现有 TLS server 内加入 location = /v1/responses，转发到 newapi_backend，并设置 proxy_http_version 1.1、Upgrade $http_upgrade、Connection $connection_upgrade，以及现有 Host/X-Forwarded-* 头。沿用 nginx.conf 中已有的 http 级 map。可审阅片段已保存为本机 Downloads/tmp-ssh/new-api-responses-ws.location.conf；该片段不能直接放到 conf.d 顶层。应用前须验证 nginx -t，再由管理员 reload。
+
+在 new-api slave 容器日志中已匹配上述两个请求 ID，均为 2026-11-14 22:59:02 的 GET /v1/responses / 400。这确认公网与源站 Nginx 探针都实际到达该 slave，并非误测 master 或其他服务。
+
+本次保持远程只读，未修改 Nginx、渠道开关或容器；只进行握手，没有发送 response.create。因此 101 证明的是客户端到应用的 WebSocket 接入，尚不证明渠道开关已开启、远端支持 WS、注入/取消及计费正常。
+
+### Nginx 修正后的复测与第二轮修复（2026-11-14 23:08–23:09，Asia/Shanghai）
+
+用户应用 Nginx 片段后，读取配置确认 /v1/responses 已设置 HTTP/1.1 及 Upgrade 转发。源站 TLS 入口握手已从 400 变为 **101**，但公网入口与上游推理仍有两个独立阻断：
+
+| 路径 | 实测结果 | 定位 |
+| --- | --- | --- |
+| 公网 api.jucodex.com | HTTP 500，正文 error code: 1101；CF-Ray a5a6ef8d1fcf1ddd-LAX | 发生在 Cloudflare 层，没有得到 new-api 请求 ID。仓库 Worker 对上游 101 重新构造普通 Response，丢失 webSocket，与该现象相符；未取得线上 Worker 异常堆栈或部署版本，最终归因仍需发布后复测。 |
+| 直连源站 IP，SNI/Host 为 alb.jucodex.com | 握手 101；发送 response.create 后收到 do_request_failed / 500 | 请求 ID cd6b20d49dff48129d3d6071d63e8918；slave 日志选择渠道 312（OpenAI 类型、body passthrough），随后出现 malformed HTTP response 与 \x00\x00\x12\x04 等二进制内容。这些内容是 HTTP/2 帧，客户端正在按 HTTP/1.1 解析。 |
+
+该 create 已通过渠道 WebSocket 开关检查，当前故障不是该渠道开关关闭。101 仍只证明接入握手成功；这次没有获得模型输出，也没有验证注入、取消及结算全链路。诊断过程中未修改远程服务或渠道配置。
+
+本地补充修复：
+
+- web/jucodex-worker/src/index.js：上游返回 101 时直接返回原 Response，保留其升级连接；普通 HTTP/SSE 继续使用原有 no-cache 处理。
+- controller/responses_websocket.go：通过独立 helper 构造 WS dialer，先 Clone 共享 HTTP transport，再使用独立 TLS 配置，把该 WS 连接的 ALPN 限定为 http/1.1；保留代理、DialContext、证书和其他 TLS 设置，不关闭普通 HTTP 请求的 HTTP/2。
+- 新增 TLS 回归先用普通 HTTP/2 请求预热共享 transport，再通过同一配置发起 WSS。修复前复现与生产相同的二进制帧解析错误；修复后握手、消息读取、HTTP/1.1 协商及共享配置隔离断言通过。
+- Worker 新增四项无需额外依赖的回归：Responses/Realtime 的原始升级 Response 与 socket 保留、请求头/query 转发、POST/SSE 无缓冲与缓存头、401 握手拒绝正文。升级用例修复前失败，修复后四项通过。
+
+Worker 测试使用 Node VM 和模拟 fetch/升级对象，不等价于真实边缘 WebSocket 帧端到端测试。本机 Miniflare/workerd 原生运行时出现 access violation，未完成该路径的验证；Wrangler deploy --dry-run 打包检查已通过，未发布 Worker。
+
+修复后的检查（均退出码 0）：
+
+- go test ./controller -count=1 -timeout=180s：controller 全包通过。
+- go test -race ./controller -run '^TestResponses(WebSocket|HTTPContinuation)' -count=1 -timeout=180s：WebSocket 和 HTTP 续轮定向 race 检查通过。
+- go build -o 临时目录/new-api-responses-ws-check.exe .：根模块编译通过，未替换部署产物。
+- web/jucodex-worker 下 bun run test：4/4 通过；bun x --no-install wrangler deploy --dry-run --outdir 临时目录/new-api-worker-ws-dry-run：打包检查通过。
+- git diff --check：通过。未新增依赖，未改 lockfile。
+
+部署范围是 **new-api slave 后端镜像（13001）及 Cloudflare jucodex-worker 两个组件**；只重建后端不会更新 Worker，只发布 Worker 也不会解决上游 TLS 协商。Nginx 修改已由用户应用，本地修复尚未提交或部署。更新后应再次验证公网 101、response.create 的完整输出，再检查续轮、注入/取消及计费，不能据此提前认定生产 WS 全链路已通过。
+
+### 可关联的生产请求 ID
+
+| 探针 | X-Oneapi-Request-Id |
+| --- | --- |
+| JSON 基础请求 | 20261114143023278366060i4KpedAm |
+| 无绑定 ID 拒绝 | 20261114143023294244441mraddpgD |
+| compact 渠道缺失 | 20261114143024267916946uakM4osn |
+| 已返回 ID 的续轮被上游拒绝 | 20261114143149307133245WqzRydg3 |
+| 原名协作工具 schema 被拒绝 | 20261114143215835799180JK8gAIBD |
+| 六步链路：创建任务 | 2026111414340433862363hVixTeTx |
+| 六步链路：子会话工具调用 | 20261114143408417410971UYn20oGm |
+| 六步链路：子会话结果 | 20261114143412782426609CjJJNcD |
+| 六步链路：后续任务 | 202611141434163580384761nsJQGcK |
+| 六步链路：子会话续轮 | 20261114143421119562030XXwaCfBm |
+| 六步链路：父会话最终结果 | 20261114143424328742150DQN3sa1W |
+| hosted 参数被拒绝 | 20261114143404519556856AUAmtv9m |
+| 独立 HTTP/1.1 WS 握手 | 2026111414345465741109816rqXOfb |
+| 数字 enum 与 opaque schema 探针 | 20261114143554123496761z6WhCDhz |
+
+8 次完成的推理响应累计报告 6,294 tokens（输入 6,100 / 输出 194）；未读取生产消费日志或实际金额，不能据此验证扣费/退款金额。Session/parent/subagent/Beta 头随探针发送，但上游接收值不可见；跨渠道、跨账号、多实例、凭据变更、WS 终止时结算等仍仅有下述本地 mock/单测证据。
+
+测试脚本及脱敏的逐请求 JSON 保存在本机临时目录 new-api-production-responses-probe，仓库只记录上述结论。以下本地回归与原始审计均保留各自检查阶段的历史边界。
+
 ## 本地修复状态（2026-11-14）
 
 本节描述当前工作树的修复结果。后续「原始审计记录」与 upstream 复核保留历史结论，不代表修复后的状态。此次在当前分支就地修复，没有合并 upstream/main。
