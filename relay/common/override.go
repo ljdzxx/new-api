@@ -195,6 +195,32 @@ func ApplyParamOverrideWithRelayInfo(jsonData []byte, info *RelayInfo) ([]byte, 
 	return result, nil
 }
 
+// ApplyPassthroughHeaderOverrides keeps raw body mode independent from header
+// policy. Evaluate header operations against the original JSON without applying
+// body mutations or replacing the raw request.
+func ApplyPassthroughHeaderOverrides(body []byte, info *RelayInfo) error {
+	operations, ok := tryParseOperations(getParamOverrideMap(info))
+	if !ok {
+		return nil
+	}
+	var selected []ParamOperation
+	for _, op := range operations {
+		switch op.Mode {
+		case "set_header", "delete_header", "copy_header", "move_header", "pass_headers":
+			selected = append(selected, op)
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	ctx := BuildParamOverrideContext(info)
+	if _, err := applyOperations(body, selected, ctx); err != nil {
+		return err
+	}
+	syncRuntimeHeaderOverrideFromContext(info, ctx)
+	return nil
+}
+
 func shouldEnableParamOverrideAudit(paramOverride map[string]interface{}) bool {
 	if common.DebugEnabled {
 		return true

@@ -1,5 +1,7 @@
 {
   "translation": {
+    "仅适用于支持 Responses WebSocket 的 OpenAI/Codex 渠道，支持工具结果注入和连接内续轮": "For OpenAI/Codex channels supporting Responses WebSocket, including tool output injection and continuation on the same connection",
+    "启用 Responses WebSocket": "Enable Responses WebSocket",
     "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort and svg_effort set reasoning effort separately for logic tests and SVG drawings. Omitted, null, or blank values are not sent. Use values supported by the upstream model, such as low, medium, or high. Availability probes are unaffected.",
     "可用性探针超时（秒）": "Availability probe timeout (seconds)",
     "逻辑测试超时（秒）": "Logic test timeout (seconds)",

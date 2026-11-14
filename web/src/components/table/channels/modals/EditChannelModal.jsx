@@ -313,6 +313,7 @@ const EditChannelModal = (props) => {
     mock_js_handlers_text: '',
     proxy: '',
     pass_through_body_enabled: false,
+    responses_websocket_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
     forward_enabled: false,
@@ -667,6 +668,7 @@ const EditChannelModal = (props) => {
     mock_js_handlers_text: '',
     proxy: '',
     pass_through_body_enabled: false,
+    responses_websocket_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
     forward_enabled: false,
@@ -1022,6 +1024,8 @@ const EditChannelModal = (props) => {
           data.proxy = parsedSettings.proxy || '';
           data.pass_through_body_enabled =
             parsedSettings.pass_through_body_enabled || false;
+          data.responses_websocket_enabled =
+            parsedSettings.responses_websocket_enabled === true;
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
@@ -1055,6 +1059,7 @@ const EditChannelModal = (props) => {
           data.mock_js_handlers_text = '';
           data.proxy = '';
           data.pass_through_body_enabled = false;
+          data.responses_websocket_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
           data.forward_enabled = false;
@@ -1076,6 +1081,7 @@ const EditChannelModal = (props) => {
         data.mock_js_handlers_text = '';
         data.proxy = '';
         data.pass_through_body_enabled = false;
+        data.responses_websocket_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
         data.forward_enabled = false;
@@ -1206,6 +1212,7 @@ const EditChannelModal = (props) => {
         mock_js_handlers_text: data.mock_js_handlers_text || '',
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
+        responses_websocket_enabled: data.responses_websocket_enabled === true,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
         forward_enabled: data.forward_enabled || false,
@@ -1582,6 +1589,7 @@ const EditChannelModal = (props) => {
       mock_js_handlers_text: '',
       proxy: '',
       pass_through_body_enabled: false,
+      responses_websocket_enabled: false,
       system_prompt: '',
       system_prompt_override: false,
       forward_enabled: false,
@@ -2087,6 +2095,8 @@ const EditChannelModal = (props) => {
       mock_body_bytes_limit: Number(localInputs.mock_body_bytes_limit) || 0,
       proxy: localInputs.proxy || '',
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
+      responses_websocket_enabled:
+        localInputs.responses_websocket_enabled === true,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
       forward_enabled: localInputs.forward_enabled || false,
@@ -2195,6 +2205,7 @@ const EditChannelModal = (props) => {
     delete localInputs.mock_js_handlers_text;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
+    delete localInputs.responses_websocket_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.forward_enabled;
@@ -4578,6 +4589,22 @@ const EditChannelModal = (props) => {
                         )}
                       />
                     </div>
+
+                    <Form.Switch
+                      field='responses_websocket_enabled'
+                      label={t('启用 Responses WebSocket')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'responses_websocket_enabled',
+                          value,
+                        )
+                      }
+                      extraText={t(
+                        '仅适用于支持 Responses WebSocket 的 OpenAI/Codex 渠道，支持工具结果注入和连接内续轮',
+                      )}
+                    />
 
                     <Form.Switch
                       field='pass_through_body_enabled'

@@ -158,6 +158,12 @@ func GetAndValidateResponsesCompactionRequest(c *gin.Context) (*dto.OpenAIRespon
 	if request.Model == "" {
 		return nil, errors.New("model is required")
 	}
+	if len(request.MultiAgent) > 0 && string(request.MultiAgent) != "null" {
+		return nil, errors.New("multi_agent is not supported by /v1/responses/compact")
+	}
+	if err := (&dto.OpenAIResponsesRequest{Input: request.Input}).ValidateStatelessConversion(); err != nil {
+		return nil, fmt.Errorf("/v1/responses/compact cannot preserve hosted agent state: %w", err)
+	}
 	return request, nil
 }
 

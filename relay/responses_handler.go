@@ -27,6 +27,10 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	common.SetContextKey(c, appconstant.ContextKeyResponsesLogBadges, []string(nil))
 	info.InitChannelMeta(c)
 	info.ResetConversionDiagnostics()
+	if c.GetBool("responses_websocket_request") && (info.ApiType != appconstant.APITypeOpenAI && info.ApiType != appconstant.APITypeCodex || !info.ChannelSetting.ResponsesWebSocketEnabled) {
+		return types.NewErrorWithStatusCode(fmt.Errorf("Responses WebSocket requires an enabled native OpenAI/Codex channel"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	}
+
 	logger.LogInfo(c, fmt.Sprintf(
 		"responses relay selected channel: request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q pass_through=%t channel_pass_through=%t",
 		c.Request.URL.Path,
@@ -118,6 +122,9 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		outboundRequestBody, err = storage.Bytes()
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+		}
+		if err := relaycommon.ApplyPassthroughHeaderOverrides(outboundRequestBody, info); err != nil {
+			return newAPIErrorFromParamOverride(err)
 		}
 		mappedBody, mapErr := helper.ApplyModelMappingToPassthroughBody(outboundRequestBody, info, request)
 		if mapErr != nil {

@@ -1,5 +1,7 @@
 {
   "translation": {
+    "仅适用于支持 Responses WebSocket 的 OpenAI/Codex 渠道，支持工具结果注入和连接内续轮": "Dành cho kênh OpenAI/Codex tương thích, hỗ trợ gửi kết quả công cụ và tiếp tục trên cùng kết nối",
+    "启用 Responses WebSocket": "Bật Responses WebSocket",
     "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort và svg_effort đặt riêng mức độ suy luận cho kiểm tra logic và vẽ SVG. Giá trị bị bỏ qua, null hoặc để trống sẽ không được gửi. Dùng giá trị mà mô hình thượng nguồn hỗ trợ, như low, medium hoặc high. Kiểm tra khả dụng không bị ảnh hưởng.",
     "可用性探针超时（秒）": "Thời gian chờ kiểm tra khả dụng (giây)",
     "逻辑测试超时（秒）": "Thời gian chờ kiểm tra logic (giây)",

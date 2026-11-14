@@ -23,6 +23,9 @@ func responsesRawPresent(raw json.RawMessage) bool {
 // Chat messages as an intermediate (which loses custom tools and tool media).
 // The existing Chat converter supplies the shared model/Schema/thinking policy.
 func ConvertResponsesToGemini(c *gin.Context, info *relaycommon.RelayInfo, req dto.OpenAIResponsesRequest) (*dto.GeminiChatRequest, error) {
+	if err := req.ValidateStatelessConversion(); err != nil {
+		return nil, err
+	}
 	info.ResetConversionDiagnostics()
 	c.Set(geminiResponsesCustomToolsKey, map[string]bool(nil))
 	c.Set(geminiResponsesToolNamesKey, responsesToolNames(nil))

@@ -42,6 +42,10 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		c.Set("image_generation_call_size", responsesResponse.GetSize())
 	}
 
+	if err := service.RecordResponsesBinding(c, info, responsesResponse.ID); err != nil {
+		logger.LogError(c, "failed to record Responses continuation binding: "+err.Error())
+	}
+
 	// Only the client copy is scaled. responsesResponse remains raw for billing.
 	if helper.ShouldScaleResponseUsage(info) {
 		responseBody, err = helper.PatchResponseUsageJSONForRelay(responseBody, types.RelayFormatOpenAIResponses, info)
@@ -103,6 +107,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if err := common.UnmarshalJsonStr(data, &streamResponse); err == nil {
 			lastEventType = streamResponse.Type
 			if streamResponse.Response != nil {
+				if err := service.RecordResponsesBinding(c, info, streamResponse.Response.ID); err != nil {
+					logger.LogError(c, "failed to record Responses continuation binding: "+err.Error())
+				}
 				info.RecordUpstreamUsage(streamResponse.Response.Usage)
 			}
 			if streamResponse.Type == "" {
@@ -141,7 +148,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 				clientData = string(patched)
 			}
-			if !failed {
+			if !failed || c.GetBool("responses_websocket_request") {
 				if err := sendResponsesStreamData(c, streamResponse, clientData); err != nil {
 					logger.LogWarn(c, "failed to write responses stream data: "+err.Error())
 					streamErr = types.NewClientDisconnectedError(err)
@@ -153,8 +160,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				lastForwardedAt = time.Now()
 			}
 			switch streamResponse.Type {
-			case "response.completed", "response.failed", "response.incomplete":
-				completed = streamResponse.Type == "response.completed"
+			case "response.completed", "response.failed", "response.incomplete", "response.done", "response.cancelled", "response.canceled":
+				completed = streamResponse.Type == "response.completed" || c.GetBool("responses_websocket_request") && (streamResponse.Type == "response.done" || streamResponse.Type == "response.cancelled" || streamResponse.Type == "response.canceled")
 				if completed {
 					sr.Done()
 				}

@@ -80,6 +80,7 @@ func SetRelayRouter(router *gin.Engine) {
 	{
 		playgroundRouter.POST("/chat/completions", controller.Playground)
 	}
+	router.GET("/v1/responses", middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(), controller.ResponsesWebSocket)
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))
 	relayV1Router.Use(middleware.SystemPerformanceCheck())

@@ -10,6 +10,8 @@ import (
 )
 
 type OpenAIResponsesCompactionRequest struct {
+	// Recognized for validation: compact cannot preserve hosted agent state.
+	MultiAgent           json.RawMessage `json:"multi_agent,omitempty"`
 	Model                string          `json:"model"`
 	Input                json.RawMessage `json:"input,omitempty"`
 	Instructions         json.RawMessage `json:"instructions,omitempty"`

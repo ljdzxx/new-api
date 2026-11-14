@@ -91,6 +91,20 @@ func applyUpstreamContentLength(req *http.Request, info *common.RelayInfo) {
 }
 
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
+	// Responses collaboration metadata is independent of body passthrough and
+	// prompt-cache affinity. Explicit channel overrides still run afterwards.
+	if info.RelayMode == constant.RelayModeResponses || info.RelayMode == constant.RelayModeResponsesCompact {
+		for _, name := range []string{
+			"OpenAI-Beta", "Originator", "Session_id", "Thread_id",
+			"Session-Id", "X-Session-Id", "Thread-Id", "X-Client-Request-Id",
+			"X-Codex-Beta-Features", "X-Codex-Turn-State", "X-Codex-Turn-Metadata",
+			"X-Codex-Window-Id", "X-Codex-Parent-Thread-Id", "X-OpenAI-Subagent",
+		} {
+			if values := c.Request.Header.Values(name); len(values) > 0 {
+				(*req)[http.CanonicalHeaderKey(name)] = append([]string(nil), values...)
+			}
+		}
+	}
 	if info.RelayMode == constant.RelayModeAudioTranscription || info.RelayMode == constant.RelayModeAudioTranslation {
 		// multipart/form-data
 	} else if info.RelayMode == constant.RelayModeRealtime {
@@ -377,6 +391,16 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	if info.RelayMode == constant.RelayModeResponses {
+		if err := service.ValidateResponsesOutboundBinding(c, info, req); err != nil {
+			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusConflict, types.ErrOptionWithSkipRetry())
+		}
+	}
+	if transport, ok := c.Get(ResponsesTransportContextKey); ok {
+		if responses, ok := transport.(ResponsesTransport); ok {
+			return responses.RoundTrip(c, info, req)
+		}
+	}
 	common.WrapRequestBodyForDebugTrace(c, req, info)
 	if shouldTraceXiaomiClaudeFinalRequest(c, info) {
 		logger.LogInfo(c, fmt.Sprintf("[xiaomi claude trace] FINAL upstream http request: method=%s url=%q host=%q headers={%s} header_override=%d",

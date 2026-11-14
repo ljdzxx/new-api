@@ -3,6 +3,7 @@ package openaicompat
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -17,6 +18,12 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 	}
 	if req.Model == "" {
 		return nil, errors.New("model is required")
+	}
+	if err := req.ValidateStatelessConversion(); err != nil {
+		return nil, err
+	}
+	if req.PreviousResponseID != "" || len(req.Conversation) > 0 && string(req.Conversation) != "null" || len(req.ContextManagement) > 0 && string(req.ContextManagement) != "null" || len(req.Prompt) > 0 && string(req.Prompt) != "null" {
+		return nil, errors.New("Chat Completions requires inline input history; Responses state references are unsupported")
 	}
 
 	out := &dto.GeneralOpenAIRequest{
@@ -35,74 +42,13 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 		out.ReasoningEffort = req.Reasoning.Effort
 	}
 
-	if len(req.Tools) > 0 {
-		var tools []map[string]any
-		if err := common.Unmarshal(req.Tools, &tools); err == nil {
-			out.Tools = make([]dto.ToolCallRequest, 0, len(tools))
-			for _, tool := range tools {
-				toolType := strings.TrimSpace(common.Interface2String(tool["type"]))
-				switch toolType {
-				case "function":
-					name := strings.TrimSpace(common.Interface2String(tool["name"]))
-					description := strings.TrimSpace(common.Interface2String(tool["description"]))
-					parameters := tool["parameters"]
-					if fn, ok := tool["function"].(map[string]any); ok {
-						if name == "" {
-							name = strings.TrimSpace(common.Interface2String(fn["name"]))
-						}
-						if description == "" {
-							description = strings.TrimSpace(common.Interface2String(fn["description"]))
-						}
-						if parameters == nil {
-							parameters = fn["parameters"]
-						}
-					}
-					out.Tools = append(out.Tools, dto.ToolCallRequest{
-						Type: "function",
-						Function: dto.FunctionRequest{
-							Name:        name,
-							Description: description,
-							Parameters:  parameters,
-						},
-					})
-				default:
-					encoded, _ := common.Marshal(tool)
-					out.Tools = append(out.Tools, dto.ToolCallRequest{
-						Type:   toolType,
-						Custom: encoded,
-					})
-				}
-			}
-		}
+	tools, choice, mapping, err := convertResponsesChatTools(req.Tools, req.ToolChoice)
+	if err != nil {
+		return nil, err
 	}
-
-	if len(req.ToolChoice) > 0 {
-		switch common.GetJsonType(req.ToolChoice) {
-		case "string":
-			var v string
-			if err := common.Unmarshal(req.ToolChoice, &v); err == nil {
-				out.ToolChoice = v
-			}
-		case "object":
-			var v map[string]any
-			if err := common.Unmarshal(req.ToolChoice, &v); err == nil {
-				if strings.TrimSpace(common.Interface2String(v["type"])) == "function" {
-					if name := strings.TrimSpace(common.Interface2String(v["name"])); name != "" {
-						out.ToolChoice = map[string]any{
-							"type": "function",
-							"function": map[string]any{
-								"name": name,
-							},
-						}
-					} else {
-						out.ToolChoice = v
-					}
-				} else {
-					out.ToolChoice = v
-				}
-			}
-		}
-	}
+	out.Tools = tools
+	out.ToolChoice = choice
+	out.ResponsesToolMapping = mapping
 
 	var messages []dto.Message
 	if len(req.Instructions) > 0 {
@@ -121,7 +67,7 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 		messages = append(messages, msg)
 	}
 
-	inputMessages, err := responsesInputToChatMessages(req.Input)
+	inputMessages, err := responsesInputToChatMessagesWithTools(req.Input, mapping)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +78,9 @@ func ResponsesRequestToChatCompletionsRequest(req *dto.OpenAIResponsesRequest) (
 }
 
 func responsesInputToChatMessages(raw json.RawMessage) ([]dto.Message, error) {
+	return responsesInputToChatMessagesWithTools(raw, nil)
+}
+func responsesInputToChatMessagesWithTools(raw json.RawMessage, mapping map[string]dto.ResponsesToolIdentity) ([]dto.Message, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -149,7 +98,7 @@ func responsesInputToChatMessages(raw json.RawMessage) ([]dto.Message, error) {
 	}
 
 	var items []map[string]any
-	if err := common.Unmarshal(raw, &items); err != nil {
+	if err := common.UnmarshalUseNumber(raw, &items); err != nil {
 		return nil, err
 	}
 
@@ -157,23 +106,62 @@ func responsesInputToChatMessages(raw json.RawMessage) ([]dto.Message, error) {
 	for _, item := range items {
 		itemType := strings.TrimSpace(common.Interface2String(item["type"]))
 		switch itemType {
-		case "function_call_output":
+		case "function_call_output", "custom_tool_call_output":
 			msg := dto.Message{
 				Role:       "tool",
 				ToolCallId: strings.TrimSpace(common.Interface2String(item["call_id"])),
 			}
-			msg.SetStringContent(common.Interface2String(item["output"]))
+			output, err := responsesChatOutput(item["output"])
+			if err != nil {
+				return nil, err
+			}
+			if msg.ToolCallId == "" {
+				return nil, errors.New("tool output requires call_id")
+			}
+			msg.SetStringContent(output)
 			messages = append(messages, msg)
 			continue
-		case "function_call":
+		case "function_call", "custom_tool_call":
+			name, err := responsesChatName(common.Interface2String(item["namespace"]), common.Interface2String(item["name"]))
+			if err != nil {
+				return nil, err
+			}
+			if common.Interface2String(item["call_id"]) == "" {
+				return nil, errors.New("tool call requires call_id")
+			}
+			arguments, ok := item["arguments"].(string)
+			if itemType == "custom_tool_call" {
+				input, valid := item["input"].(string)
+				if !valid {
+					return nil, errors.New("custom_tool_call.input must be a string")
+				}
+				encoded, err := common.Marshal(map[string]string{"input": input})
+				if err != nil {
+					return nil, err
+				}
+				arguments = string(encoded)
+				ok = true
+			}
+			if !ok {
+				return nil, errors.New("function_call.arguments must be a string")
+			}
+			if mapping != nil {
+				namespace := strings.TrimSpace(common.Interface2String(item["namespace"]))
+				if namespace == "functions" {
+					namespace = ""
+				}
+				if prior, exists := mapping[name]; exists && (prior.Custom != (itemType == "custom_tool_call") || prior.Name != strings.TrimSpace(common.Interface2String(item["name"])) || prior.Namespace != namespace) {
+					return nil, errors.New("tool history conflicts with definition")
+				}
+			}
 			msg := dto.Message{Role: "assistant"}
 			msg.SetToolCalls([]dto.ToolCallRequest{
 				{
 					ID:   strings.TrimSpace(common.Interface2String(item["call_id"])),
 					Type: "function",
 					Function: dto.FunctionRequest{
-						Name:      strings.TrimSpace(common.Interface2String(item["name"])),
-						Arguments: common.Interface2String(item["arguments"]),
+						Name:      name,
+						Arguments: arguments,
 					},
 				},
 			})
@@ -181,6 +169,9 @@ func responsesInputToChatMessages(raw json.RawMessage) ([]dto.Message, error) {
 			continue
 		}
 
+		if itemType != "" && itemType != "message" {
+			return nil, fmt.Errorf("Responses item %q cannot be represented in Chat Completions", itemType)
+		}
 		role := strings.TrimSpace(common.Interface2String(item["role"]))
 		if role == "" {
 			role = "user"

@@ -19,6 +19,8 @@
 # 交互菜单
 bash deploy/deploy.sh
 
+bash deploy/deploy.sh build master
+bash deploy/deploy.sh build slave
 bash deploy/deploy.sh start master
 bash deploy/deploy.sh start slave
 bash deploy/deploy.sh stop master
@@ -29,6 +31,10 @@ bash deploy/deploy.sh update slave
 # 可选：指定其他 .env 文件
 ENV_FILE=/absolute/path/.env bash deploy/deploy.sh start slave
 ```
+
+如果当前已在 `deploy` 目录中，使用 `bash deploy.sh build master` 等命令即可。
+
+`build` 只构建当前工作区源码的镜像，不执行 `git pull`，也不创建、停止或替换容器，因此不需要 `.env`。镜像分别标记为 `new-api-local:master` 和 `new-api-local:slave`。构建完成后可使用 `start` 首次创建并启动节点；已有容器仍使用原镜像，需要执行 `update` 才会拉取代码、重新构建并替换容器。
 
 初次启动时，若没有对应镜像则构建当前工作区源码。普通启动复用现有容器及其配置挂载；更换配置文件路径需要执行 `update`。修改同一 `.env` 文件内容后，执行 `stop` 再 `start` 重新加载。若编辑器通过替换文件保存配置，使用 `update` 重建容器以刷新文件挂载。
 

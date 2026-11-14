@@ -35,6 +35,7 @@ type ChannelAffinitySetting struct {
 }
 
 var codexCliPassThroughHeaders = []string{
+	"OpenAI-Beta",
 	"Originator",
 	"Session_id",
 	"Thread_id",

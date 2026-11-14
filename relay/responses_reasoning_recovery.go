@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,10 @@ func doResponsesRequestWithReasoningRecovery(c *gin.Context, info *relaycommon.R
 		}
 		resp, err := adaptor.DoRequest(c, info, requestBody)
 		if err != nil {
+			var apiErr *types.NewAPIError
+			if errors.As(err, &apiErr) {
+				return nil, apiErr
+			}
 			return nil, types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
 		}
 		var httpResp *http.Response
@@ -50,7 +55,7 @@ func doResponsesRequestWithReasoningRecovery(c *gin.Context, info *relaycommon.R
 		} else {
 			usage, apiErr = adaptor.DoResponse(c, httpResp, info)
 		}
-		if !shouldRecoverResponsesReasoning(apiErr, httpResp, outboundBody) {
+		if c.GetBool("responses_websocket_request") || !shouldRecoverResponsesReasoning(apiErr, httpResp, outboundBody) {
 			return usage, apiErr
 		}
 

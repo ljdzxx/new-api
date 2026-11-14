@@ -90,8 +90,8 @@ func TestSanitizeInvalidResponsesItemIDsRemovesOverlongIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SanitizeInvalidResponsesItemIDs returned error: %v", err)
 	}
-	if removed != 2 {
-		t.Fatalf("removed = %d, want 2", removed)
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
 	}
 
 	var sanitized map[string]any
@@ -99,10 +99,13 @@ func TestSanitizeInvalidResponsesItemIDsRemovesOverlongIDs(t *testing.T) {
 		t.Fatalf("unmarshal output: %v", err)
 	}
 	items := sanitized["input"].([]any)
-	for _, index := range []int{0, 1} {
+	for _, index := range []int{0} {
 		if _, exists := items[index].(map[string]any)["id"]; exists {
 			t.Fatalf("input[%d] still has overlong id", index)
 		}
+	}
+	if got := items[1].(map[string]any)["id"]; got != strings.Repeat("x", maxResponsesItemIDLen+1) {
+		t.Fatal("opaque future item id changed")
 	}
 	if got := items[2].(map[string]any)["id"]; got != payload["input"].([]any)[2].(map[string]any)["id"] {
 		t.Fatalf("64-character id changed: got %v", got)

@@ -27,36 +27,37 @@ type FormatJsonSchema struct {
 // GeneralOpenAIRequest represents a general request structure for OpenAI-compatible APIs.
 // 参数增加规范：无引用的参数必须使用json.RawMessage类型，并添加omitempty标签
 type GeneralOpenAIRequest struct {
-	Model               string            `json:"model,omitempty"`
-	Messages            []Message         `json:"messages,omitempty"`
-	Prompt              any               `json:"prompt,omitempty"`
-	Prefix              any               `json:"prefix,omitempty"`
-	Suffix              any               `json:"suffix,omitempty"`
-	Stream              *bool             `json:"stream,omitempty"`
-	StreamOptions       *StreamOptions    `json:"stream_options,omitempty"`
-	MaxTokens           *uint             `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *uint             `json:"max_completion_tokens,omitempty"`
-	ReasoningEffort     string            `json:"reasoning_effort,omitempty"`
-	Verbosity           json.RawMessage   `json:"verbosity,omitempty"` // gpt-5
-	Temperature         *float64          `json:"temperature,omitempty"`
-	TopP                *float64          `json:"top_p,omitempty"`
-	TopK                *int              `json:"top_k,omitempty"`
-	Stop                any               `json:"stop,omitempty"`
-	N                   *int              `json:"n,omitempty"`
-	Input               any               `json:"input,omitempty"`
-	Instruction         string            `json:"instruction,omitempty"`
-	Size                string            `json:"size,omitempty"`
-	Functions           json.RawMessage   `json:"functions,omitempty"`
-	FrequencyPenalty    *float64          `json:"frequency_penalty,omitempty"`
-	PresencePenalty     *float64          `json:"presence_penalty,omitempty"`
-	ResponseFormat      *ResponseFormat   `json:"response_format,omitempty"`
-	EncodingFormat      json.RawMessage   `json:"encoding_format,omitempty"`
-	Seed                *float64          `json:"seed,omitempty"`
-	ParallelTooCalls    *bool             `json:"parallel_tool_calls,omitempty"`
-	Tools               []ToolCallRequest `json:"tools,omitempty"`
-	ToolChoice          any               `json:"tool_choice,omitempty"`
-	FunctionCall        json.RawMessage   `json:"function_call,omitempty"`
-	User                json.RawMessage   `json:"user,omitempty"`
+	ResponsesToolMapping map[string]ResponsesToolIdentity `json:"-"`
+	Model                string                           `json:"model,omitempty"`
+	Messages             []Message                        `json:"messages,omitempty"`
+	Prompt               any                              `json:"prompt,omitempty"`
+	Prefix               any                              `json:"prefix,omitempty"`
+	Suffix               any                              `json:"suffix,omitempty"`
+	Stream               *bool                            `json:"stream,omitempty"`
+	StreamOptions        *StreamOptions                   `json:"stream_options,omitempty"`
+	MaxTokens            *uint                            `json:"max_tokens,omitempty"`
+	MaxCompletionTokens  *uint                            `json:"max_completion_tokens,omitempty"`
+	ReasoningEffort      string                           `json:"reasoning_effort,omitempty"`
+	Verbosity            json.RawMessage                  `json:"verbosity,omitempty"` // gpt-5
+	Temperature          *float64                         `json:"temperature,omitempty"`
+	TopP                 *float64                         `json:"top_p,omitempty"`
+	TopK                 *int                             `json:"top_k,omitempty"`
+	Stop                 any                              `json:"stop,omitempty"`
+	N                    *int                             `json:"n,omitempty"`
+	Input                any                              `json:"input,omitempty"`
+	Instruction          string                           `json:"instruction,omitempty"`
+	Size                 string                           `json:"size,omitempty"`
+	Functions            json.RawMessage                  `json:"functions,omitempty"`
+	FrequencyPenalty     *float64                         `json:"frequency_penalty,omitempty"`
+	PresencePenalty      *float64                         `json:"presence_penalty,omitempty"`
+	ResponseFormat       *ResponseFormat                  `json:"response_format,omitempty"`
+	EncodingFormat       json.RawMessage                  `json:"encoding_format,omitempty"`
+	Seed                 *float64                         `json:"seed,omitempty"`
+	ParallelTooCalls     *bool                            `json:"parallel_tool_calls,omitempty"`
+	Tools                []ToolCallRequest                `json:"tools,omitempty"`
+	ToolChoice           any                              `json:"tool_choice,omitempty"`
+	FunctionCall         json.RawMessage                  `json:"function_call,omitempty"`
+	User                 json.RawMessage                  `json:"user,omitempty"`
 	// ServiceTier specifies upstream service level and may affect billing.
 	// This field is filtered by default and can be enabled via channel setting allow_service_tier.
 	ServiceTier json.RawMessage `json:"service_tier,omitempty"`
@@ -234,6 +235,7 @@ type ToolCallRequest struct {
 }
 
 type FunctionRequest struct {
+	Strict      *bool  `json:"strict,omitempty"`
 	Description string `json:"description,omitempty"`
 	Name        string `json:"name"`
 	Parameters  any    `json:"parameters,omitempty"`
@@ -832,6 +834,8 @@ type OpenAIResponsesRequest struct {
 	Model   string          `json:"model"`
 	Input   json.RawMessage `json:"input,omitempty"`
 	Include json.RawMessage `json:"include,omitempty"`
+	// Keep hosted orchestration settings opaque, including explicit false/zero.
+	MultiAgent json.RawMessage `json:"multi_agent,omitempty"`
 	// 在后台运行推理，暂时还不支持依赖的接口
 	// Background         json.RawMessage `json:"background,omitempty"`
 	Conversation       json.RawMessage `json:"conversation,omitempty"`

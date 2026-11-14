@@ -367,6 +367,8 @@ type IncompleteDetails struct {
 }
 
 type ResponsesOutput struct {
+	Namespace string                   `json:"namespace,omitempty"`
+	Input     *string                  `json:"input,omitempty"`
 	Type      string                   `json:"type"`
 	ID        string                   `json:"id"`
 	Status    string                   `json:"status"`

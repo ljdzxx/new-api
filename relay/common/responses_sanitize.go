@@ -1,10 +1,13 @@
 package common
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	basecommon "github.com/QuantumNous/new-api/common"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 const (
@@ -26,59 +29,39 @@ var responsesItemIDPrefixes = map[string]string{
 // strict upstreams reject them on the next request. The call_id field is
 // intentionally preserved because it correlates tool calls with their outputs.
 func SanitizeInvalidResponsesItemIDs(jsonData []byte) ([]byte, int, error) {
-	var data map[string]any
-	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
-		return jsonData, 0, err
+	if !gjson.ValidBytes(jsonData) {
+		return jsonData, 0, fmt.Errorf("invalid Responses JSON")
 	}
-
-	input, exists := data["input"]
-	if !exists {
+	input := gjson.GetBytes(jsonData, "input")
+	if !input.IsArray() {
 		return jsonData, 0, nil
 	}
-	items, ok := input.([]any)
-	if !ok {
-		return jsonData, 0, nil
-	}
-
 	removed := 0
-	for _, rawItem := range items {
-		item, ok := rawItem.(map[string]any)
-		if !ok {
+	for i, item := range input.Array() {
+		kind := item.Get("type").String()
+		if kind == "" && item.Get("role").Exists() {
+			kind = "message"
+		}
+		prefix, known := responsesItemIDPrefixes[kind]
+		// Unknown/hosted items are opaque, including their identifiers.
+		if !known {
 			continue
 		}
-
-		itemType, _ := item["type"].(string)
-		if itemType == "" {
-			if _, hasRole := item["role"]; hasRole {
-				itemType = "message"
-			}
-		}
-		id, ok := item["id"].(string)
-		if !ok || id == "" {
+		id := item.Get("id")
+		if id.Type != gjson.String || id.String() == "" {
 			continue
 		}
-		if utf8.RuneCountInString(id) > maxResponsesItemIDLen {
-			delete(item, "id")
-			removed++
+		if utf8.RuneCountInString(id.String()) <= maxResponsesItemIDLen && strings.HasPrefix(id.String(), prefix) {
 			continue
 		}
-
-		expectedPrefix, knownType := responsesItemIDPrefixes[itemType]
-		if !knownType || strings.HasPrefix(id, expectedPrefix) {
-			continue
+		var err error
+		jsonData, err = deleteJSONPath(jsonData, fmt.Sprintf("input.%d.id", i))
+		if err != nil {
+			return jsonData, removed, err
 		}
-		delete(item, "id")
 		removed++
 	}
-
-	if removed == 0 {
-		return jsonData, 0, nil
-	}
-	sanitized, err := basecommon.Marshal(data)
-	if err != nil {
-		return jsonData, removed, err
-	}
-	return sanitized, removed, nil
+	return jsonData, removed, nil
 }
 
 // SanitizeInvalidResponsesEncryptedContent fixes plainly invalid encrypted_content
@@ -91,91 +74,53 @@ func SanitizeInvalidResponsesItemIDs(jsonData []byte) ([]byte, int, error) {
 // user message. Other invalid encrypted_content items are removed because the
 // field is required for those item types.
 func SanitizeInvalidResponsesEncryptedContent(jsonData []byte) ([]byte, int, error) {
-	var data map[string]any
-	if err := basecommon.Unmarshal(jsonData, &data); err != nil {
-		return jsonData, 0, err
+	if !gjson.ValidBytes(jsonData) {
+		return jsonData, 0, fmt.Errorf("invalid Responses JSON")
 	}
-
-	input, exists := data["input"]
-	if !exists {
-		return jsonData, 0, nil
-	}
-
-	sanitizedInput, removed := sanitizeInvalidEncryptedContentItems(input, true)
-	if removed == 0 {
-		return jsonData, 0, nil
-	}
-	data["input"] = sanitizedInput
-
-	sanitized, err := basecommon.Marshal(data)
-	if err != nil {
-		return jsonData, removed, err
-	}
-	return sanitized, removed, nil
+	return sanitizeEncryptedProtocolArray(jsonData, "input", true)
 }
 
-func sanitizeInvalidEncryptedContentItems(value any, allowCompactionMessageReplacement bool) (any, int) {
-	switch typed := value.(type) {
-	case []any:
-		sanitized := make([]any, 0, len(typed))
-		removed := 0
-		changed := false
-		for _, child := range typed {
-			if childMap, ok := child.(map[string]any); ok {
-				if replacement, fixed := replacementForInvalidEncryptedContentItem(childMap, allowCompactionMessageReplacement); fixed {
-					removed++
-					changed = true
-					if replacement != nil {
-						sanitized = append(sanitized, replacement)
-					}
-					continue
+// Only visit protocol input items and message content. Tool outputs, agent
+// messages and arbitrary metadata are opaque even if their keys look familiar.
+func sanitizeEncryptedProtocolArray(body []byte, path string, topLevel bool) ([]byte, int, error) {
+	array := gjson.GetBytes(body, path)
+	if !array.IsArray() {
+		return body, 0, nil
+	}
+	items := array.Array()
+	removed := 0
+	for i := len(items) - 1; i >= 0; i-- {
+		item := items[i]
+		kind := item.Get("type").String()
+		itemPath := fmt.Sprintf("%s.%d", path, i)
+		text := item.Get("encrypted_content")
+		if (kind == "reasoning" || kind == "compaction") && text.Type == gjson.String && isPlainlyInvalidEncryptedContent(text.String()) {
+			var err error
+			if topLevel && kind == "compaction" {
+				replacement, marshalErr := basecommon.Marshal(map[string]any{"type": "message", "role": "user", "content": []any{map[string]string{"type": "input_text", "text": text.String()}}})
+				if marshalErr != nil {
+					return body, removed, marshalErr
 				}
+				body, err = sjson.SetRawBytes(body, itemPath, replacement)
+			} else {
+				body, err = sjson.DeleteBytes(body, itemPath)
 			}
-
-			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child, false)
-			if childRemoved > 0 {
-				changed = true
+			if err != nil {
+				return body, removed, err
 			}
-			removed += childRemoved
-			sanitized = append(sanitized, sanitizedChild)
+			removed++
+			continue
 		}
-		if !changed {
-			return value, 0
-		}
-		return sanitized, removed
-	case map[string]any:
-		removed := 0
-		for key, child := range typed {
-			sanitizedChild, childRemoved := sanitizeInvalidEncryptedContentItems(child, false)
-			if childRemoved > 0 {
-				typed[key] = sanitizedChild
-				removed += childRemoved
+		if topLevel && (kind == "message" || kind == "" && item.Get("role").Exists()) {
+			updated, count, err := sanitizeEncryptedProtocolArray(body, itemPath+".content", false)
+			if err != nil {
+				return body, removed, err
 			}
+			body = updated
+			removed += count
 		}
-		return typed, removed
-	default:
-		return value, 0
 	}
-}
-
-func replacementForInvalidEncryptedContentItem(item map[string]any, allowCompactionMessageReplacement bool) (any, bool) {
-	text, ok := item["encrypted_content"].(string)
-	if !ok || !isPlainlyInvalidEncryptedContent(text) {
-		return nil, false
-	}
-	if allowCompactionMessageReplacement && item["type"] == "compaction" {
-		return map[string]any{
-			"type": "message",
-			"role": "user",
-			"content": []any{
-				map[string]any{
-					"type": "input_text",
-					"text": text,
-				},
-			},
-		}, true
-	}
-	return nil, true
+	return body, removed, nil
 }
 
 func isPlainlyInvalidEncryptedContent(value string) bool {

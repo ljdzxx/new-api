@@ -19,27 +19,28 @@ type ChannelForwardModelTarget struct {
 }
 
 type ChannelSettings struct {
-	ModelHealthEnabled     *bool                       `json:"model_health_enabled,omitempty"` // nil preserves the default: enabled
-	ForceFormat            bool                        `json:"force_format,omitempty"`
-	ThinkingToContent      bool                        `json:"thinking_to_content,omitempty"`
-	MockTest               bool                        `json:"mock_test,omitempty"`
-	MockJSHandlers         map[string]string           `json:"mock_js_handlers,omitempty"`
-	MockBodyBytesLimit     int64                       `json:"mock_body_bytes_limit,omitempty"`
-	Proxy                  string                      `json:"proxy"`
-	PassThroughBodyEnabled bool                        `json:"pass_through_body_enabled,omitempty"`
-	SystemPrompt           string                      `json:"system_prompt,omitempty"`
-	SystemPromptOverride   bool                        `json:"system_prompt_override,omitempty"`
-	ForwardEnabled         bool                        `json:"forward_enabled,omitempty"`
-	ForwardTargetChannelID int                         `json:"forward_target_channel_id,omitempty"`
-	ForwardMatchRegex      string                      `json:"forward_match_regex,omitempty"`
-	ForwardPrecheckModel   string                      `json:"forward_precheck_model,omitempty"`
-	ForwardPrecheckPrompt  string                      `json:"forward_precheck_system_prompt,omitempty"`
-	ForwardMaxMessageChars int                         `json:"forward_max_message_chars,omitempty"`
-	ForwardMetricLogic     string                      `json:"forward_metric_logic,omitempty"`
-	ForwardMetricRules     []ChannelForwardMetricRule  `json:"forward_metric_rules,omitempty"`
-	ForwardModelTargets    []ChannelForwardModelTarget `json:"forward_model_targets,omitempty"`
-	ErrorInterceptEnabled  bool                        `json:"error_intercept_enabled,omitempty"`
-	ErrorInterceptMessage  string                      `json:"error_intercept_message,omitempty"`
+	ResponsesWebSocketEnabled bool                        `json:"responses_websocket_enabled,omitempty"`
+	ModelHealthEnabled        *bool                       `json:"model_health_enabled,omitempty"` // nil preserves the default: enabled
+	ForceFormat               bool                        `json:"force_format,omitempty"`
+	ThinkingToContent         bool                        `json:"thinking_to_content,omitempty"`
+	MockTest                  bool                        `json:"mock_test,omitempty"`
+	MockJSHandlers            map[string]string           `json:"mock_js_handlers,omitempty"`
+	MockBodyBytesLimit        int64                       `json:"mock_body_bytes_limit,omitempty"`
+	Proxy                     string                      `json:"proxy"`
+	PassThroughBodyEnabled    bool                        `json:"pass_through_body_enabled,omitempty"`
+	SystemPrompt              string                      `json:"system_prompt,omitempty"`
+	SystemPromptOverride      bool                        `json:"system_prompt_override,omitempty"`
+	ForwardEnabled            bool                        `json:"forward_enabled,omitempty"`
+	ForwardTargetChannelID    int                         `json:"forward_target_channel_id,omitempty"`
+	ForwardMatchRegex         string                      `json:"forward_match_regex,omitempty"`
+	ForwardPrecheckModel      string                      `json:"forward_precheck_model,omitempty"`
+	ForwardPrecheckPrompt     string                      `json:"forward_precheck_system_prompt,omitempty"`
+	ForwardMaxMessageChars    int                         `json:"forward_max_message_chars,omitempty"`
+	ForwardMetricLogic        string                      `json:"forward_metric_logic,omitempty"`
+	ForwardMetricRules        []ChannelForwardMetricRule  `json:"forward_metric_rules,omitempty"`
+	ForwardModelTargets       []ChannelForwardModelTarget `json:"forward_model_targets,omitempty"`
+	ErrorInterceptEnabled     bool                        `json:"error_intercept_enabled,omitempty"`
+	ErrorInterceptMessage     string                      `json:"error_intercept_message,omitempty"`
 }
 
 func (s ChannelSettings) GetForwardRegexList() []string {

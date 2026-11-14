@@ -393,7 +393,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if service.ModelHealthApplies(c) {
 			healthAttempt, err = model.BeginModelHealthAttempt(channel, relayInfo.OriginModelName, false)
 			if err != nil {
-				if errors.Is(err, model.ErrModelUnavailable) && !isSpecificChannelRequest(c) && common.GetContextKeyInt(c, constant.ContextKeyChannelForwardLockedId) == 0 {
+				if errors.Is(err, model.ErrModelUnavailable) && service.GetResponsesBinding(c) == nil && !c.GetBool("responses_websocket_request") && !isSpecificChannelRequest(c) && common.GetContextKeyInt(c, constant.ContextKeyChannelForwardLockedId) == 0 {
 					relayInfo.InitChannelMeta(c)
 					retryParam.SkipChannel(channel.Id)
 					retryParam.ResetRetryNextTry()
@@ -1131,6 +1131,17 @@ func maybeApplyChannelForward(c *gin.Context, info *relaycommon.RelayInfo, chann
 var errRetryChannelsExhausted = errors.New("可用渠道不存在（retry）")
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
+	if binding := service.GetResponsesBinding(c); binding != nil {
+		channel, err := service.ValidateResponsesBinding(c, binding, info.OriginModelName)
+		if err != nil {
+			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusConflict, types.ErrOptionWithSkipRetry())
+		}
+		if err := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName); err != nil {
+			return nil, err
+		}
+		return channel, nil
+	}
+
 	if lockedChannelID := common.GetContextKeyInt(c, constant.ContextKeyChannelForwardLockedId); lockedChannelID > 0 {
 		targetChannel, err := model.CacheGetChannel(lockedChannelID)
 		if err != nil {
@@ -1183,6 +1194,9 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+	if service.GetResponsesBinding(c) != nil || c != nil && c.GetBool("responses_websocket_request") {
+		return false
+	}
 	if c != nil && common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry) {
 		return false
 	}

@@ -1,5 +1,7 @@
 {
   "translation": {
+    "仅适用于支持 Responses WebSocket 的 OpenAI/Codex 渠道，支持工具结果注入和连接内续轮": "対応する OpenAI/Codex チャネルでツール結果の注入と同一接続での継続を有効にします",
+    "启用 Responses WebSocket": "Responses WebSocket を有効化",
     "logic_effort、svg_effort 分别设置逻辑题和 SVG 绘图的推理强度；省略、null 或留空时不发送。请填写上游模型支持的值，例如 low、medium、high；可用性探针不受影响。": "logic_effort と svg_effort は、論理テストと SVG 描画の推論強度を個別に設定します。省略、null、空欄の場合は送信しません。low、medium、high など、上流モデルが対応する値を指定してください。可用性プローブには影響しません。",
     "可用性探针超时（秒）": "可用性プローブのタイムアウト（秒）",
     "逻辑测试超时（秒）": "論理テストのタイムアウト（秒）",

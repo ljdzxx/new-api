@@ -148,7 +148,37 @@ func Distribute() func(c *gin.Context) {
 			)
 			return
 		}
-		if ok {
+		binding := service.GetResponsesBinding(c)
+		if c.Request.URL.Path == "/v1/responses" {
+			var reference struct {
+				Previous string `json:"previous_response_id"`
+			}
+			if err := common.UnmarshalBodyReusable(c, &reference); err != nil {
+				abortWithOpenAiMessage(c, 400, err.Error())
+				return
+			}
+			if reference.Previous != "" {
+				referenceBinding, lookupErr := service.LoadResponsesBinding(c, reference.Previous)
+				err = lookupErr
+				if err == nil && binding != nil && (referenceBinding.ChannelID != binding.ChannelID || referenceBinding.KeyHash != binding.KeyHash) {
+					err = errors.New("previous_response_id belongs to another upstream connection")
+				}
+				if err == nil {
+					binding = referenceBinding
+				}
+				if err != nil {
+					abortWithOpenAiMessage(c, 409, err.Error(), types.ErrorCodeInvalidRequest)
+					return
+				}
+			}
+		}
+		if binding != nil {
+			channel, err = service.ValidateResponsesBinding(c, binding, modelRequest.Model)
+			if err != nil {
+				abortWithOpenAiMessage(c, 409, err.Error(), types.ErrorCodeInvalidRequest)
+				return
+			}
+		} else if ok {
 			id, err := strconv.Atoi(channelId.(string))
 			if err != nil {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidChannelId))
@@ -550,7 +580,19 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelAllowSubscription, channel.IsSubscriptionAllowed())
 	common.SetContextKey(c, constant.ContextKeyChannelAllowWallet, channel.IsWalletAllowed())
 
-	key, index, newAPIError := channel.GetNextEnabledKey()
+	var key string
+	var index int
+	var newAPIError *types.NewAPIError
+	if binding := service.GetResponsesBinding(c); binding != nil {
+		var err error
+		key, err = service.ResponsesBoundKey(channel, binding)
+		index = binding.KeyIndex
+		if err != nil {
+			return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusConflict, types.ErrOptionWithSkipRetry())
+		}
+	} else {
+		key, index, newAPIError = channel.GetNextEnabledKey()
+	}
 	if newAPIError != nil {
 		return newAPIError
 	}

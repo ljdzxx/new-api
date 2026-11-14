@@ -7,9 +7,10 @@ ENV_FILE="${ENV_FILE:-$PROJECT_ROOT/.env}"
 
 usage() {
   cat <<'EOF'
-用法：bash deploy/deploy.sh [start|stop|update] [master|slave]
+用法：bash deploy/deploy.sh [build|start|stop|update] [master|slave]
 不传参数时显示交互菜单。
 
+  build   使用当前源码构建镜像，不拉取代码或操作容器
   start   首次构建并启动；已有容器则启动该容器
   stop    停止容器，保留容器、数据和日志
   update  git pull --ff-only，重新构建并替换所选节点容器
@@ -35,6 +36,8 @@ if [[ $# -eq 0 ]]; then
 4) 启动 slave (13001)
 5) 停止 slave
 6) 更新 slave
+7) 构建 master 镜像
+8) 构建 slave 镜像
 0) 退出
 EOF
   read -r -p '请选择：' choice
@@ -45,6 +48,8 @@ EOF
     4) set -- start slave ;;
     5) set -- stop slave ;;
     6) set -- update slave ;;
+    7) set -- build master ;;
+    8) set -- build slave ;;
     0) exit 0 ;;
     *) fail '无效选项。' ;;
   esac
@@ -53,7 +58,7 @@ fi
 [[ $# -eq 2 ]] || { usage >&2; exit 1; }
 ACTION="$1"
 ROLE="$2"
-case "$ACTION" in start|stop|update) ;; *) fail '操作必须是 start、stop 或 update。' ;; esac
+case "$ACTION" in build|start|stop|update) ;; *) fail '操作必须是 build、start、stop 或 update。' ;; esac
 case "$ROLE" in
   master) PORT=13000 ;;
   slave) PORT=13001 ;;
@@ -68,6 +73,16 @@ LABEL="new-api.deploy.role"
 
 command -v docker >/dev/null 2>&1 || fail '请先安装 Docker。'
 docker info >/dev/null 2>&1 || fail '无法连接 Docker，请检查服务和访问权限。'
+
+build_image() {
+  docker build --file "$SCRIPT_DIR/Dockerfile.noweb" --tag "$IMAGE" "$PROJECT_ROOT"
+}
+
+if [[ "$ACTION" == build ]]; then
+  build_image
+  echo "$IMAGE 镜像构建完成。"
+  exit 0
+fi
 
 exists() { docker container inspect "$1" >/dev/null 2>&1; }
 running() { [[ "$(docker container inspect --format '{{.State.Running}}' "$1")" == true ]]; }
@@ -90,10 +105,6 @@ fi
 [[ -f "$ENV_FILE" && -r "$ENV_FILE" ]] || fail "找不到可读配置文件：$ENV_FILE"
 ENV_FILE="$(cd -- "$(dirname -- "$ENV_FILE")" && pwd)/$(basename -- "$ENV_FILE")"
 mkdir -p "$DATA_DIR/logs"
-
-build_image() {
-  docker build --file "$SCRIPT_DIR/Dockerfile.noweb" --tag "$IMAGE" "$PROJECT_ROOT"
-}
 
 create_container() {
   docker run -d \
