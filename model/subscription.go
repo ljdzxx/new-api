@@ -210,17 +210,23 @@ func (p *SubscriptionPlan) NormalizeDefaults() {
 
 // Subscription order (payment -> webhook -> create UserSubscription)
 type SubscriptionOrder struct {
-	Id                 int     `json:"id"`
-	UserId             int     `json:"user_id" gorm:"index"`
-	PlanId             int     `json:"plan_id" gorm:"index"`
-	UserSubscriptionId int     `json:"user_subscription_id" gorm:"type:int;default:0;index"`
-	Money              float64 `json:"money"`
+	Id                    int     `json:"id"`
+	UserId                int     `json:"user_id" gorm:"index"`
+	PlanId                int     `json:"plan_id" gorm:"index"`
+	UserSubscriptionId    int     `json:"user_subscription_id" gorm:"type:int;default:0;index"`
+	Money                 float64 `json:"money"`
+	EpayChannelId         int     `json:"epay_channel_id" gorm:"index;index:idx_epay_subscription_daily,priority:1"`
+	EpayChannelRevisionId int     `json:"epay_channel_revision_id" gorm:"index"`
+	EpayChannelName       string  `json:"epay_channel_name" gorm:"type:varchar(128)"`
+	EpayPayCNY            string  `json:"epay_pay_cny" gorm:"type:varchar(64)"`
+	EpayPayCents          int64   `json:"-" gorm:"type:bigint;default:0"`
+	EpayQuoteSnapshot     string  `json:"-" gorm:"type:text"`
 
 	TradeNo          string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod    string `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentMethod    string `json:"payment_method" gorm:"type:varchar(50);index:idx_epay_subscription_daily,priority:2"`
 	PaymentProvider  string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	Status           string `json:"status"`
-	CreateTime       int64  `json:"create_time"`
+	CreateTime       int64  `json:"create_time" gorm:"index:idx_epay_subscription_daily,priority:3"`
 	CompleteTime     int64  `json:"complete_time"`
 	RefundTime       int64  `json:"refund_time"`
 	RefundOperatorId int    `json:"refund_operator_id" gorm:"type:int;default:0;index"`
@@ -760,7 +766,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)
 		if err != nil {
 			return err
 		}
@@ -815,9 +821,11 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	if err := tx.Where("trade_no = ?", order.TradeNo).First(&topup).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			topup = TopUp{
-				UserId:          order.UserId,
-				Amount:          0,
-				Money:           order.Money,
+				UserId:        order.UserId,
+				Amount:        0,
+				Money:         order.Money,
+				EpayChannelId: order.EpayChannelId, EpayChannelRevisionId: order.EpayChannelRevisionId,
+				EpayChannelName: order.EpayChannelName, EpayPayCNY: order.EpayPayCNY, EpayQuoteSnapshot: order.EpayQuoteSnapshot,
 				TradeNo:         order.TradeNo,
 				PaymentMethod:   order.PaymentMethod,
 				PaymentProvider: order.PaymentProvider,
@@ -830,6 +838,11 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 		return err
 	}
 	topup.Money = order.Money
+	topup.EpayChannelId = order.EpayChannelId
+	topup.EpayChannelRevisionId = order.EpayChannelRevisionId
+	topup.EpayChannelName = order.EpayChannelName
+	topup.EpayPayCNY = order.EpayPayCNY
+	topup.EpayQuoteSnapshot = order.EpayQuoteSnapshot
 	if topup.PaymentMethod == "" {
 		topup.PaymentMethod = order.PaymentMethod
 	}

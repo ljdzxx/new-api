@@ -17,7 +17,6 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
-	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	"github.com/thanhpk/randstr"
@@ -43,71 +42,6 @@ type creemCheckoutRequest struct {
 type creemCheckoutResponse struct {
 	CheckoutURL string `json:"checkout_url"`
 	ID          string `json:"id"`
-}
-
-func newEpayClient() (*epay.Client, error) {
-	if operation_setting.PayAddress == "" || operation_setting.EpayId == "" || operation_setting.EpayKey == "" {
-		return nil, fmt.Errorf("当前管理员未配置支付信息")
-	}
-	client, err := epay.NewClient(&epay.Config{
-		PartnerID: operation_setting.EpayId,
-		Key:       operation_setting.EpayKey,
-	}, operation_setting.PayAddress)
-	if err != nil {
-		return nil, fmt.Errorf("当前管理员未配置支付信息")
-	}
-	return client, nil
-}
-
-func getTopupPayMoney(amount int64, group string) float64 {
-	dAmount := decimal.NewFromInt(amount)
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		dAmount = dAmount.Div(dQuotaPerUnit)
-	}
-
-	topupGroupRatio := common.GetTopupGroupRatio(group)
-	if topupGroupRatio == 0 {
-		topupGroupRatio = 1
-	}
-
-	dTopupGroupRatio := decimal.NewFromFloat(topupGroupRatio)
-	dPrice := decimal.NewFromFloat(operation_setting.Price)
-	discount := 1.0
-	if ds, ok := operation_setting.GetPaymentSetting().AmountDiscount[int(amount)]; ok && ds > 0 {
-		discount = ds
-	}
-	dDiscount := decimal.NewFromFloat(discount)
-
-	payMoney := dAmount.Mul(dPrice).Mul(dTopupGroupRatio).Mul(dDiscount)
-	return payMoney.InexactFloat64()
-}
-
-func getTopupMinAmount() int64 {
-	minTopup := operation_setting.MinTopUp
-	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		dMinTopup := decimal.NewFromInt(int64(minTopup))
-		dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-		minTopup = int(dMinTopup.Mul(dQuotaPerUnit).IntPart())
-	}
-	return int64(minTopup)
-}
-
-func normalizeTopupStoredAmount(amount int64) int64 {
-	if operation_setting.GetQuotaDisplayType() != operation_setting.QuotaDisplayTypeTokens {
-		return amount
-	}
-	dAmount := decimal.NewFromInt(amount)
-	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-	return dAmount.Div(dQuotaPerUnit).IntPart()
-}
-
-func getStripeChargedAmount(count float64, user model.User) float64 {
-	topupGroupRatio := common.GetTopupGroupRatio(user.Group)
-	if topupGroupRatio == 0 {
-		topupGroupRatio = 1
-	}
-	return count * topupGroupRatio
 }
 
 func getStripeMinTopupAmount() int64 {
@@ -350,21 +284,6 @@ func buildTopupEpayReturnURL(returnURL string) (*url.URL, error) {
 	return url.Parse(system_setting.ServerAddress + "/console/log")
 }
 
-func buildTopupEpayNotifyURL() (*url.URL, error) {
-	return url.Parse(GetCallbackAddress() + "/api/user/epay/notify")
-}
-
-func buildSubscriptionEpayReturnURL(returnURL string) (*url.URL, error) {
-	if strings.TrimSpace(returnURL) != "" {
-		return url.Parse(returnURL)
-	}
-	return url.Parse(GetCallbackAddress() + "/api/subscription/epay/return")
-}
-
-func buildSubscriptionEpayNotifyURL() (*url.URL, error) {
-	return url.Parse(GetCallbackAddress() + "/api/subscription/epay/notify")
-}
-
 func createFormCheckoutResult(scene types.PaymentScene, provider types.PaymentProvider, formURL string, fields map[string]string) *types.CheckoutResult {
 	return &types.CheckoutResult{
 		Scene:      scene,
@@ -409,11 +328,11 @@ func buildMallTopupLink(amount int64) (string, error) {
 	return link, nil
 }
 
-func buildTopupPurchaseArgs(paymentMethod, tradeNo string, amount int64, payMoney float64, notifyURL, returnURL *url.URL) *epay.PurchaseArgs {
+func buildTopupPurchaseArgs(paymentMethod, tradeNo string, amount string, payMoney float64, notifyURL, returnURL *url.URL) *epay.PurchaseArgs {
 	return &epay.PurchaseArgs{
 		Type:           paymentMethod,
 		ServiceTradeNo: tradeNo,
-		Name:           fmt.Sprintf("TUC%d", amount),
+		Name:           "TUC" + amount,
 		Money:          strconv.FormatFloat(payMoney, 'f', 2, 64),
 		Device:         epay.PC,
 		NotifyUrl:      notifyURL,

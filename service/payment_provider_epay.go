@@ -2,10 +2,11 @@ package service
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -15,173 +16,176 @@ func init() {
 	RegisterPaymentProvider(&EpayPaymentProvider{})
 }
 
-func (p *EpayPaymentProvider) ID() types.PaymentProvider {
+func (provider *EpayPaymentProvider) ID() types.PaymentProvider {
 	return types.PaymentProviderEpay
 }
 
-func (p *EpayPaymentProvider) DisplayName() string {
+func (provider *EpayPaymentProvider) DisplayName() string {
 	return "Epay"
 }
 
-func (p *EpayPaymentProvider) SupportsTopup() bool {
+func (provider *EpayPaymentProvider) SupportsTopup() bool {
 	return true
 }
 
-func (p *EpayPaymentProvider) SupportsSubscription() bool {
+func (provider *EpayPaymentProvider) SupportsSubscription() bool {
 	return true
 }
 
-func (p *EpayPaymentProvider) GetTopupMeta() *types.ProviderMeta {
+func (provider *EpayPaymentProvider) GetTopupMeta() *types.ProviderMeta {
+	channels, err := ListPublicEpayChannels(nil)
 	return &types.ProviderMeta{
-		Scene:             types.PaymentSceneTopup,
-		Provider:          p.ID(),
-		DisplayName:       p.DisplayName(),
-		ActionType:        types.CheckoutActionTypeFormPost,
-		RequiresAmount:    true,
-		RequiresChannel:   true,
-		Enabled:           true,
-		ConfigReady:       p.ValidateTopupConfig() == nil,
-		AvailableChannels: operation_setting.PayMethods,
+		Scene: types.PaymentSceneTopup, Provider: provider.ID(), DisplayName: provider.DisplayName(),
+		ActionType: types.CheckoutActionTypeFormPost, RequiresAmount: true, RequiresChannel: true,
+		Enabled: true, ConfigReady: err == nil && len(channels) > 0, EpayChannels: channels,
 	}
 }
 
-func (p *EpayPaymentProvider) GetSubscriptionMeta(plan *model.SubscriptionPlan) *types.ProviderMeta {
+func (provider *EpayPaymentProvider) GetSubscriptionMeta(plan *model.SubscriptionPlan) *types.ProviderMeta {
+	channels, err := ListPublicEpayChannels(plan)
 	return &types.ProviderMeta{
-		Scene:             types.PaymentSceneSubscription,
-		Provider:          p.ID(),
-		DisplayName:       p.DisplayName(),
-		ActionType:        types.CheckoutActionTypeFormPost,
-		RequiresChannel:   true,
-		Enabled:           plan != nil && plan.Enabled,
-		ConfigReady:       p.ValidateSubscriptionConfig(plan) == nil,
-		AvailableChannels: operation_setting.PayMethods,
+		Scene: types.PaymentSceneSubscription, Provider: provider.ID(), DisplayName: provider.DisplayName(),
+		ActionType: types.CheckoutActionTypeFormPost, RequiresChannel: true,
+		Enabled: plan != nil && plan.Enabled, ConfigReady: err == nil && len(channels) > 0, EpayChannels: channels,
 	}
 }
 
-func (p *EpayPaymentProvider) ValidateTopupConfig() error {
-	if operation_setting.PayAddress == "" {
-		return fmt.Errorf("%w: PayAddress", ErrPaymentProviderNotConfigured)
+func (provider *EpayPaymentProvider) ValidateTopupConfig() error {
+	channels, err := ListPublicEpayChannels(nil)
+	if err != nil {
+		return err
 	}
-	if operation_setting.EpayId == "" {
-		return fmt.Errorf("%w: EpayId", ErrPaymentProviderNotConfigured)
-	}
-	if operation_setting.EpayKey == "" {
-		return fmt.Errorf("%w: EpayKey", ErrPaymentProviderNotConfigured)
-	}
-	if len(operation_setting.PayMethods) == 0 {
-		return fmt.Errorf("%w: PayMethods", ErrPaymentProviderNotConfigured)
+	if len(channels) == 0 {
+		return fmt.Errorf("%w: 请启用至少一个易支付渠道", ErrPaymentProviderNotConfigured)
 	}
 	return nil
 }
 
-func (p *EpayPaymentProvider) ValidateSubscriptionConfig(plan *model.SubscriptionPlan) error {
+func (provider *EpayPaymentProvider) ValidateSubscriptionConfig(plan *model.SubscriptionPlan) error {
 	if plan == nil {
 		return fmt.Errorf("%w: subscription plan", ErrPaymentProviderNotConfigured)
 	}
-	return p.ValidateTopupConfig()
+	return provider.ValidateTopupConfig()
 }
 
-func (p *EpayPaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutRequest) (*types.CheckoutResult, error) {
-	if req == nil {
+func validateEpayQuoteToken(quote *types.EpayQuote, token string) error {
+	if !quote.Payable {
+		return fmt.Errorf("%s", quote.UnavailableReason)
+	}
+	if token == "" || token != quote.Token {
+		return fmt.Errorf("支付报价已变化或尚未确认，请重新获取报价后确认")
+	}
+	return nil
+}
+
+func (provider *EpayPaymentProvider) CreateTopupCheckout(request *types.TopupCheckoutRequest) (*types.CheckoutResult, error) {
+	if request == nil || request.UserID <= 0 {
 		return nil, fmt.Errorf("参数错误")
 	}
-	if req.Amount < getTopupMinAmount() {
-		return nil, fmt.Errorf("充值数量不能小于%d", getTopupMinAmount())
-	}
-	if !operation_setting.ContainsPayMethod(req.PaymentMethod) {
-		return nil, fmt.Errorf("支付方式不存在")
-	}
-
-	group, err := model.GetUserGroup(req.UserID, true)
-	if err != nil {
-		return nil, fmt.Errorf("获取用户分组失败")
-	}
-	payMoney := getTopupPayMoney(req.Amount, group)
-	if payMoney < 0.01 {
-		return nil, fmt.Errorf("充值金额过低")
-	}
-
-	client, err := newEpayClient()
+	revision, err := GetEnabledEpayRevision(request.EpayChannelID, request.PaymentMethod)
 	if err != nil {
 		return nil, err
 	}
-	returnURL, err := buildTopupEpayReturnURL(req.ReturnURL)
+	quote, err := CalculateEpayQuote(revision, request.PaymentMethod, types.PaymentSceneTopup, request.AmountCNY, nil)
 	if err != nil {
-		return nil, fmt.Errorf("回调地址配置错误")
+		return nil, err
 	}
-	notifyURL, err := buildTopupEpayNotifyURL()
+	if err := validateEpayQuoteToken(quote, request.QuoteToken); err != nil {
+		return nil, err
+	}
+	if _, err := model.GetUserById(request.UserID, false); err != nil {
+		return nil, fmt.Errorf("用户不存在")
+	}
+	client, err := NewEpayClient(revision)
 	if err != nil {
-		return nil, fmt.Errorf("回调地址配置错误")
+		return nil, err
 	}
-
-	tradeNo := buildTopupTradeNo(req.UserID)
-	uri, params, err := client.Purchase(buildTopupPurchaseArgs(req.PaymentMethod, tradeNo, req.Amount, payMoney, notifyURL, returnURL))
+	notifyURL, err := epayNotifyURL(revision, types.PaymentSceneTopup)
+	if err != nil {
+		return nil, err
+	}
+	returnURL, err := buildTopupEpayReturnURL(request.ReturnURL)
+	if err != nil {
+		return nil, err
+	}
+	tradeNo := buildTopupTradeNo(request.UserID)
+	payMoney, _ := epayDecimal(quote.PayCNY, 2)
+	uri, fields, err := client.Purchase(buildTopupPurchaseArgs(request.PaymentMethod, tradeNo, request.AmountCNY, payMoney.InexactFloat64(), notifyURL, returnURL))
 	if err != nil {
 		return nil, fmt.Errorf("拉起支付失败")
 	}
-
-	topUp := &model.TopUp{
-		UserId:          req.UserID,
-		Amount:          normalizeTopupStoredAmount(req.Amount),
-		Money:           payMoney,
-		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
-		PaymentProvider: model.PaymentProviderEpay,
-		CreateTime:      common.GetTimestamp(),
-		Status:          common.TopUpStatusPending,
+	snapshot, err := common.Marshal(quote)
+	if err != nil {
+		return nil, err
 	}
-	if err = topUp.Insert(); err != nil {
-		return nil, fmt.Errorf("创建订单失败")
+	topup := &model.TopUp{
+		UserId: request.UserID, Amount: int64(quote.CreditQuota), Money: payMoney.InexactFloat64(), TradeNo: tradeNo,
+		PaymentMethod: request.PaymentMethod, PaymentProvider: model.PaymentProviderEpay,
+		CreateTime: common.GetTimestamp(), Status: common.TopUpStatusPending,
+		EpayChannelId: revision.ChannelId, EpayChannelRevisionId: revision.Id, EpayChannelName: revision.Name,
+		EpayInputCNY: quote.InputCNY, EpayPayCNY: quote.PayCNY, EpayCreditUSD: quote.CreditUSD, EpayBonusUSD: quote.BonusUSD,
+		EpayQuoteSnapshot: string(snapshot), BaseQuota: quote.BaseQuota, BonusQuota: quote.BonusQuota, CreditQuota: quote.CreditQuota,
 	}
-	return createFormCheckoutResult(types.PaymentSceneTopup, p.ID(), uri, stringifyMap(params)), nil
+	if err := model.CreateEpayTopupOrder(topup); err != nil {
+		return nil, err
+	}
+	return createFormCheckoutResult(types.PaymentSceneTopup, provider.ID(), uri, fields), nil
 }
 
-func (p *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.SubscriptionPlan, req *types.SubscriptionCheckoutRequest) (*types.CheckoutResult, error) {
-	if req == nil || plan == nil {
+func (provider *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.SubscriptionPlan, request *types.SubscriptionCheckoutRequest) (*types.CheckoutResult, error) {
+	if request == nil || request.UserID <= 0 || plan == nil {
 		return nil, fmt.Errorf("参数错误")
 	}
-	if plan.PriceAmount < 0.01 {
-		return nil, fmt.Errorf("套餐金额过低")
-	}
-	if !operation_setting.ContainsPayMethod(req.PaymentMethod) {
-		return nil, fmt.Errorf("支付方式不存在")
-	}
-	if err := ensureUserCanPurchaseSubscription(req.UserID, plan); err != nil {
+	if err := ensureUserCanPurchaseSubscription(request.UserID, plan); err != nil {
 		return nil, err
 	}
-
-	client, err := newEpayClient()
+	revision, err := GetEnabledEpayRevision(request.EpayChannelID, request.PaymentMethod)
 	if err != nil {
 		return nil, err
 	}
-	returnURL, err := buildSubscriptionEpayReturnURL(req.ReturnURL)
+	quote, err := CalculateEpayQuote(revision, request.PaymentMethod, types.PaymentSceneSubscription, "", plan)
 	if err != nil {
-		return nil, fmt.Errorf("回调地址配置错误")
+		return nil, err
 	}
-	notifyURL, err := buildSubscriptionEpayNotifyURL()
+	if err := validateEpayQuoteToken(quote, request.QuoteToken); err != nil {
+		return nil, err
+	}
+	client, err := NewEpayClient(revision)
 	if err != nil {
-		return nil, fmt.Errorf("回调地址配置错误")
+		return nil, err
 	}
-
-	tradeNo := buildSubscriptionEpayTradeNo(req.UserID)
+	notifyURL, err := epayNotifyURL(revision, types.PaymentSceneSubscription)
+	if err != nil {
+		return nil, err
+	}
+	returnURL, err := url.Parse(system_setting.ServerAddress + "/console/topup")
+	if err != nil {
+		return nil, err
+	}
+	if request.ReturnURL != "" {
+		returnURL, err = url.Parse(request.ReturnURL)
+		if err != nil {
+			return nil, err
+		}
+	}
+	tradeNo := buildSubscriptionEpayTradeNo(request.UserID)
+	payMoney, _ := epayDecimal(quote.PayCNY, 2)
+	uri, fields, err := client.Purchase(buildSubscriptionPurchaseArgs(request.PaymentMethod, tradeNo, plan.Title, payMoney.InexactFloat64(), notifyURL, returnURL))
+	if err != nil {
+		return nil, fmt.Errorf("拉起支付失败")
+	}
+	snapshot, err := common.Marshal(quote)
+	if err != nil {
+		return nil, err
+	}
 	order := &model.SubscriptionOrder{
-		UserId:          req.UserID,
-		PlanId:          plan.Id,
-		Money:           plan.PriceAmount,
-		TradeNo:         tradeNo,
-		PaymentMethod:   req.PaymentMethod,
-		PaymentProvider: model.PaymentProviderEpay,
-		CreateTime:      common.GetTimestamp(),
-		Status:          common.TopUpStatusPending,
+		UserId: request.UserID, PlanId: plan.Id, Money: payMoney.InexactFloat64(), TradeNo: tradeNo,
+		PaymentMethod: request.PaymentMethod, PaymentProvider: model.PaymentProviderEpay, CreateTime: common.GetTimestamp(), Status: common.TopUpStatusPending,
+		EpayChannelId: revision.ChannelId, EpayChannelRevisionId: revision.Id, EpayChannelName: revision.Name,
+		EpayPayCNY: quote.PayCNY, EpayQuoteSnapshot: string(snapshot),
 	}
-	if err := order.Insert(); err != nil {
-		return nil, fmt.Errorf("创建订单失败")
+	if err := model.CreateEpaySubscriptionOrder(order); err != nil {
+		return nil, err
 	}
-
-	uri, params, err := client.Purchase(buildSubscriptionPurchaseArgs(req.PaymentMethod, tradeNo, plan.Title, plan.PriceAmount, notifyURL, returnURL))
-	if err != nil {
-		_ = model.ExpireSubscriptionOrder(tradeNo, model.PaymentProviderEpay)
-		return nil, fmt.Errorf("拉起支付失败")
-	}
-	return createFormCheckoutResult(types.PaymentSceneSubscription, p.ID(), uri, stringifyMap(params)), nil
+	return createFormCheckoutResult(types.PaymentSceneSubscription, provider.ID(), uri, fields), nil
 }

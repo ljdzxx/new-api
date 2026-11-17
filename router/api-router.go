@@ -200,6 +200,7 @@ func SetApiRouter(router *gin.Engine) {
 		paymentRoute.Use(middleware.UserAuth())
 		{
 			paymentRoute.GET("/topup/meta", controller.GetPaymentTopupMeta)
+			paymentRoute.POST("/epay/quote", controller.GetEpayQuote)
 			paymentRoute.POST("/topup/checkout", middleware.CriticalRateLimit(), controller.CreatePaymentTopupCheckout)
 			paymentRoute.GET("/subscription/meta", controller.GetPaymentSubscriptionMeta)
 			paymentRoute.POST("/subscription/checkout", middleware.CriticalRateLimit(), controller.CreatePaymentSubscriptionCheckout)
@@ -245,6 +246,11 @@ func SetApiRouter(router *gin.Engine) {
 		optionRoute.Use(middleware.RootAuth())
 		{
 			optionRoute.GET("/", controller.GetOptions)
+			optionRoute.GET("/epay/channels", controller.AdminListEpayChannels)
+			optionRoute.POST("/epay/channels", controller.AdminSaveEpayChannel)
+			optionRoute.PUT("/epay/channels/order", controller.AdminReorderEpayChannels)
+			optionRoute.PUT("/epay/channels/:id/enabled", controller.AdminSetEpayChannelEnabled)
+			optionRoute.PUT("/epay/channels/:id", controller.AdminSaveEpayChannel)
 			optionRoute.PUT("/", controller.UpdateOption)
 			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
 			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)

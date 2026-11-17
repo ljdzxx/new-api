@@ -1,6 +1,211 @@
 # Codex 子代理与 Responses 转发审计
 
-检查日期：2026-11-14。项目：new-api。
+检查日期：2026-11-14–15。项目：new-api。
+
+## 切回渠道 312 后 SSE 复测（2026-11-15 00:25–00:28，Asia/Shanghai）
+
+**结论：同一 API Key 已切回渠道 312；使用真实 codex-cli 0.167.0，经 SSE 成功完成子代理创建、任务执行、结果回传以及同一子代理的后续任务。** 本轮所有 15 次生产请求均为 POST /v1/responses，HTTP 200 / text/event-stream / response.completed，且在 new-api master 日志逐一匹配 channel_id=312。没有发送 WebSocket 请求。15 次包含六步协议探针、首次本地临时会话失败的两次父请求，以及启用隔离会话存储后成功的七次真实父子请求；HTTP 成功不代表首次子代理创建也成功。
+
+沿用用户提供的公网入口、现有 KEY 和 gpt-6.1-sol；新建独立测试目录与会话，不复用渠道 345 的 response ID 或结果。客户端 provider 显式 supports_websockets=false，回环记录转发器只允许 stream:true 的普通 HTTP POST，GET/Upgrade 不向生产转发。本轮两次真实 Codex 运行均未出现本地被拒绝的 GET/Upgrade。未改变生产渠道设置、用户常用 Codex 配置或代码。
+
+### 实际 Codex 子代理通过项
+
+| 阶段 | 复测结果 |
+| --- | --- |
+| 原生创建 | collaboration.spawn_agent 创建 /root/sse_child；运行时返回真实子任务名称。 |
+| 子代理首轮 | 独立请求带 X-Codex-Parent-Thread-Id 与 X-Openai-Subagent: collab_spawn，输出 CODEX_SSE_CHILD_OK。 |
+| 结果回传 | 父请求中记录 author=/root/sse_child、recipient=/root 的 FINAL_ANSWER agent_message。 |
+| 原生追加任务 | collaboration.followup_task 的 target 为同一 /root/sse_child。 |
+| 子代理续轮 | 保留首轮输入历史和首轮回答，收到第二次任务后输出 CODEX_SSE_FOLLOWUP_OK。 |
+| 父代理完成 | 已收到两次子代理结果，最终输出 CODEX_SSE_REAL_SUBAGENT_OK，Codex 退出码 0。 |
+
+成功运行包含父代理 5 次、子代理 2 次请求，均命中 master 的渠道 312（channel_type=1、api_type=0、channel_pass_through=true）。实际记录中的 spawn/followup 的 message 是不透明密文，Codex 将其放入子请求 agent_message 的 encrypted_content 内容块；已按字节匹配这两份密文与相应工具参数。没有解密或替换载荷。父代理收到的两次 FINAL_ANSWER 为明文测试标记。
+
+原先针对渠道 345 的“任务必须包含明文标记”校验不适用于本轮加密载荷；另一个全对象比较仅因 Codex 重放回答时省略 response metadata 和 internal_chat_message_metadata_passthrough 两个字段而失败。保留原始校验结果，再按实际协议逐项验证密文、收发对象、call_id、历史前缀与回答字段，20 项校验通过；未删除生产响应中的字段。此处证明客户端所发密文及实际后续生成正确，未抓取渠道上游原始入站请求，不扩大为任意头部或字段逐字节透传保证。
+
+| 成功运行请求 | master 请求 ID |
+| --- | --- |
+| 父代理创建 | 20261114162748808451663JYk85jH7 |
+| 父代理第一次等待 | 20261114162755687183896FFvRt2DI |
+| 子代理首轮 | 2026111416275536141147780e7VMKw |
+| 父代理追加任务 | 20261114162800816911928UJLLNf5D |
+| 子代理续轮 | 20261114162805824385712ggDU59sb |
+| 父代理第二次等待 | 20261114162806158880049WQnF9XR5 |
+| 父代理完成 | 20261114162812972119983bEjhGMw7 |
+
+### 首次临时会话失败与重试
+
+首次沿用 --ephemeral，模型本次 spawn_agent 未指定 fork_turns。Codex 本地创建子代理时报 invalid thread-store request: no rollout found for thread id，尚未发出子代理模型请求。两次父请求均 SSE completed；第二次如实报告创建失败。对应 master 请求 ID：20261114162644300568373DCI2gAuJ、20261114162650192299447Am14P3z2，均为渠道 312。
+
+只在新建隔离测试目录中移除 --ephemeral，保留测试专用 CODEX_HOME、read-only sandbox、一个子代理及其余配置后重试，成功完成上方七次请求。这是本地测试运行器缺少会话历史时的创建失败，不能归因为渠道 312 的 SSE 转发失败。此前 345 测试显式 fork_turns=none，条件不同；本轮未把失败记录覆盖或当作通过。
+
+### 六步协议探针与差异
+
+自定义 production_probe namespace 的六次请求均 completed，父子工具结果、namespace/call_id、增量拼接、后续任务和最终 PARENT_CHILD_ROUNDTRIP_OK 均正确；子会话完整返回 CHILD_PROBE_OK|9007199254740993|opaque_tool_keep。
+
+严格检查为 17 项通过、1 项不符、1 项未覆盖：custom 工具实际 input 为 probe_status() 加一个末尾换行，未与要求的无换行字面值完全相等；SSE delta、done 和最终 input 三者一致，因此不能据此认定代理转发截断。该工具为脚本模拟返回，不把测试标记当作真实工具执行证据。此轮没有返回 reasoning.encrypted_content 项，所以该项重放校验记录为未覆盖；原生协作消息中的 encrypted_content 另按上节验证，不混为一项。
+
+六步请求 ID 依次为：20261114162533292729864Q4W02Bt6、20261114162539103050937PXLOFHus、20261114162544515819128OvAFDIP、20261114162547872956525S6vjI8iC、20261114162551109341634OfmMJaZ9、20261114162554284424210Pu1KMOUA。
+
+### 用量与范围
+
+- 六步协议探针报告输入 1,697、输出 122、合计 1,819 tokens，应用结算日志合计 USD 0.000612。
+- 首次本地创建失败的两次父请求报告输入 30,915、输出 85、合计 31,000 tokens，结算日志合计 USD 0.001058。
+- 成功真实父子运行报告输入 110,271（cached 92,544）、输出 165、合计 110,436 tokens，结算日志合计 USD 0.006164。
+- 15 次请求各观察到一条应用结算记录，总计 USD 0.007834；用量为上游报告，未独立审计 tokenizer 或数据库余额。
+- 本轮验证一个真实子代理及一次后续任务，采用完整历史重放，不使用 previous_response_id；未扩大到多代理并发、深层嵌套、故障恢复或服务端托管 multi_agent。
+
+记录保存于本机临时目录 new-api-production-responses-probe/sse-channel312-20261115-002517；real-codex 保留首次临时会话失败，persistent-codex/real-codex 保留成功重试。仓库仅更新审计报告；未部署、重启或修改生产配置，且本轮不改变此前 WebSocket 测试结论。
+
+## SSE 实际 Codex 子代理验收（2026-11-14 23:50–23:55，Asia/Shanghai）
+
+**结论：当前 new-api master、渠道 345、gpt-6.1-sol 已通过真实 Codex 子代理的 SSE 创建、任务分派、结果回传和同一子代理后续任务验证。本轮没有发送 Responses WebSocket 请求。** 先完成六步脚本协议探针，再以本机 codex-cli 0.167.0 发起真实协作调用，弥补此前仅模拟客户端编排的验收边界。
+
+### 真实客户端与传输约束
+
+独立运行 codex exec，使用隔离的临时 CODEX_HOME 和工作目录、--ignore-user-config、--ephemeral、read-only sandbox、features.multi_agent=true；只允许一个子代理。父子任务使用用户指定模型 gpt-6.1-sol，不执行文件、shell、搜索或其他业务工具。未修改用户现有 Codex 配置。
+
+本轮自定义 provider 显式设置 supports_websockets=false、wire_api=responses。为确保不会误发 WS，在本机回环地址增加只允许 POST /v1/responses 且 stream:true 的记录转发器：任何 GET/Upgrade 都在本地拒绝；原 JSON 请求体直接转发至用户提供的公网入口，不替换协作工具 schema，不模拟工具执行。API Key 仅在进程内使用，未写入配置或结果文件。实际记录为 7 次 POST/SSE，0 次被拒绝的 GET/Upgrade，全部 HTTP 200、text/event-stream、response.completed。
+
+### 真实协作链路
+
+| 阶段 | 结果与证据 |
+| --- | --- |
+| 创建子代理 | 模型调用原生 namespace=collaboration、name=spawn_agent，task_name=sse_child、fork_turns=none；Codex 执行后返回 task_name=/root/sse_child。 |
+| 子代理执行 | 子代理独立请求带 X-Codex-Parent-Thread-Id 和 X-Openai-Subagent: collab_spawn，返回 CODEX_SSE_CHILD_OK。 |
+| 结果回传父代理 | 父代理后续请求包含 type=agent_message、author=/root/sse_child、recipient=/root，内容为 FINAL_ANSWER / CODEX_SSE_CHILD_OK。 |
+| 追加任务 | 父代理实际调用 collaboration.followup_task，target=/root/sse_child，要求返回 CODEX_SSE_FOLLOWUP_OK。 |
+| 同一子代理续轮 | 第二个子代理请求保留首轮历史与首轮回答，新的 NEW_TASK 仍发给 /root/sse_child，返回 CODEX_SSE_FOLLOWUP_OK。 |
+| 父代理最终汇总 | 父代理输入已包含两次实际子代理 FINAL_ANSWER，最终返回 CODEX_SSE_REAL_SUBAGENT_OK；Codex 退出码 0。 |
+
+以上由实际 Codex 运行时完成，Python 转发器仅记录和转发 HTTP。不能仅凭最终成功标记判定成功；本轮另行验证了 spawn 返回、父子请求、call_id、agent_message 收发对象、原生 followup 调用和子代理历史连续性，16 项独立断言全部通过。父代理共 5 次请求，子代理共 2 次请求。7 次请求均在 new-api master 日志精确匹配，选择 channel_id=345、channel_type=1、api_type=0、channel_pass_through=true。
+
+| 实际 Codex 请求 | master 请求 ID |
+| --- | --- |
+| 父代理创建 | 20261114155507776357636phiUtYFa |
+| 父代理第一次等待 | 20261114155513487796159VYUltocK |
+| 子代理首轮 | 20261114155513308544217UhXiEeDx |
+| 父代理追加任务 | 20261114155518530485363T5fmOEoO |
+| 子代理后续任务 | 202611141555247447954068oh7fvDm |
+| 父代理第二次等待 | 20261114155524846900844N9KbT58R |
+| 父代理最终结果 | 20261114155530765298997iZdNe3xf |
+
+### SSE 协议补充探针
+
+23:50–23:51 先执行自定义 production_probe namespace 六步链路：父任务创建 → 子会话 custom 工具调用 → custom_tool_call_output 回传 → 父任务 followup_task → 子会话后续回答 → 父任务完成。六次均 HTTP 200 / SSE / response.completed，也全部在 master 日志命中渠道 345。19 项断言全部通过，包括 namespace、call_id、function/custom 参数增量拼接、文本增量与最终输出一致、父子会话隔离、子会话历史续传，以及返回的 reasoning.encrypted_content 在后续请求中原样重放。
+
+子会话精确返回 CHILD_PROBE_OK|9007199254740993|opaque_tool_keep，后续返回 CHILD_FOLLOWUP_OK，父会话最终返回 PARENT_CHILD_ROUNDTRIP_OK。这部分由脚本模拟编排，用于覆盖 custom 工具和文本载荷保留；真实原生协作结论以本节上方 Codex 测试为准。大整数是在 input_text JSON 文本中验证，不扩大为任意 JSON 数值路径的无损保证。
+
+六步探针请求 ID 依次为：20261114155032881193800NA31ujxb、20261114155036927275231kzN1T3FB、20261114155040368154830XizfAalq、20261114155045146192661cnIZGxto、20261114155053309938056cMRmsdZ5、20261114155057765570938X9R2ABP4。
+
+### 用量与边界
+
+- 六步探针上游报告输入 2,474、输出 271、合计 2,745 tokens，应用结算日志合计 USD 0.002044。
+- 真实 Codex 父子合计上游报告输入 85,586（其中 cached 61,479）、输出 385、合计 85,971 tokens；应用结算日志合计 USD 0.016590。Codex CLI 最后显示的 turn usage 只覆盖父代理，不能用其代替父子总量。所有响应的 customer_usage 均标记 estimated；这些是上游报告值，不是独立 tokenizer 审计。
+- 两组共 13 个请求，每个观察到一条应用结算记录，合计 USD 0.018634；没有读取数据库余额，不能代替持久化账务对账。
+- 本轮证明本机该版本 Codex 经当前公网入口 / new-api master / 渠道 345，能够使用 SSE 完成一个子代理及一次追加任务。没有验证多子代理并发、深层嵌套、故障恢复、跨渠道/凭据切换或服务端托管 multi_agent。
+- 实际 Codex 请求完整重放历史，未使用 previous_response_id；本轮不改变此前 HTTP 服务端历史续轮的兼容性结论。记录到了客户端发出的父子标识头，未捕获渠道上游原始入站请求，不能宣称头部逐字节透传已证实。
+- 原生 collaboration 工具这次由 Codex 自己提供 schema，实际通过。此前手写保留工具 schema 被拒绝的结果不能用于推断真实 Codex 子代理不可用。
+- 此测试在客户端明确禁用 WS 后成功，说明本轮验收的子代理链路无需 WS。未修改生产渠道开关，未重新测试此前 WS 上游账号问题。
+
+本轮保持生产只读，未部署、重启或修改渠道。脱敏请求、流事件、校验脚本和按请求 ID 筛选的日志保存在本机临时目录 new-api-production-responses-probe/sse-channel345-20261114-235014；其中 real-codex 保存真实客户端记录。仓库仅追加本报告，保留全部历史结论。
+
+## 渠道 345 启用 WS 后复测（2026-11-14 23:45，Asia/Shanghai）
+
+**结论：渠道 345 的 Responses WebSocket 开关已在 master 生效；请求已通过网关渠道门禁并连接上游。当前阻断是上游随后发送 WebSocket close 1013，原因为 no available account。普通 HTTP/SSE 正常。** 下方 23:40 的开关未生效记录为此前状态。
+
+使用原 API Key 与 gpt-6.1-sol，全部建立新连接，不复用旧 response ID。一次 namespace 工具请求、一次公网最小消息请求、一次直连源站最小消息请求均失败；没有继续发送缺少有效 response_id/call_id 的续轮、注入或取消探针。
+
+| 检查项 | 客户端结果 | master 日志 |
+| --- | --- | --- |
+| 公网 WS namespace 调用 | 握手 101，create 返回 502 / bad_response | 请求 0a25c9c9b8cb45c0aad5d55c06e8e142，渠道 345，scanner error: websocket: close 1013: no available account，received=0。 |
+| 公网最小 WS 推理 | 握手 101，create 返回相同 502 | 请求 824fa7c63b7142df9b0058e8bed11af0，同样由上游 close 1013 / no available account 终止。 |
+| 源站最小 WS 推理 | 握手 101，create 返回相同 502 | 请求 b5a0bfd497334aa4b1a70b485d3ae34c；直连 167.160.90.42，TLS SNI/Host 为 alb.jucodex.com、证书校验开启，绕过 Worker 后仍相同。 |
+| HTTP/SSE 对照 | 200 → response.completed，精确输出 MASTER_HTTP_SSE_OK | 请求 20261114154509677430546M0x5h3rr，同样命中渠道 345，输入 23 / 输出 9 / 合计 32 tokens。 |
+
+三个 WS 请求均为原生 OpenAI 类型（channel_type=1、api_type=0），body passthrough 开启。它们已进入 responses relay selected channel 之后的上游读取阶段，没有再出现未开启 WS 的 400、Worker 1101 或 HTTP/2 二进制解析错误。最小消息探针不带 event_id，也没有 namespace/tools，因此本轮失败不依赖此前 event_id 参数或工具 schema 问题。
+
+客户端仅看到上游流提前结束的泛化 502；master 内部日志保留了上游 close 的明确原因。该证据说明需要排查 **渠道 345 对应上游的 WS 账号可用性/调度条件**，不能断言账号永久不支持 WS，也不能根据 HTTP 正常推断 WS 账号选择一定正常。可能需要核对账号的 WS 启用状态、该凭据/分组的可用账号及模型权限、临时容量限制；这些是后续核查项，并非本轮已确认原因。
+
+尝试读取已授权 sub2api master 的诊断日志，在返回的最近 2,000 行及本次时间窗内未找到可关联记录；尚未证明渠道 345 的上游就是该实例，不能用未匹配日志认定它没有收到请求。未读取上游凭据或修改调度配置。
+
+三个失败 WS 请求均显示 effective_preconsume_quota=0、received=0，没有模型 usage。HTTP 对照应用结算日志显示 USD 0.000026；没有核对账务数据库余额。续轮、response.inject、response.cancel 和 event_id 兼容性仍未能在渠道 345 上验收。
+
+本轮保持远程只读，仅发出上述用户授权探针；未修改生产代码、渠道、Nginx 或容器。完整结果及按请求 ID 筛选的 master 日志保存于本机临时目录 new-api-production-responses-probe/channel345-ws-enabled-20261114-234455，保留前轮记录。
+
+## API Key 切换渠道后复测（2026-11-14 23:40，Asia/Shanghai）
+
+用户将现有 API Key 改到另一渠道后，使用同一凭据及 gpt-6.1-sol 新建连接复测，没有复用此前 WS 或 response ID。master 应用日志确认本轮两个请求均命中 **渠道 345**，不再是上一轮渠道 312。new-api-master 仍为 23:25:49 启动的容器，healthy，重启次数 0。
+
+| 检查项 | 结果 | 证据 |
+| --- | --- | --- |
+| 公网 WS 握手 | 101 | CF-Ray a5a71d0d7fa284e9-LAX；Worker / Nginx 接入仍正常。 |
+| WS response.create | 网关 400 / invalid_request | Responses WebSocket requires an enabled native OpenAI/Codex channel；master 请求 ID a5ac2c6713294bf0984ca41b0c5c1004，日志记录 channel #345。 |
+| 普通 HTTP/SSE | 200 → response.completed | 精确输出 MASTER_HTTP_SSE_OK；请求 ID 20261114154016723560016zf7S7Ee2，channel_id=345、channel_type=1、api_type=0、channel_pass_through=true。 |
+| WS 工具结果续轮、inject、cancel | 未执行 | 首次 create 已被渠道门禁拒绝，尚未连接新渠道的 WS 上游；重复控制探针不能验证上游能力。 |
+
+对应 ResponsesHelper 检查在调用上游前要求原生 OpenAI/Codex 类型且 ResponsesWebSocketEnabled 为 true。渠道 345 的 HTTP 日志确认是原生 OpenAI 类型；结合 WS 拒绝结果，当前运行时的该渠道 Responses WebSocket 未启用。未读取数据库原始 setting，因此不区分未保存配置与缓存尚未生效。此结果不是新上游不支持 WebSocket 的证据，也不能用于判断此前 event_id、注入、取消问题是否已解决。
+
+后续若要继续 WS 对比，需使 **渠道 345** 的「启用 Responses WebSocket」设置生效（setting.responses_websocket_enabled=true），再建立新连接。此次保持远程只读，没有代为修改渠道、重启或部署。普通 HTTP/SSE 请求不受这个开关阻断。
+
+本轮仅有一次完成的模型响应，usage 为输入 23、输出 9、合计 32 tokens；应用日志显示结算 USD 0.000038。被拒绝的 WS create 显示实际预扣 0，未生成模型响应；未做数据库余额对账。
+
+探针结果单独保存在本机临时目录 new-api-production-responses-probe/channel-switch-20261114-234005，未覆盖上一轮渠道 312 的记录。以下 master 成功记录均属于此前渠道 312，不可套用到本次渠道 345。
+
+## master 与 Worker 更新后复测（2026-11-14 23:31–23:34，Asia/Shanghai）
+
+本节为渠道 312 的生产结果，后文保留此前 slave 与未更新 Worker 的历史结论。用户明确要求当轮检查 **new-api master（13000）**。
+
+**结论：公网及源站 WS 握手、基础生成、namespace 工具往返、同连接 previous_response_id 续轮均通过。此前 Worker 1101 和 TLS/HTTP2 二进制解析错误未再出现，两处修复的预期行为已在生产验证。response.inject 与 response.cancel 尚未通过当前渠道的实际功能验证。**
+
+### 目标实例与路由证据
+
+- nginx 诊断输出确认 alb.jucodex.com 的 newapi_backend 已指向 127.0.0.1:13000；/v1/responses 保留 HTTP/1.1 Upgrade 配置。master.jucodex.com 是另一个 sub2api 的入口，不以域名中的 master 判断本项目角色。
+- new-api-master 容器 ID：05d091aefd30356edecc1fc16299b9709c8d2949f5ced9a194e78930495ce58a；healthy，重启次数 0。
+- 镜像 new-api-local:master，image ID：sha256:ffc25001588dda9cef5fc81d834578c80ed16780795dfe2c9c9835a1fabc4a1a；镜像创建于 2026-11-14T15:25:39Z，容器启动于 15:25:49Z（北京时间 23:25:49）。
+- 本地 HEAD 为 1df7f3d33b（fixed bug&worker）；生产镜像没有 revision 标签，不能据此证明精确 commit。生产请求日志在 new-api master 中匹配，全部测试模型请求选择渠道 312（OpenAI 类型、body passthrough）。
+
+### 通过的实际请求
+
+| 项目 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| 公网 WS | 101 → response.completed，输出 WS_MASTER_DEPLOYED_OK | 经 api.jucodex.com / Cloudflare；CF-Ray a5a71094dead1f56-LAX。 |
+| 源站 WS | 101 → response.completed，同样输出 WS_MASTER_DEPLOYED_OK | 直连 167.160.90.42:443，TLS SNI/Host 保持 alb.jucodex.com，并验证证书；绕过 Worker。 |
+| namespace 工具调用 | response.completed，namespace=production_probe、name=inspect，call_id 完整 | 自定义测试 namespace，不是实际 Codex 子代理工具 schema。 |
+| 工具结果回传 | 同连接带 previous_response_id 再次 create，response.completed | 精确输出 CHILD_WS_OK｜9007199254740993｜opaque_tool_keep；这里用全角分隔符展示，实际输出是 ASCII 竖线。 |
+| 后续请求 | 第三次同连接 create 引用第二次 response ID，response.completed | 精确重现前轮文本并追加 ASCII 竖线及 FOLLOWUP_OK。 |
+| 普通 HTTP/SSE | 200 → response.completed，输出 MASTER_HTTP_SSE_OK | 请求 ID 20261114153252944100249BHGZ8RnN；说明 WS 修改后该路径仍正常。 |
+
+工具结果通过 function_call_output 字符串回传，大整数与嵌套 encrypted_content 哨兵完整重现。这是所测样例的语义验证，不等价于捕获上游原始请求，也不证明全部透传路径均无损。编排由测试脚本执行，没有启动真实 Codex 子代理进程。
+
+### 未通过与兼容性边界
+
+1. 带 event_id 的 response.create：公网、源站均返回上游 400 / Unsupported parameter: event_id。去掉此可选字段后两条路径生成成功。当前网关会把客户端 event_id 加回上游，故携带该字段的真实客户端仍有兼容性问题，不能宣称所有客户端请求形状都通过。
+2. 字符串 input 的 WS create：当前上游返回 400 / Input must be a list；改成消息数组后通过。普通 HTTP/SSE 的字符串 input 请求则成功。探针已按两种传输实际接受的形状区分，未修改生产参数策略。
+3. response.inject：先完成 function_call，再向同连接、真实 response_id/call_id 注入工具结果；公网及直连源站均未收到注入回执，而是异常断连（无 close frame）。此次仅测试完成后的工具结果注入，不能扩大为对托管多代理活动响应注入的完整测试。
+4. response.cancel：收到 response.created 后立即发送针对该 ID 的取消；公网和源站均继续输出到 128 tokens，并以 response.incomplete / reason=max_output_tokens 终止，未观察到取消成功。
+
+控制事件的问题绕过 Worker 仍复现，不能归咎于 Cloudflare。当前证据还不足以在 new-api 转发与上游事件实现之间最终归因，需要上游接收/处理日志或直接上游对照；本轮未读取渠道密钥或绕过访问权限，也未为未确认的兼容性原因修改生产代码。
+
+### master 日志与结算核对
+
+| 探针 | master 内部请求 ID |
+| --- | --- |
+| 公网基础生成 | 3a3ffae5b3624505a15f3ea07d4b7bc3 |
+| 源站基础生成 | 1457752bfe5445ac90795b0d050834bd |
+| namespace 工具调用 | acaf0bffe7bf4057a38115171272009d |
+| 工具结果续轮 | a1685b76b81f430187cd8487ddb8c846 |
+| 后续请求 | 3245b07fb34d4c8fac8fb69c64abfbb8 |
+| 公网注入前工具生成 | dadb989fa8a64e05b5b111533cbf6c30 |
+| 公网取消未生效 | b915ad94875840b5b06384ee82227d22 |
+| 源站注入前工具生成 | 7fb5bf0d39824e099090bd31ff271eed |
+| 源站取消未生效 | 56fcab40f04d40a789f2e8762f4a755d |
+
+本轮共有 10 个带 usage 的终止响应（8 completed、2 达 token 上限的 incomplete），累计 1,214 tokens（输入 798、输出 416）。另有 4 次参数被拒绝的 create，无模型输出。
+
+抓取并按本次 token/请求 ID 过滤 master 应用日志，10 个推理请求各观察到一条结算日志，合计显示 USD 0.000766；均显示实际预扣 0 后补扣。捕获范围内未见这 10 个请求重复结算，也未见此前的 malformed HTTP response 或 WS panic。此处是应用日志证据，没有读取账务数据库或核对余额，不能代替持久化账务审计。
+
+本轮只进行远程只读诊断与用户授权的小额模型探针；没有部署、重启、修改渠道或 Nginx。完整探针结果及筛选日志留在本机临时目录 new-api-production-responses-probe 的 master_* 文件，仓库仅记录脱敏结论。当前可使用已验证的 create + function_call_output + previous_response_id 路径；注入、取消以及 event_id 兼容性保留为未解决项。
 
 ## 生产复测（2026-11-14）
 

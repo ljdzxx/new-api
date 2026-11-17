@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -12,7 +14,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/model"
 )
 
 type EpayOrderInfo struct {
@@ -26,22 +28,20 @@ type EpayOrderInfo struct {
 	Status     string
 }
 
-func QueryEpayOrder(ctx context.Context, outTradeNo string, tradeNo string) (*EpayOrderInfo, error) {
-	if strings.TrimSpace(operation_setting.PayAddress) == "" ||
-		strings.TrimSpace(operation_setting.EpayId) == "" ||
-		strings.TrimSpace(operation_setting.EpayKey) == "" {
+func QueryEpayOrder(ctx context.Context, revision *model.EpayChannelRevision, outTradeNo string, tradeNo string) (*EpayOrderInfo, error) {
+	if revision == nil || revision.PayAddress == "" || revision.MerchantId == "" || revision.MerchantKey == "" {
 		return nil, fmt.Errorf("epay is not configured")
 	}
 	if strings.TrimSpace(outTradeNo) == "" && strings.TrimSpace(tradeNo) == "" {
 		return nil, fmt.Errorf("epay order id is empty")
 	}
 
-	apiURL, err := buildEpayQueryURL(operation_setting.PayAddress)
+	apiURL, err := buildEpayQueryURL(revision.PayAddress)
 	if err != nil {
 		return nil, err
 	}
 	form := url.Values{}
-	form.Set("pid", operation_setting.EpayId)
+	form.Set("pid", revision.MerchantId)
 	if strings.TrimSpace(outTradeNo) != "" {
 		form.Set("out_trade_no", strings.TrimSpace(outTradeNo))
 	}
@@ -50,7 +50,7 @@ func QueryEpayOrder(ctx context.Context, outTradeNo string, tradeNo string) (*Ep
 	}
 	form.Set("timestamp", strconv.FormatInt(time.Now().Unix(), 10))
 	form.Set("sign_type", "MD5")
-	form.Set("sign", makeEpayMD5Sign(form, operation_setting.EpayKey))
+	form.Set("sign", makeEpayMD5Sign(form, revision.MerchantKey))
 
 	reqCtx := ctx
 	if reqCtx == nil {
@@ -75,11 +75,22 @@ func QueryEpayOrder(ctx context.Context, outTradeNo string, tradeNo string) (*Ep
 	}
 
 	var raw map[string]any
-	if err := common.DecodeJson(resp.Body, &raw); err != nil {
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1048577))
+	if err != nil {
 		return nil, err
 	}
+	if len(payload) > 1048576 {
+		return nil, fmt.Errorf("epay order query response is too large")
+	}
+	if err := common.UnmarshalUseNumber(payload, &raw); err != nil {
+		return nil, err
+	}
+	code, err := strconv.Atoi(stringFromAny(raw["code"]))
+	if err != nil {
+		return nil, fmt.Errorf("epay order query response has an invalid code")
+	}
 	info := &EpayOrderInfo{
-		Code:       intFromAny(raw["code"]),
+		Code:       code,
 		Msg:        stringFromAny(raw["msg"]),
 		TradeNo:    stringFromAny(raw["trade_no"]),
 		OutTradeNo: stringFromAny(raw["out_trade_no"]),
@@ -121,29 +132,16 @@ func makeEpayMD5Sign(values url.Values, key string) string {
 }
 
 func stringFromAny(value any) string {
-	switch v := value.(type) {
+	switch typed := value.(type) {
 	case nil:
 		return ""
 	case string:
-		return strings.TrimSpace(v)
+		return strings.TrimSpace(typed)
+	case json.Number:
+		return typed.String()
 	case float64:
-		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.6f", v), "0"), ".")
+		return strconv.FormatFloat(typed, 'f', -1, 64)
 	default:
-		return strings.TrimSpace(fmt.Sprint(v))
-	}
-}
-
-func intFromAny(value any) int {
-	switch v := value.(type) {
-	case int:
-		return v
-	case float64:
-		return int(v)
-	case string:
-		var n int
-		_, _ = fmt.Sscanf(strings.TrimSpace(v), "%d", &n)
-		return n
-	default:
-		return 0
+		return ""
 	}
 }

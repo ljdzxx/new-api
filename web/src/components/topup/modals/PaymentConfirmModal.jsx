@@ -140,6 +140,13 @@ const PaymentConfirmModal = ({
       <div className='space-y-4'>
         <Card className='!rounded-xl !border-0 bg-slate-50 dark:bg-slate-800'>
           <div className='space-y-3'>
+            {payWay === 'stripe' && (
+              <Text type='tertiary'>
+                {t(
+                  'Stripe 金额仅为本站报价，实际支付以 Stripe 收银台为准；商城金额以外部商品价格为准。',
+                )}
+              </Text>
+            )}
             <div className='flex justify-between items-center'>
               <Text strong className='text-slate-700 dark:text-slate-200'>
                 {t('充值数量')}:
@@ -149,27 +156,31 @@ const PaymentConfirmModal = ({
               </Text>
             </div>
 
-            <div className='flex justify-between items-center'>
-              <Text strong className='text-slate-700 dark:text-slate-200'>
-                {t('实付金额')}:
-              </Text>
-              {amountLoading ? (
-                <Skeleton.Title style={{ width: '60px', height: '16px' }} />
-              ) : (
-                <div className='flex items-baseline space-x-2'>
-                  <Text strong className='font-bold' style={{ color: 'red' }}>
-                    {actualPaymentText}
-                  </Text>
-                  {hasDiscount && (
-                    <Text size='small' className='text-rose-500'>
-                      {Math.round(discountRate * 100)}%
+            {payWay === 'mall' ? (
+              <Text>{t('商城实际收费以外部商品价格为准')}</Text>
+            ) : (
+              <div className='flex justify-between items-center'>
+                <Text strong className='text-slate-700 dark:text-slate-200'>
+                  {t('Stripe 参考报价')}:
+                </Text>
+                {amountLoading ? (
+                  <Skeleton.Title style={{ width: '60px', height: '16px' }} />
+                ) : (
+                  <div className='flex items-baseline space-x-2'>
+                    <Text strong className='font-bold' style={{ color: 'red' }}>
+                      {actualPaymentText}
                     </Text>
-                  )}
-                </div>
-              )}
-            </div>
+                    {hasDiscount && (
+                      <Text size='small' className='text-rose-500'>
+                        {Math.round(discountRate * 100)}%
+                      </Text>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
-            {hasDiscount && !amountLoading && (
+            {payWay !== 'mall' && hasDiscount && !amountLoading && (
               <>
                 <div className='flex justify-between items-center'>
                   <Text className='text-slate-500 dark:text-slate-400'>

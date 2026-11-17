@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Button, Input } from '@douyinfe/semi-ui';
+import { Button, Card, Input } from '@douyinfe/semi-ui';
 import { Copy, Users, TrendingUp } from 'lucide-react';
 
 const InvitationCard = ({
@@ -53,7 +53,7 @@ const InvitationCard = ({
   };
 
   return (
-    <div className='w-full flex-shrink-0 lg:w-[320px]'>
+    <Card className='!rounded-2xl border-0 shadow-sm'>
       <div className='mb-3'>
         <span
           style={{
@@ -154,7 +154,7 @@ const InvitationCard = ({
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 };
 

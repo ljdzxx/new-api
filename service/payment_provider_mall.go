@@ -79,8 +79,8 @@ func (p *MallPaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutReques
 	if req == nil {
 		return nil, fmt.Errorf("参数错误")
 	}
-	if req.Amount < getTopupMinAmount() {
-		return nil, fmt.Errorf("充值数量不能小于%d", getTopupMinAmount())
+	if req.Amount <= 0 {
+		return nil, fmt.Errorf("充值数量必须大于 0")
 	}
 	link, err := buildMallTopupLink(req.Amount)
 	if err != nil {

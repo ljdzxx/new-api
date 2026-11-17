@@ -13,19 +13,14 @@ import (
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/require"
 )
 
 func TestValidateEpayTopUpCallbackChecksRemoteOrder(t *testing.T) {
-	originalPayAddress := operation_setting.PayAddress
-	originalEpayId := operation_setting.EpayId
-	originalEpayKey := operation_setting.EpayKey
-	defer func() {
-		operation_setting.PayAddress = originalPayAddress
-		operation_setting.EpayId = originalEpayId
-		operation_setting.EpayKey = originalEpayKey
-	}()
+	originalDB := model.DB
+	t.Cleanup(func() { model.DB = originalDB })
+	database := setupTokenControllerTestDB(t)
+	require.NoError(t, database.AutoMigrate(&model.EpayChannelRevision{}))
 
 	verifyInfo := &epay.VerifyRes{
 		Type:           "alipay",
@@ -48,15 +43,15 @@ func TestValidateEpayTopUpCallbackChecksRemoteOrder(t *testing.T) {
 	}))
 	defer server.Close()
 
-	operation_setting.PayAddress = server.URL
-	operation_setting.EpayId = "pid-1"
-	operation_setting.EpayKey = "key-1"
+	revision := model.EpayChannelRevision{ChannelId: 1, EpayChannelConfig: model.EpayChannelConfig{PayAddress: server.URL, MerchantId: "pid-1"}, MerchantKey: "key-1"}
+	require.NoError(t, database.Create(&revision).Error)
 
 	topUp := &model.TopUp{
 		TradeNo:         verifyInfo.ServiceTradeNo,
 		PaymentMethod:   "alipay",
 		PaymentProvider: model.PaymentProviderEpay,
 		Money:           12.34,
+		EpayChannelId:   1, EpayChannelRevisionId: revision.Id,
 	}
 	require.NoError(t, validateEpayTopUpCallback(context.Background(), verifyInfo, topUp))
 }

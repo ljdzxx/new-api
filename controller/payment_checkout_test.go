@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 )
@@ -26,6 +27,7 @@ type topupCheckoutResponse struct {
 }
 
 func TestGetPaymentTopupMetaReturnsLegacyAutoMeta(t *testing.T) {
+	setupPaymentChannelDB(t)
 	routeSetting := operation_setting.GetPaymentRouteSetting()
 	prevTopupProvider := routeSetting.TopupProvider
 	routeSetting.TopupProvider = types.PaymentProviderLegacyAuto
@@ -100,6 +102,7 @@ func TestCreatePaymentTopupCheckoutSupportsExplicitMallProvider(t *testing.T) {
 }
 
 func TestGetPaymentSubscriptionMetaReturnsLegacyAutoMeta(t *testing.T) {
+	setupPaymentChannelDB(t)
 	routeSetting := operation_setting.GetPaymentRouteSetting()
 	prevSubscriptionProvider := routeSetting.SubscriptionProvider
 	routeSetting.SubscriptionProvider = types.PaymentProviderLegacyAuto
@@ -127,6 +130,15 @@ func TestGetPaymentSubscriptionMetaReturnsLegacyAutoMeta(t *testing.T) {
 	}
 	if !data.ProviderMeta.LegacyAuto {
 		t.Fatalf("expected legacy_auto metadata flag to be true")
+	}
+}
+
+func setupPaymentChannelDB(test *testing.T) {
+	originalDB := model.DB
+	test.Cleanup(func() { model.DB = originalDB })
+	database := setupTokenControllerTestDB(test)
+	if err := database.AutoMigrate(&model.EpayChannel{}, &model.EpayChannelRevision{}); err != nil {
+		test.Fatal(err)
 	}
 }
 

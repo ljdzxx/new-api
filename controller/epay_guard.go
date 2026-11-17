@@ -9,8 +9,6 @@ import (
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/shopspring/decimal"
 )
 
 var (
@@ -22,7 +20,14 @@ func validateEpayTopUpCallback(ctx context.Context, verifyInfo *epay.VerifyRes, 
 	if topUp == nil {
 		return fmt.Errorf("topup order not found")
 	}
-	if err := validateEpayCallbackBase(ctx, verifyInfo, epayTopupTradeNoPattern, topUp.PaymentProvider, topUp.PaymentMethod, topUp.Money); err != nil {
+	if topUp.PaymentProvider != model.PaymentProviderEpay {
+		return model.ErrPaymentMethodMismatch
+	}
+	revision, err := model.GetEpayChannelRevision(topUp.EpayChannelRevisionId)
+	if err != nil || revision.ChannelId != topUp.EpayChannelId {
+		return fmt.Errorf("invalid order channel revision")
+	}
+	if err := validateEpayCallbackBase(ctx, revision, verifyInfo, epayTopupTradeNoPattern, topUp.PaymentProvider, topUp.PaymentMethod, topUp.Money); err != nil {
 		return err
 	}
 	return nil
@@ -32,13 +37,20 @@ func validateEpaySubscriptionCallback(ctx context.Context, verifyInfo *epay.Veri
 	if order == nil {
 		return fmt.Errorf("subscription order not found")
 	}
-	if err := validateEpayCallbackBase(ctx, verifyInfo, epaySubscriptionTradeNoPattern, order.PaymentProvider, order.PaymentMethod, order.Money); err != nil {
+	if order.PaymentProvider != model.PaymentProviderEpay {
+		return model.ErrPaymentMethodMismatch
+	}
+	revision, err := model.GetEpayChannelRevision(order.EpayChannelRevisionId)
+	if err != nil || revision.ChannelId != order.EpayChannelId {
+		return fmt.Errorf("invalid order channel revision")
+	}
+	if err := validateEpayCallbackBase(ctx, revision, verifyInfo, epaySubscriptionTradeNoPattern, order.PaymentProvider, order.PaymentMethod, order.Money); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateEpayCallbackBase(ctx context.Context, verifyInfo *epay.VerifyRes, tradeNoPattern *regexp.Regexp, paymentProvider string, paymentMethod string, expectedMoney float64) error {
+func validateEpayCallbackBase(ctx context.Context, revision *model.EpayChannelRevision, verifyInfo *epay.VerifyRes, tradeNoPattern *regexp.Regexp, paymentProvider string, paymentMethod string, expectedMoney float64) error {
 	if verifyInfo == nil {
 		return fmt.Errorf("epay verify info is nil")
 	}
@@ -54,11 +66,11 @@ func validateEpayCallbackBase(ctx context.Context, verifyInfo *epay.VerifyRes, t
 	if paymentMethod != verifyInfo.Type {
 		return fmt.Errorf("payment method mismatch: order=%s callback=%s", paymentMethod, verifyInfo.Type)
 	}
-	if !sameMoney(verifyInfo.Money, expectedMoney) {
+	if !service.EpayMoneyMatches(verifyInfo.Money, expectedMoney) {
 		return fmt.Errorf("payment money mismatch: order=%.6f callback=%s", expectedMoney, verifyInfo.Money)
 	}
 
-	orderInfo, err := service.QueryEpayOrder(ctx, verifyInfo.ServiceTradeNo, verifyInfo.TradeNo)
+	orderInfo, err := service.QueryEpayOrder(ctx, revision, verifyInfo.ServiceTradeNo, verifyInfo.TradeNo)
 	if err != nil {
 		return fmt.Errorf("query epay order failed: %w", err)
 	}
@@ -77,29 +89,11 @@ func validateEpayCallbackBase(ctx context.Context, verifyInfo *epay.VerifyRes, t
 	if orderInfo.Type != verifyInfo.Type {
 		return fmt.Errorf("epay payment type mismatch: query=%s callback=%s", orderInfo.Type, verifyInfo.Type)
 	}
-	if orderInfo.Pid != operation_setting.EpayId {
+	if orderInfo.Pid != revision.MerchantId {
 		return fmt.Errorf("epay pid mismatch: query=%s", orderInfo.Pid)
 	}
-	if !sameMoney(orderInfo.Money, expectedMoney) || !sameMoney(orderInfo.Money, mustMoneyFloat(verifyInfo.Money)) {
+	if !service.EpayMoneyMatches(orderInfo.Money, expectedMoney) {
 		return fmt.Errorf("epay query money mismatch: query=%s callback=%s order=%.6f", orderInfo.Money, verifyInfo.Money, expectedMoney)
 	}
 	return nil
-}
-
-func sameMoney(actual string, expected float64) bool {
-	actualDecimal, err := decimal.NewFromString(strings.TrimSpace(actual))
-	if err != nil {
-		return false
-	}
-	expectedDecimal := decimal.NewFromFloat(expected)
-	return actualDecimal.Round(2).Equal(expectedDecimal.Round(2))
-}
-
-func mustMoneyFloat(value string) float64 {
-	money, err := decimal.NewFromString(strings.TrimSpace(value))
-	if err != nil {
-		return -1
-	}
-	result, _ := money.Float64()
-	return result
 }

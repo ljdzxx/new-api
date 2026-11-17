@@ -113,7 +113,7 @@ func (p *StripePaymentProvider) CreateTopupCheckout(req *types.TopupCheckoutRequ
 	topUp := &model.TopUp{
 		UserId:          user.Id,
 		Amount:          req.Amount,
-		Money:           getStripeChargedAmount(float64(req.Amount), *user),
+		Money:           float64(req.Amount),
 		TradeNo:         referenceID,
 		PaymentMethod:   string(types.PaymentProviderStripe),
 		PaymentProvider: model.PaymentProviderStripe,

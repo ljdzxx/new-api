@@ -27,6 +27,7 @@ import {
   Empty,
   Button,
   Input,
+  InputNumber,
   Tag,
   TextArea,
 } from '@douyinfe/semi-ui';
@@ -78,6 +79,7 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
+  const [epayChannelID, setEpayChannelID] = useState(null);
   const [refundOrder, setRefundOrder] = useState(null);
   const [refundReason, setRefundReason] = useState('');
   const [refundLoading, setRefundLoading] = useState(false);
@@ -93,7 +95,10 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
       const qs =
         `p=${currentPage}&page_size=${currentPageSize}` +
         (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '') +
-        (userIsAdmin && userId > 0 ? `&user_id=${userId}` : '');
+        (userIsAdmin && userId > 0 ? `&user_id=${userId}` : '') +
+        (userIsAdmin && epayChannelID > 0
+          ? `&epay_channel_id=${epayChannelID}`
+          : '');
       const endpoint = `${base}?${qs}`;
       const res = await API.get(endpoint);
       const { success, message, data } = res.data;
@@ -125,7 +130,7 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
     }
 
     loadTopups(page, pageSize);
-  }, [visible, page, pageSize, keyword, userId]);
+  }, [visible, page, pageSize, keyword, userId, epayChannelID]);
 
   const handleCancel = () => {
     setPage(1);
@@ -262,10 +267,27 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
           return (
             <span className='flex items-center gap-1'>
               <Coins size={16} />
-              <Text>{amount}</Text>
+              <Text
+                title={
+                  Number(record.epay_bonus_usd) > 0
+                    ? `${t('含赠金')} $${record.epay_bonus_usd} USD`
+                    : undefined
+                }
+              >
+                {record.epay_channel_revision_id
+                  ? `$${record.epay_credit_usd || '0'} USD${Number(record.epay_bonus_usd) > 0 ? ` (${t('含赠金')} $${record.epay_bonus_usd})` : ''}`
+                  : amount}
+              </Text>
             </span>
           );
         },
+      },
+      {
+        title: t('易支付渠道'),
+        dataIndex: 'epay_channel_name',
+        key: 'epay_channel_name',
+        render: (name, record) =>
+          name ? `${name} (#${record.epay_channel_id})` : '-',
       },
       {
         title: t('支付金额'),
@@ -344,8 +366,9 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
       size={isMobile ? 'full-width' : 'large'}
       width={isMobile ? '100vw' : userIsAdmin ? 1060 : 970}
     >
-      <div className='mb-3'>
+      <div className='mb-3 flex flex-wrap gap-2'>
         <Input
+          className='flex-1'
           prefix={<IconSearch />}
           placeholder={t('搜索订单号')}
           value={keyword}
@@ -355,6 +378,19 @@ const TopupHistoryModal = ({ visible, onCancel, t, userId = 0 }) => {
           }}
           showClear
         />
+        {userIsAdmin && (
+          <InputNumber
+            value={epayChannelID}
+            min={1}
+            precision={0}
+            placeholder={t('筛选易支付渠道 ID')}
+            onChange={(value) => {
+              setEpayChannelID(value);
+              setPage(1);
+            }}
+            showClear
+          />
+        )}
       </div>
 
       <Table

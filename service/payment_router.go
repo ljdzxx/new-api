@@ -56,13 +56,18 @@ func ResolveSubscriptionProvider(plan *model.SubscriptionPlan) (PaymentProvider,
 func GetTopupMeta() (*types.ProviderMeta, error) {
 	providerID := ResolveTopupProviderID()
 	if providerID == types.PaymentProviderLegacyAuto {
+		channels, err := ListPublicEpayChannels(nil)
+		if err != nil {
+			return nil, err
+		}
 		return &types.ProviderMeta{
-			Scene:       types.PaymentSceneTopup,
-			Provider:    providerID,
-			DisplayName: "Legacy Auto",
-			LegacyAuto:  true,
-			Enabled:     true,
-			ConfigReady: true,
+			Scene:        types.PaymentSceneTopup,
+			EpayChannels: channels,
+			Provider:     providerID,
+			DisplayName:  "Legacy Auto",
+			LegacyAuto:   true,
+			Enabled:      true,
+			ConfigReady:  true,
 		}, nil
 	}
 	if providerID == types.PaymentProviderDisabled {
@@ -84,13 +89,18 @@ func GetTopupMeta() (*types.ProviderMeta, error) {
 func GetSubscriptionMeta(plan *model.SubscriptionPlan) (*types.ProviderMeta, error) {
 	providerID := ResolveSubscriptionProviderID()
 	if providerID == types.PaymentProviderLegacyAuto {
+		channels, err := ListPublicEpayChannels(plan)
+		if err != nil {
+			return nil, err
+		}
 		return &types.ProviderMeta{
-			Scene:       types.PaymentSceneSubscription,
-			Provider:    providerID,
-			DisplayName: "Legacy Auto",
-			LegacyAuto:  true,
-			Enabled:     true,
-			ConfigReady: true,
+			Scene:        types.PaymentSceneSubscription,
+			EpayChannels: channels,
+			Provider:     providerID,
+			DisplayName:  "Legacy Auto",
+			LegacyAuto:   true,
+			Enabled:      true,
+			ConfigReady:  true,
 		}, nil
 	}
 	if providerID == types.PaymentProviderDisabled {
@@ -149,6 +159,9 @@ func inferLegacyTopupProvider(req *types.TopupCheckoutRequest) (types.PaymentPro
 	if req.ProductID != "" {
 		return types.PaymentProviderCreem, nil
 	}
+	if req.EpayChannelID > 0 {
+		return types.PaymentProviderEpay, nil
+	}
 	switch req.PaymentMethod {
 	case string(types.PaymentProviderStripe):
 		return types.PaymentProviderStripe, nil
@@ -159,9 +172,6 @@ func inferLegacyTopupProvider(req *types.TopupCheckoutRequest) (types.PaymentPro
 	case "":
 		return "", ErrLegacyAutoRouting
 	default:
-		if operation_setting.ContainsPayMethod(req.PaymentMethod) {
-			return types.PaymentProviderEpay, nil
-		}
 		return "", ErrLegacyAutoRouting
 	}
 }
@@ -169,6 +179,9 @@ func inferLegacyTopupProvider(req *types.TopupCheckoutRequest) (types.PaymentPro
 func inferLegacySubscriptionProvider(plan *model.SubscriptionPlan, req *types.SubscriptionCheckoutRequest) (types.PaymentProvider, error) {
 	if plan == nil || req == nil {
 		return "", ErrLegacyAutoRouting
+	}
+	if req.EpayChannelID > 0 {
+		return types.PaymentProviderEpay, nil
 	}
 	switch req.PaymentMethod {
 	case string(types.PaymentProviderStripe):
@@ -183,9 +196,6 @@ func inferLegacySubscriptionProvider(plan *model.SubscriptionPlan, req *types.Su
 		}
 		return "", ErrLegacyAutoRouting
 	default:
-		if operation_setting.ContainsPayMethod(req.PaymentMethod) {
-			return types.PaymentProviderEpay, nil
-		}
 		return "", ErrLegacyAutoRouting
 	}
 }

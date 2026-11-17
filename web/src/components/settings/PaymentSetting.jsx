@@ -31,14 +31,6 @@ const PaymentSetting = () => {
   const { t } = useTranslation();
   const [inputs, setInputs] = useState({
     ServerAddress: '',
-    PayAddress: '',
-    EpayId: '',
-    EpayKey: '',
-    Price: 7.3,
-    MinTopUp: 1,
-    TopupGroupRatio: '',
-    CustomCallbackAddress: '',
-    PayMethods: '',
     AmountOptions: '',
     AmountDiscount: '',
     MallLinks: '',
@@ -68,19 +60,8 @@ const PaymentSetting = () => {
 
     const newInputs = {};
     data.forEach((item) => {
+      newInputs[item.key] = item.value;
       switch (item.key) {
-        case 'TopupGroupRatio':
-          try {
-            newInputs[item.key] = JSON.stringify(
-              JSON.parse(item.value),
-              null,
-              2,
-            );
-          } catch (error) {
-            console.error('解析 TopupGroupRatio 出错:', error);
-            newInputs[item.key] = item.value;
-          }
-          break;
         case 'payment_setting.amount_options':
           try {
             newInputs.AmountOptions = JSON.stringify(
@@ -123,8 +104,6 @@ const PaymentSetting = () => {
         case 'payment_route.subscription_provider':
           newInputs.SubscriptionProvider = item.value || 'legacy_auto';
           break;
-        case 'Price':
-        case 'MinTopUp':
         case 'StripeUnitPrice':
         case 'StripeMinTopUp':
           newInputs[item.key] = parseFloat(item.value);

@@ -111,6 +111,15 @@ const SubscriptionPlansCard = ({
   const [selectedEpayMethod, setSelectedEpayMethod] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProviderMeta, setSelectedProviderMeta] = useState(null);
+
+  const epayOptions = (providerMeta) =>
+    (providerMeta?.epay_channels || []).flatMap((channel) =>
+      channel.payment_methods.map((method) => ({
+        key: `${channel.id}:${method}`,
+        channel,
+        method,
+      })),
+    );
   const [resetModalVisible, setResetModalVisible] = useState(false);
   const [resetTargetSubscription, setResetTargetSubscription] = useState(null);
   const [resetRedemptionCode, setResetRedemptionCode] = useState('');
@@ -129,13 +138,16 @@ const SubscriptionPlansCard = ({
         return;
       }
       const providerMeta = res.data?.data?.provider_meta || null;
-      const availableChannels =
-        providerMeta?.available_channels?.length > 0
-          ? getEpayMethods(providerMeta.available_channels)
-          : epayMethods;
+      const availableChannels = epayOptions(providerMeta);
       setSelectedPlan(p);
       setSelectedProviderMeta(providerMeta);
-      setSelectedEpayMethod(availableChannels?.[0]?.type || '');
+      setSelectedEpayMethod(
+        availableChannels.find(
+          (option) =>
+            option.channel.payment_method_limits?.[option.method]
+              ?.subscription_quote?.payable,
+        )?.key || '',
+      );
       setOpen(true);
     } catch (e) {
       showError(t('加载支付信息失败'));
@@ -212,9 +224,20 @@ const SubscriptionPlansCard = ({
     if (!planId) {
       throw new Error(t('请选择订阅套餐'));
     }
+    const epay = epayOptions(selectedProviderMeta).find(
+      (option) => option.key === paymentMethod,
+    );
     const res = await API.post('/api/payment/subscription/checkout', {
       plan_id: planId,
-      payment_method: paymentMethod,
+      payment_method: epay ? epay.method : paymentMethod,
+      ...(epay
+        ? {
+            epay_channel_id: epay.channel.id,
+            quote_token:
+              epay.channel.payment_method_limits?.[epay.method]
+                ?.subscription_quote?.quote_token,
+          }
+        : {}),
     });
     if (!res.data?.success) {
       throw new Error(res.data?.message || t('发起支付失败'));
@@ -263,6 +286,7 @@ const SubscriptionPlansCard = ({
       await paySubscriptionWithUnifiedCheckout(paymentMethod);
     } catch (e) {
       showError(e.message || t('发起支付失败'));
+      await openBuy(selectedPlan);
     } finally {
       setPaying(false);
     }

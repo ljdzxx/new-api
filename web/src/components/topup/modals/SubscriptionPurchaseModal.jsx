@@ -39,6 +39,7 @@ import { SiAlipay, SiStripe, SiWechat } from 'react-icons/si';
 import { getQuotaPerUnit, renderQuota } from '../../../helpers';
 import { convertUSDToPaymentCurrency } from '../../../helpers/render';
 import { formatSubscriptionDuration } from '../../../helpers/subscriptionFormat';
+import { EPAY_METHOD_NAMES, epayOfferLabel } from '../../../helpers/epay';
 
 const { Text } = Typography;
 
@@ -181,16 +182,17 @@ const SubscriptionPurchaseModal = ({
   const explicitRouting = !!providerMeta && !providerMeta?.legacy_auto;
   const providerName = providerMeta?.provider || '';
   const providerReady = providerMeta?.enabled && providerMeta?.config_ready;
-  const modalEpayMethods =
-    providerMeta?.available_channels?.length > 0
-      ? providerMeta.available_channels.filter(
-          (method) =>
-            method?.type &&
-            method.type !== 'stripe' &&
-            method.type !== 'creem' &&
-            method.type !== 'mall',
-        )
-      : epayMethods;
+  const modalEpayMethods = (providerMeta?.epay_channels || []).flatMap(
+    (channel) =>
+      channel.payment_methods.map((method) => ({
+        key: `${channel.id}:${method}`,
+        type: method,
+        name: `${channel.name} · ${t(EPAY_METHOD_NAMES[method] || method)}`,
+        channel,
+        quote: channel.payment_method_limits?.[method]?.subscription_quote,
+        limits: channel.payment_method_limits?.[method],
+      })),
+  );
 
   const hasStripe = explicitRouting
     ? providerName === 'stripe' && providerReady
@@ -200,7 +202,7 @@ const SubscriptionPurchaseModal = ({
     : enableCreemTopUp && !!plan?.creem_product_id;
   const hasEpay = explicitRouting
     ? providerName === 'epay' && providerReady && modalEpayMethods.length > 0
-    : enableOnlineTopUp && epayMethods.length > 0;
+    : modalEpayMethods.length > 0;
   const hasMall = explicitRouting
     ? providerName === 'mall' && providerReady
     : !!plan?.mall_link;
@@ -227,13 +229,47 @@ const SubscriptionPurchaseModal = ({
   if (hasEpay) {
     modalEpayMethods.forEach((method) => {
       paymentOptions.push({
-        key: method.type,
-        label: method.name || method.type,
-        active: selectedEpayMethod === method.type,
+        key: method.key,
+        label: (
+          <span>
+            {method.name}
+            <span className='mt-1 block text-xs'>
+              {t('实付金额')} ¥{method.quote?.pay_cny} CNY{' '}
+              {method.quote?.offer_applied
+                ? `(${Number((100 - Number(method.channel.subscription_discount_percent)).toFixed(4))}% ${t('折扣')})`
+                : ''}
+            </span>
+            <span className='mt-1 block text-xs'>
+              {epayOfferLabel(method.channel, t, true)}
+              {Number(method.channel.subscription_discount_percent) < 100 &&
+              !method.quote?.offer_applied
+                ? ` · ${t('未达到优惠起点金额')}`
+                : ''}
+            </span>
+            <span className='block text-xs text-[var(--semi-color-text-2)]'>
+              {t('优惠前金额')} ¥{method.quote?.input_cny} CNY
+            </span>
+            <span className='block text-xs text-[var(--semi-color-text-2)]'>
+              {t('单笔实付')} ¥{method.limits?.min_pay_cny} – ¥
+              {method.limits?.max_pay_cny}
+            </span>
+            {Number(method.limits?.daily_limit_cny) > 0 && (
+              <span className='block text-xs text-[var(--semi-color-text-2)]'>
+                {t('每日限额')} ¥{method.limits.daily_limit_cny} ·{' '}
+                {t('今日剩余')} ¥{method.limits.daily_remaining_cny}
+              </span>
+            )}
+            <span className='block text-xs text-[var(--semi-color-text-2)]'>
+              {method.quote?.unavailable_reason}
+            </span>
+          </span>
+        ),
+        active: selectedEpayMethod === method.key,
+        disabled: !method.quote?.payable,
         icon: getPaymentButtonIcon(method.type, method, t),
         onClick: () => {
-          setSelectedEpayMethod(method.type);
-          onPayEpay(method.type);
+          setSelectedEpayMethod(method.key);
+          onPayEpay(method.key);
         },
       });
     });
@@ -373,7 +409,7 @@ const SubscriptionPurchaseModal = ({
 
               <div className='flex justify-between items-center'>
                 <Text strong className='text-slate-700 dark:text-slate-200'>
-                  {t('应付金额')}:
+                  {t('原价')}:
                 </Text>
                 <Text strong className='text-xl text-purple-600'>
                   {displayPrice}
@@ -425,12 +461,12 @@ const SubscriptionPurchaseModal = ({
                 {t('选择支付方式')}:
               </Text>
 
-              <div className='grid grid-cols-2 gap-3 sm:flex sm:flex-wrap'>
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 {paymentOptions.map((option) => (
                   <Button
                     key={option.key}
                     theme='borderless'
-                    className='!h-[64px] !px-3 !text-left sm:!flex-1'
+                    className='!h-auto !min-h-[64px] !w-full !whitespace-normal !px-3 !py-3 !text-left'
                     icon={option.icon}
                     onClick={option.onClick}
                     loading={
@@ -453,7 +489,7 @@ const SubscriptionPurchaseModal = ({
                       boxShadow: 'none',
                     }}
                   >
-                    <span className='text-sm font-semibold'>
+                    <span className='min-w-0 whitespace-normal break-words text-sm font-semibold'>
                       {option.label}
                     </span>
                   </Button>

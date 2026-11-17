@@ -22,18 +22,31 @@ func GetPaymentTopupMeta(c *gin.Context) {
 	}
 	common.ApiSuccess(c, gin.H{
 		"provider_meta":       meta,
-		"price":               operation_setting.Price,
-		"min_topup":           operation_setting.MinTopUp,
+		"epay_channels":       meta.EpayChannels,
+		"usd_exchange_rate":   operation_setting.USDExchangeRate,
+		"epay_amount_options": operation_setting.GetEpaySetting().AmountOptions,
 		"stripe_min_topup":    setting.StripeMinTopUp,
+		"stripe_unit_price":   setting.StripeUnitPrice,
 		"amount_options":      operation_setting.GetPaymentSetting().AmountOptions,
 		"discount":            operation_setting.GetPaymentSetting().AmountDiscount,
 		"mall_links":          operation_setting.GetPaymentSetting().MallLinks,
-		"pay_methods":         operation_setting.PayMethods,
+		"pay_methods":         paymentOtherMethods(),
 		"creem_products":      setting.CreemProducts,
-		"enable_online_topup": operation_setting.PayAddress != "" && operation_setting.EpayId != "" && operation_setting.EpayKey != "",
+		"enable_online_topup": len(meta.EpayChannels) > 0,
 		"enable_stripe_topup": setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "" && setting.StripePriceId != "",
 		"enable_creem_topup":  setting.CreemApiKey != "" && setting.CreemProducts != "[]",
 	})
+}
+
+func paymentOtherMethods() []map[string]string {
+	methods := make([]map[string]string, 0)
+	if setting.StripeApiSecret != "" && setting.StripeWebhookSecret != "" && setting.StripePriceId != "" {
+		methods = append(methods, map[string]string{"type": "stripe", "name": "Stripe"})
+	}
+	if len(operation_setting.GetPaymentSetting().MallLinks) > 0 {
+		methods = append(methods, map[string]string{"type": "mall", "name": "商城"})
+	}
+	return methods
 }
 
 func CreatePaymentTopupCheckout(c *gin.Context) {

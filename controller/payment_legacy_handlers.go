@@ -16,7 +16,9 @@ func RequestEpayCompat(c *gin.Context) {
 	}
 	result, err := service.CreateTopupCheckoutWithProvider(types.PaymentProviderEpay, &types.TopupCheckoutRequest{
 		UserID:        c.GetInt("id"),
-		Amount:        req.Amount,
+		EpayChannelID: req.EpayChannelID,
+		AmountCNY:     req.AmountCNY,
+		QuoteToken:    req.QuoteToken,
 		PaymentMethod: req.PaymentMethod,
 		ReturnURL:     mustBuildPaymentReturnURL(c, "/console/log"),
 	})
@@ -79,6 +81,8 @@ func SubscriptionRequestEpayCompat(c *gin.Context) {
 	result, err := service.CreateSubscriptionCheckoutWithProvider(types.PaymentProviderEpay, plan, &types.SubscriptionCheckoutRequest{
 		UserID:        c.GetInt("id"),
 		PlanID:        req.PlanId,
+		EpayChannelID: req.EpayChannelID,
+		QuoteToken:    req.QuoteToken,
 		PaymentMethod: req.PaymentMethod,
 		ReturnURL:     mustBuildPaymentReturnURL(c, "/api/subscription/epay/return"),
 	})

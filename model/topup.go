@@ -15,27 +15,39 @@ import (
 )
 
 type TopUp struct {
-	Id                 int     `json:"id"`
-	UserId             int     `json:"user_id" gorm:"index"`
-	Username           string  `json:"username" gorm:"-"`
-	Amount             int64   `json:"amount"`
-	Money              float64 `json:"money"`
-	TradeNo            string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod      string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider    string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	ReconcileStatus    string  `json:"reconcile_status" gorm:"type:varchar(32);default:'unchecked';index"`
-	ReconcileTime      int64   `json:"reconcile_time"`
-	ReconcileMessage   string  `json:"reconcile_message" gorm:"type:text"`
-	CreateTime         int64   `json:"create_time"`
-	CompleteTime       int64   `json:"complete_time"`
-	Status             string  `json:"status"`
-	RefundTime         int64   `json:"refund_time" gorm:"column:refund_time"`
-	RefundOperatorId   int     `json:"refund_operator_id" gorm:"column:refund_operator_id;index"`
-	RefundReason       string  `json:"refund_reason" gorm:"type:text;column:refund_reason"`
-	OrderType          string  `json:"order_type" gorm:"-"`
-	Refundable         bool    `json:"refundable" gorm:"-"`
-	SubscriptionStatus string  `json:"subscription_status,omitempty" gorm:"-"`
-	SubscriptionSource string  `json:"subscription_source,omitempty" gorm:"-"`
+	Id                    int     `json:"id"`
+	UserId                int     `json:"user_id" gorm:"index"`
+	Username              string  `json:"username" gorm:"-"`
+	Amount                int64   `json:"amount"`
+	Money                 float64 `json:"money"`
+	EpayChannelId         int     `json:"epay_channel_id" gorm:"index;index:idx_epay_topup_daily,priority:1"`
+	EpayChannelRevisionId int     `json:"epay_channel_revision_id" gorm:"index"`
+	EpayChannelName       string  `json:"epay_channel_name" gorm:"type:varchar(128)"`
+	EpayInputCNY          string  `json:"epay_input_cny" gorm:"type:varchar(64)"`
+	EpayPayCNY            string  `json:"epay_pay_cny" gorm:"type:varchar(64)"`
+	EpayPayCents          int64   `json:"-" gorm:"type:bigint;default:0"`
+	EpayCreditUSD         string  `json:"epay_credit_usd" gorm:"type:varchar(64)"`
+	EpayBonusUSD          string  `json:"epay_bonus_usd" gorm:"type:varchar(64)"`
+	EpayQuoteSnapshot     string  `json:"-" gorm:"type:text"`
+	BaseQuota             int     `json:"base_quota"`
+	BonusQuota            int     `json:"bonus_quota"`
+	CreditQuota           int     `json:"credit_quota"`
+	TradeNo               string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	PaymentMethod         string  `json:"payment_method" gorm:"type:varchar(50);index:idx_epay_topup_daily,priority:2"`
+	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	ReconcileStatus       string  `json:"reconcile_status" gorm:"type:varchar(32);default:'unchecked';index"`
+	ReconcileTime         int64   `json:"reconcile_time"`
+	ReconcileMessage      string  `json:"reconcile_message" gorm:"type:text"`
+	CreateTime            int64   `json:"create_time" gorm:"index:idx_epay_topup_daily,priority:3"`
+	CompleteTime          int64   `json:"complete_time"`
+	Status                string  `json:"status"`
+	RefundTime            int64   `json:"refund_time" gorm:"column:refund_time"`
+	RefundOperatorId      int     `json:"refund_operator_id" gorm:"column:refund_operator_id;index"`
+	RefundReason          string  `json:"refund_reason" gorm:"type:text;column:refund_reason"`
+	OrderType             string  `json:"order_type" gorm:"-"`
+	Refundable            bool    `json:"refundable" gorm:"-"`
+	SubscriptionStatus    string  `json:"subscription_status,omitempty" gorm:"-"`
+	SubscriptionSource    string  `json:"subscription_source,omitempty" gorm:"-"`
 }
 
 const (
@@ -73,6 +85,7 @@ var (
 )
 
 type TopUpFilter struct {
+	EpayChannelId   int
 	Keyword         string
 	UserId          int
 	Username        string
@@ -777,6 +790,9 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 }
 
 func applyTopUpFilter(query *gorm.DB, filter TopUpFilter) *gorm.DB {
+	if filter.EpayChannelId > 0 {
+		query = query.Where("epay_channel_id = ?", filter.EpayChannelId)
+	}
 	if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		like := "%%" + keyword + "%%"
 		query = query.Where("trade_no LIKE ?", like)
@@ -917,6 +933,9 @@ func ManualCompleteTopUp(tradeNo string) error {
 	if tradeNo == "" {
 		return errors.New("未提供订单号")
 	}
+	if topup := GetTopUpByTradeNo(tradeNo); topup != nil && topup.PaymentProvider == PaymentProviderEpay {
+		return CompleteEpayTopup(tradeNo)
+	}
 
 	refCol := "`trade_no`"
 	if common.UsingPostgreSQL {
@@ -946,9 +965,6 @@ func ManualCompleteTopUp(tradeNo string) error {
 			return errors.New("订单状态不是待支付，无法补单")
 		}
 
-		// 计算应充值额度：
-		// - Stripe 订单：Money 代表经分组倍率换算后的美元数量，直接 * QuotaPerUnit
-		// - 其他订单（如易支付）：Amount 为美元数量，* QuotaPerUnit
 		if topUp.PaymentProvider == PaymentProviderStripe {
 			dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 			quotaToAdd = int(decimal.NewFromFloat(topUp.Money).Mul(dQuotaPerUnit).IntPart())

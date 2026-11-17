@@ -4,22 +4,21 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/require"
 )
 
 func TestValidateEpayReconcileOrder(t *testing.T) {
-	originalEpayId := operation_setting.EpayId
-	defer func() {
-		operation_setting.EpayId = originalEpayId
-	}()
-	operation_setting.EpayId = "pid-1"
+	require.NoError(t, model.DB.AutoMigrate(&model.EpayChannelRevision{}))
+	revision := model.EpayChannelRevision{ChannelId: 1, EpayChannelConfig: model.EpayChannelConfig{MerchantId: "pid-1"}}
+	require.NoError(t, model.DB.Create(&revision).Error)
+	t.Cleanup(func() { model.DB.Delete(&revision) })
 
 	topUp := &model.TopUp{
 		TradeNo:         "USR1NOABC1231710000000",
 		PaymentMethod:   "wxpay",
 		PaymentProvider: model.PaymentProviderEpay,
 		Money:           12.3,
+		EpayChannelId:   1, EpayChannelRevisionId: revision.Id,
 	}
 	info := &EpayOrderInfo{
 		Code:       0,

@@ -142,3 +142,14 @@ For request structs that are parsed from client JSON and then re-marshaled to up
   - field absent in client JSON => `nil` => omitted on marshal;
   - field explicitly set to zero/false => non-`nil` pointer => must still be sent upstream.
 - Avoid using non-pointer scalars with `omitempty` for optional request parameters, because zero values (`0`, `0.0`, `false`) will be silently dropped during marshal.
+
+## Production Diagnostics (项目运维记录)
+
+When the user asks to investigate production (for example, “去生产排查一下”), first read [生产环境 SSH 与排查手册](docs/production-ssh-runbook.zh-CN.md). It records the authorized read-only SSH entry, deployment paths, container/port mappings, diagnostic commands, and prior verification limits.
+
+- Reuse the documented access for authorized read-only diagnostics; do not ask again for connection details already recorded there. Never assume a previous runtime API-key cache is still available.
+- Begin with `diag status` and `diag nginx`; honor an explicitly named role, otherwise determine the active request target from current routing. Historical master/slave status and channel numbers are not permanent configuration.
+- new-api uses master `13000` and slave `13001`; sub2api uses host ports `8080` and `8081`. Do not confuse the projects or infer the role solely from a domain name.
+- Use the existing forced-command diagnostic gate. Do not treat investigation as authorization to deploy, restart, modify channels/Nginx, read secrets, or widen SSH permissions.
+- The latest diagnostic preference is SSE only; do not run WebSocket probes unless the user explicitly requests them again.
+- Keep credentials and unrelated production logs out of documentation and Git. Update dated findings in the runbook or linked audit report when verified facts change.

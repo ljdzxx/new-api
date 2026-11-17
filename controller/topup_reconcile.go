@@ -10,6 +10,7 @@ import (
 )
 
 type startEpayTopUpReconcileRequest struct {
+	EpayChannelId   int    `json:"epay_channel_id"`
 	Keyword         string `json:"keyword"`
 	UserId          int    `json:"user_id"`
 	Username        string `json:"username"`
@@ -30,6 +31,7 @@ func StartEpayTopUpReconcile(c *gin.Context) {
 
 	job, err := service.StartEpayTopUpReconcile(service.EpayTopUpReconcileStartRequest{
 		Filter: model.TopUpFilter{
+			EpayChannelId:   req.EpayChannelId,
 			Keyword:         req.Keyword,
 			UserId:          req.UserId,
 			Username:        req.Username,

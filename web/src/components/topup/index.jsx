@@ -35,24 +35,10 @@ import { StatusContext } from '../../context/Status';
 import { REDEMPTION_REWARD_TYPES } from '../../constants/redemption.constants';
 
 import RechargeCard from './RechargeCard';
+import InvitationCard from './InvitationCard';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
 import LotteryPrizesModal from './modals/LotteryPrizesModal';
-
-const TOPUP_PROVIDER_METHODS = {
-  stripe: {
-    type: 'stripe',
-    name: 'Stripe',
-    color: 'rgba(var(--semi-purple-5), 1)',
-  },
-  mall: {
-    type: 'mall',
-    name: '商城',
-    color: 'rgba(var(--semi-orange-5), 1)',
-  },
-};
-
-const PAYMENT_PROVIDER_EXCLUDED_TYPES = new Set(['stripe', 'creem', 'mall']);
 
 const normalizePayMethods = (rawPayMethods, stripeMinTopup = 0) => {
   let payMethods = rawPayMethods || [];
@@ -97,27 +83,6 @@ const normalizePayMethods = (rawPayMethods, stripeMinTopup = 0) => {
     });
 };
 
-const buildPayMethodsByProvider = (providerMeta, normalizedPayMethods) => {
-  if (!providerMeta || providerMeta.legacy_auto) {
-    return normalizedPayMethods;
-  }
-  if (!providerMeta.enabled || !providerMeta.config_ready) {
-    return [];
-  }
-  switch (providerMeta.provider) {
-    case 'epay':
-      return normalizedPayMethods.filter(
-        (method) => !PAYMENT_PROVIDER_EXCLUDED_TYPES.has(method.type),
-      );
-    case 'stripe':
-      return [TOPUP_PROVIDER_METHODS.stripe];
-    case 'mall':
-      return [TOPUP_PROVIDER_METHODS.mall];
-    default:
-      return [];
-  }
-};
-
 const resolveDefaultTopUpCount = (amountOptions, fallbackValue) => {
   if (Array.isArray(amountOptions) && amountOptions.length > 0) {
     const firstAmount = Number(amountOptions[0]);
@@ -141,17 +106,20 @@ const TopUp = () => {
 
   const [redemptionCode, setRedemptionCode] = useState('');
   const [amount, setAmount] = useState(0.0);
-  const [minTopUp, setMinTopUp] = useState(statusState?.status?.min_topup || 1);
-  const [topUpCount, setTopUpCount] = useState(
-    statusState?.status?.min_topup || 1,
-  );
+  const [minTopUp, setMinTopUp] = useState(1);
+  const [topUpCount, setTopUpCount] = useState(1);
+  const [epayChannels, setEpayChannels] = useState([]);
+  const [usdExchangeRate, setUSDExchangeRate] = useState(null);
+  const [epayPresets, setEpayPresets] = useState([]);
   const [topUpLink, setTopUpLink] = useState(
     statusState?.status?.top_up_link || '',
   );
   const [enableOnlineTopUp, setEnableOnlineTopUp] = useState(
     statusState?.status?.enable_online_topup || false,
   );
-  const [priceRatio, setPriceRatio] = useState(statusState?.status?.price || 1);
+  const [priceRatio, setPriceRatio] = useState(
+    statusState?.status?.stripe_unit_price || 1,
+  );
 
   const [enableStripeTopUp, setEnableStripeTopUp] = useState(
     statusState?.status?.enable_stripe_topup || false,
@@ -325,11 +293,11 @@ const TopUp = () => {
     try {
       if (payment === 'stripe') {
         await getStripeAmount();
-      } else {
+      } else if (payment !== 'mall') {
         await getAmount();
       }
 
-      if (topUpCount < minTopUp) {
+      if (payment === 'stripe' && topUpCount < minTopUp) {
         showError('Top-up amount is below minimum ' + minTopUp);
         return;
       }
@@ -351,7 +319,7 @@ const TopUp = () => {
         await getAmount();
       }
     }
-    if (topUpCount < minTopUp) {
+    if ((payWay === 'stripe' && topUpCount < minTopUp) || topUpCount <= 0) {
       showError('Top-up amount is below minimum');
       return;
     }
@@ -487,106 +455,38 @@ const TopUp = () => {
         mall_links: data.mall_links || {},
       });
 
-      const normalizedPrice = Number(data?.price);
-      if (Number.isFinite(normalizedPrice) && normalizedPrice > 0) {
-        setPriceRatio(normalizedPrice);
-      }
+      const routeProvider = providerMeta?.provider;
+      const allowEpay = providerMeta?.legacy_auto || routeProvider === 'epay';
+      setEpayChannels(allowEpay ? data.epay_channels || [] : []);
+      setUSDExchangeRate(data.usd_exchange_rate);
+      setEpayPresets(data.epay_amount_options || []);
+      const allowStripe =
+        providerMeta?.legacy_auto || routeProvider === 'stripe';
+      const allowMall = providerMeta?.legacy_auto || routeProvider === 'mall';
+      const stripeEnabled = allowStripe && !!data.enable_stripe_topup;
+      const normalizedPrice = Number(data.stripe_unit_price || 1);
+      setPriceRatio(normalizedPrice);
+      let payMethods = normalizePayMethods(
+        data.pay_methods || [],
+        data.stripe_min_topup,
+      ).filter((method) =>
+        method.type === 'stripe'
+          ? stripeEnabled
+          : method.type === 'mall' && allowMall,
+      );
+      setPayMethods(payMethods);
+      const hasMallMethod = payMethods.some((method) => method.type === 'mall');
+      setHasMallPayMethod(hasMallMethod);
+      setEnableOnlineTopUp(false);
+      setEnableStripeTopUp(stripeEnabled);
+      setEnableCreemTopUp(
+        (providerMeta?.legacy_auto || routeProvider === 'creem') &&
+          !!data.enable_creem_topup,
+      );
+      const resolvedMinTopUp = stripeEnabled ? data.stripe_min_topup || 1 : 1;
+      setMinTopUp(resolvedMinTopUp);
 
-      let payMethods = data.pay_methods || [];
       try {
-        if (typeof payMethods === 'string') {
-          payMethods = JSON.parse(payMethods);
-        }
-        if (payMethods && payMethods.length > 0) {
-          payMethods = payMethods.filter(
-            (method) => method.name && method.type,
-          );
-          payMethods = payMethods.map((method) => {
-            const normalizedMinTopup = Number(method.min_topup);
-            method.min_topup = Number.isFinite(normalizedMinTopup)
-              ? normalizedMinTopup
-              : 0;
-
-            if (
-              method.type === 'stripe' &&
-              (!method.min_topup || method.min_topup <= 0)
-            ) {
-              const stripeMin = Number(data.stripe_min_topup);
-              if (Number.isFinite(stripeMin)) {
-                method.min_topup = stripeMin;
-              }
-            }
-
-            if (!method.color) {
-              if (method.type === 'alipay') {
-                method.color = 'rgba(var(--semi-blue-5), 1)';
-              } else if (method.type === 'wxpay') {
-                method.color = 'rgba(var(--semi-green-5), 1)';
-              } else if (method.type === 'stripe') {
-                method.color = 'rgba(var(--semi-purple-5), 1)';
-              } else {
-                method.color = 'rgba(var(--semi-primary-5), 1)';
-              }
-            }
-
-            return method;
-          });
-        } else {
-          payMethods = [];
-        }
-
-        setPayMethods(payMethods);
-        const enableStripeTopUp = data.enable_stripe_topup || false;
-        const enableOnlineTopUp = data.enable_online_topup || false;
-        const enableCreemTopUp = data.enable_creem_topup || false;
-        const hasMallMethod = payMethods.some(
-          (method) => method.type === 'mall',
-        );
-        const minTopUpValue =
-          enableOnlineTopUp || hasMallMethod
-            ? data.min_topup
-            : enableStripeTopUp
-              ? data.stripe_min_topup
-              : 1;
-        let resolvedMinTopUp = minTopUpValue;
-
-        setHasMallPayMethod(hasMallMethod);
-        setEnableOnlineTopUp(enableOnlineTopUp);
-        setEnableStripeTopUp(enableStripeTopUp);
-        setEnableCreemTopUp(enableCreemTopUp);
-        setMinTopUp(minTopUpValue);
-
-        if (providerMeta && !providerMeta.legacy_auto) {
-          const providerPayMethods = buildPayMethodsByProvider(
-            providerMeta,
-            normalizePayMethods(data.pay_methods || [], data.stripe_min_topup),
-          );
-          const currentProvider = providerMeta.provider;
-          const currentProviderReady =
-            providerMeta.enabled && providerMeta.config_ready;
-          resolvedMinTopUp =
-            currentProvider === 'stripe'
-              ? data.stripe_min_topup
-              : currentProvider === 'epay' || currentProvider === 'mall'
-                ? data.min_topup
-                : 1;
-
-          setPayMethods(providerPayMethods);
-          setEnableOnlineTopUp(
-            currentProvider === 'epay' && currentProviderReady,
-          );
-          setEnableStripeTopUp(
-            currentProvider === 'stripe' && currentProviderReady,
-          );
-          setEnableCreemTopUp(
-            currentProvider === 'creem' && currentProviderReady,
-          );
-          setHasMallPayMethod(
-            currentProvider === 'mall' && currentProviderReady,
-          );
-          setMinTopUp(resolvedMinTopUp);
-        }
-
         try {
           const products = JSON.parse(data.creem_products || '[]');
           setCreemProducts(products);
@@ -598,7 +498,7 @@ const TopUp = () => {
         if (data.amount_options && data.amount_options.length > 0) {
           const customPresets = data.amount_options.map((amount) => ({
             value: amount,
-            discount: data.discount[amount] || 1.0,
+            discount: data.discount?.[amount] || 1.0,
           }));
           setPresetAmounts(customPresets);
           defaultTopUpCount = resolveDefaultTopUpCount(
@@ -616,7 +516,8 @@ const TopUp = () => {
 
         setTopUpCount(defaultTopUpCount);
         setSelectedPreset(defaultTopUpCount);
-        getAmount(defaultTopUpCount);
+        if (stripeEnabled) getStripeAmount(defaultTopUpCount);
+        else setAmount(0);
       } catch (e) {
         console.log('Failed to normalize top-up methods', e);
         setPayMethods([]);
@@ -676,26 +577,8 @@ const TopUp = () => {
     if (value === undefined) {
       value = topUpCount;
     }
-    setAmountLoading(true);
-    try {
-      const res = await API.post('/api/user/amount', {
-        amount: parseFloat(value),
-      });
-      if (res !== undefined) {
-        const { message, data } = res.data;
-        if (message === 'success') {
-          setAmount(parseFloat(data));
-        } else {
-          setAmount(0);
-          Toast.error({ content: 'Error: ' + data, id: 'getAmount' });
-        }
-      } else {
-        showError(res);
-      }
-    } catch (err) {
-      console.log(err);
-    }
-    setAmountLoading(false);
+    if (enableStripeTopUp) await getStripeAmount(value);
+    else setAmount(0);
   };
 
   const getStripeAmount = async (value) => {
@@ -834,9 +717,12 @@ const TopUp = () => {
       </Modal>
 
       {/* Main content */}
-      <div className='w-full'>
+      <div className='flex w-full flex-col gap-4'>
         <RechargeCard
           t={t}
+          epayChannels={epayChannels}
+          usdExchangeRate={usdExchangeRate}
+          epayPresets={epayPresets}
           enableOnlineTopUp={enableOnlineTopUp}
           enableStripeTopUp={enableStripeTopUp}
           enableCreemTopUp={enableCreemTopUp}
@@ -848,7 +734,6 @@ const TopUp = () => {
           formatLargeNumber={formatLargeNumber}
           priceRatio={priceRatio}
           topUpCount={topUpCount}
-          minTopUp={minTopUp}
           renderQuotaWithAmount={renderQuotaWithAmount}
           getAmount={getAmount}
           setTopUpCount={setTopUpCount}
@@ -880,6 +765,11 @@ const TopUp = () => {
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={getSubscriptionSelf}
           onSubscriptionPurchaseSuccess={handleSubscriptionPurchaseSuccess}
+        />
+        <InvitationCard
+          t={t}
+          userState={userState}
+          renderQuota={renderQuota}
           affLink={affLink}
           handleAffLinkClick={handleAffLinkClick}
           invitationRewardInfo={invitationRewardInfo}

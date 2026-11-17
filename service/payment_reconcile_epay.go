@@ -9,8 +9,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/shopspring/decimal"
 )
 
 const epayTopUpReconcileBatchSize = 100
@@ -49,6 +47,7 @@ func StartEpayTopUpReconcile(req EpayTopUpReconcileStartRequest) (*model.Payment
 	}
 
 	filterBytes, err := common.Marshal(map[string]interface{}{
+		"epay_channel_id":  filter.EpayChannelId,
 		"keyword":          filter.Keyword,
 		"user_id":          filter.UserId,
 		"username":         filter.Username,
@@ -182,7 +181,11 @@ func reconcileOneEpayTopUp(ctx context.Context, topUp *model.TopUp) (string, str
 	if strings.TrimSpace(topUp.PaymentMethod) == "" {
 		return model.PaymentReconcileStatusAbnormal, "本地支付方式为空", nil
 	}
-	orderInfo, err := QueryEpayOrder(ctx, topUp.TradeNo, "")
+	revision, err := model.GetEpayChannelRevision(topUp.EpayChannelRevisionId)
+	if err != nil || revision.ChannelId != topUp.EpayChannelId {
+		return model.PaymentReconcileStatusAbnormal, "订单易支付渠道版本不存在，旧订单不能使用新支付体系对账", nil
+	}
+	orderInfo, err := QueryEpayOrder(ctx, revision, topUp.TradeNo, "")
 	if err != nil {
 		return model.PaymentReconcileStatusAbnormal, "Epay 查单失败: " + err.Error(), nil
 	}
@@ -211,10 +214,14 @@ func validateEpayReconcileOrder(topUp *model.TopUp, orderInfo *EpayOrderInfo) er
 	if orderInfo.Type != topUp.PaymentMethod {
 		return fmt.Errorf("Epay 支付方式不一致: query=%s local=%s", orderInfo.Type, topUp.PaymentMethod)
 	}
-	if orderInfo.Pid != operation_setting.EpayId {
+	revision, err := model.GetEpayChannelRevision(topUp.EpayChannelRevisionId)
+	if err != nil || revision.ChannelId != topUp.EpayChannelId {
+		return fmt.Errorf("订单易支付渠道版本无效")
+	}
+	if orderInfo.Pid != revision.MerchantId {
 		return fmt.Errorf("Epay 商户号不一致: query=%s", orderInfo.Pid)
 	}
-	if !sameEpayMoney(orderInfo.Money, topUp.Money) {
+	if !EpayMoneyMatches(orderInfo.Money, topUp.Money) {
 		return fmt.Errorf("Epay 金额不一致: query=%s local=%.6f", orderInfo.Money, topUp.Money)
 	}
 	return nil
@@ -237,13 +244,4 @@ func buildEpayReconcileItem(jobId int, topUp *model.TopUp, status string, messag
 		item.RemotePid = remote.Pid
 	}
 	return item
-}
-
-func sameEpayMoney(actual string, expected float64) bool {
-	actualDecimal, err := decimal.NewFromString(strings.TrimSpace(actual))
-	if err != nil {
-		return false
-	}
-	expectedDecimal := decimal.NewFromFloat(expected)
-	return actualDecimal.Round(2).Equal(expectedDecimal.Round(2))
 }

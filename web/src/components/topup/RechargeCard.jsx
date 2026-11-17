@@ -49,7 +49,7 @@ import { IconGift } from '@douyinfe/semi-icons';
 import { API, showError, showSuccess } from '../../helpers';
 import { convertTopupBaseToPaymentCurrency } from '../../helpers/render';
 import SubscriptionPlansCard from './SubscriptionPlansCard';
-import InvitationCard from './InvitationCard';
+import EpayRechargePanel from './EpayRechargePanel';
 
 const { Text } = Typography;
 
@@ -75,6 +75,9 @@ const formatSubscriptionEndTime = (endTime) => {
 
 const RechargeCard = ({
   t,
+  epayChannels = [],
+  usdExchangeRate,
+  epayPresets = [],
   enableOnlineTopUp,
   enableStripeTopUp,
   enableCreemTopUp,
@@ -85,7 +88,6 @@ const RechargeCard = ({
   selectPresetAmount,
   priceRatio,
   topUpCount,
-  minTopUp,
   getAmount,
   setTopUpCount,
   setSelectedPreset,
@@ -114,9 +116,6 @@ const RechargeCard = ({
   allSubscriptions = [],
   reloadSubscriptionSelf,
   onSubscriptionPurchaseSuccess,
-  affLink,
-  handleAffLinkClick,
-  invitationRewardInfo,
 }) => {
   const [redeemOpen, setRedeemOpen] = useState(false);
   const [refreshingSubscriptions, setRefreshingSubscriptions] = useState(false);
@@ -138,7 +137,7 @@ const RechargeCard = ({
     Array.isArray(creemProducts) &&
     creemProducts.length > 0;
   const shouldShowTopupPanel =
-    hasPresetAmounts || hasCreemProducts || (payMethods?.length ?? 0) > 0;
+    epayChannels.length > 0 || hasTopupPaymentMethods || hasCreemProducts;
 
   const planTitleMap = useMemo(() => {
     const map = new Map();
@@ -156,8 +155,9 @@ const RechargeCard = ({
       return null;
     }
 
-    const discount =
-      preset.discount || topupInfo?.discount?.[preset.value] || 1.0;
+    const discount = enableStripeTopUp
+      ? preset.discount || topupInfo?.discount?.[preset.value] || 1.0
+      : 1;
     const actualPay = preset.value * priceRatio * discount;
     const topupRate =
       Number.isFinite(Number(priceRatio)) && Number(priceRatio) > 0
@@ -599,8 +599,24 @@ const RechargeCard = ({
         </div>
       ) : shouldShowTopupPanel ? (
         <div className='space-y-4'>
-          {hasPresetAmounts && (
+          <EpayRechargePanel
+            channels={epayChannels}
+            exchangeRate={usdExchangeRate}
+            amountOptions={epayPresets}
+          />
+
+          {hasPresetAmounts && hasTopupPaymentMethods && (
             <>
+              {enableStripeTopUp && (
+                <Banner
+                  type='info'
+                  closeIcon={null}
+                  className='mb-3'
+                  description={t(
+                    'Stripe 金额仅为本站报价，实际支付以 Stripe 收银台为准；商城金额以外部商品价格为准。',
+                  )}
+                />
+              )}
               <div>
                 <div className='mb-2.5 flex items-center gap-2'>
                   <span
@@ -630,22 +646,22 @@ const RechargeCard = ({
                   </div>
                   <InputNumber
                     value={topUpCount}
-                    min={minTopUp}
+                    min={1}
                     max={999999999}
                     step={1}
                     style={{ width: '100%' }}
-                    placeholder={`${t('充值数量')}，${t('最低')} ${minTopUp}`}
+                    placeholder={t('请输入充值数量')}
                     onChange={handleManualAmountChange}
                   />
                 </div>
 
-                {selectedPresetDetail && (
+                {selectedPresetDetail && enableStripeTopUp && (
                   <div
                     className='flex flex-wrap items-center gap-2 text-xs'
                     style={{ color: 'var(--semi-color-text-2)' }}
                   >
                     <span>
-                      {t('实付金额')}{' '}
+                      {t('Stripe 参考报价')}{' '}
                       <strong
                         style={{
                           color: 'var(--semi-color-text-0)',
@@ -837,17 +853,7 @@ const RechargeCard = ({
 
           <div style={{ height: 1, background: 'var(--semi-color-border)' }} />
 
-          <div className='flex max-w-6xl flex-col gap-4 lg:flex-row'>
-            {renderTopupContent()}
-            <InvitationCard
-              t={t}
-              userState={userState}
-              renderQuota={renderQuota}
-              affLink={affLink}
-              handleAffLinkClick={handleAffLinkClick}
-              invitationRewardInfo={invitationRewardInfo}
-            />
-          </div>
+          <div className='max-w-6xl'>{renderTopupContent()}</div>
 
           {hasSubscriptionPlans && (
             <>

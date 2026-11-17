@@ -17,362 +17,531 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useRef } from 'react';
-import { Button, Form, Row, Col, Typography, Spin } from '@douyinfe/semi-ui';
-const { Text } = Typography;
+import React, { useEffect, useState } from 'react';
 import {
-  API,
-  removeTrailingSlash,
-  showError,
-  showSuccess,
-  verifyJSON,
-} from '../../../helpers';
+  Button,
+  Form,
+  Modal,
+  Table,
+  Switch,
+  Typography,
+  Space,
+  Spin,
+} from '@douyinfe/semi-ui';
+import { API, showError, showSuccess } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
+import { GripVertical } from 'lucide-react';
+import { EPAY_METHOD_NAMES, reorderEpayChannels } from '../../../helpers/epay';
 
-export default function SettingsPaymentGateway(props) {
-  const { t } = useTranslation();
+const defaultMethodLimits = () =>
+  Object.fromEntries(
+    Object.keys(EPAY_METHOD_NAMES).map((method) => [
+      method,
+      { min_pay_cny: '1', max_pay_cny: '5000', daily_limit_cny: '0' },
+    ]),
+  );
+
+const channelEditorValues = (channel) => ({
+  ...channel,
+  merchant_key: '',
+  payment_method_limits: {
+    ...defaultMethodLimits(),
+    ...channel.payment_method_limits,
+  },
+});
+
+const emptyChannel = {
+  name: '',
+  description: '',
+  enabled: false,
+  pay_address: '',
+  merchant_id: '',
+  merchant_key: '',
+  callback_address: '',
+  payment_methods: ['wxpay', 'alipay'],
+  topup_offer_type: 'none',
+  topup_offer_percent: '100',
+  topup_offer_threshold_cny: '0',
+  subscription_discount_percent: '100',
+  subscription_offer_threshold_cny: '0',
+  revision_id: 0,
+};
+
+export default function SettingsPaymentGateway({ options, refresh }) {
+  const { t: translate } = useTranslation();
+  const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [inputs, setInputs] = useState({
-    PayAddress: '',
-    EpayId: '',
-    EpayKey: '',
-    Price: 7.3,
-    MinTopUp: 1,
-    TopupGroupRatio: '',
-    CustomCallbackAddress: '',
-    PayMethods: '',
-    AmountOptions: '',
-    AmountDiscount: '',
-    MallLinks: '',
-  });
-  const [originInputs, setOriginInputs] = useState({});
-  const formApiRef = useRef(null);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [formApi, setFormApi] = useState(null);
+  const [globalApi, setGlobalApi] = useState(null);
+  const [ordering, setOrdering] = useState(false);
+  const [togglingID, setTogglingID] = useState(null);
+  const [draggedID, setDraggedID] = useState(null);
+  const [dropTargetID, setDropTargetID] = useState(null);
+  const channelBusy = loading || saving || ordering || togglingID !== null;
 
-  useEffect(() => {
-    if (props.options && formApiRef.current) {
-      const currentInputs = {
-        PayAddress: props.options.PayAddress || '',
-        EpayId: props.options.EpayId || '',
-        EpayKey: props.options.EpayKey || '',
-        Price:
-          props.options.Price !== undefined
-            ? parseFloat(props.options.Price)
-            : 7.3,
-        MinTopUp:
-          props.options.MinTopUp !== undefined
-            ? parseFloat(props.options.MinTopUp)
-            : 1,
-        TopupGroupRatio: props.options.TopupGroupRatio || '',
-        CustomCallbackAddress: props.options.CustomCallbackAddress || '',
-        PayMethods: props.options.PayMethods || '',
-        AmountOptions: props.options.AmountOptions || '',
-        AmountDiscount: props.options.AmountDiscount || '',
-        MallLinks: props.options.MallLinks || '',
-      };
-
-      // 美化 JSON 展示
-      try {
-        if (currentInputs.AmountOptions) {
-          currentInputs.AmountOptions = JSON.stringify(
-            JSON.parse(currentInputs.AmountOptions),
-            null,
-            2,
-          );
-        }
-      } catch {}
-      try {
-        if (currentInputs.AmountDiscount) {
-          currentInputs.AmountDiscount = JSON.stringify(
-            JSON.parse(currentInputs.AmountDiscount),
-            null,
-            2,
-          );
-        }
-      } catch {}
-      try {
-        if (currentInputs.MallLinks) {
-          currentInputs.MallLinks = JSON.stringify(
-            JSON.parse(currentInputs.MallLinks),
-            null,
-            2,
-          );
-        }
-      } catch {}
-
-      setInputs(currentInputs);
-      setOriginInputs({ ...currentInputs });
-      formApiRef.current.setValues(currentInputs);
-    }
-  }, [props.options]);
-
-  const handleFormChange = (values) => {
-    setInputs(values);
-  };
-
-  const submitPayAddress = async () => {
-    if (props.options.ServerAddress === '') {
-      showError(t('请先填写服务器地址'));
-      return;
-    }
-
-    if (originInputs['TopupGroupRatio'] !== inputs.TopupGroupRatio) {
-      if (!verifyJSON(inputs.TopupGroupRatio)) {
-        showError(t('充值分组倍率不是合法的 JSON 字符串'));
-        return;
-      }
-    }
-
-    if (originInputs['PayMethods'] !== inputs.PayMethods) {
-      if (!verifyJSON(inputs.PayMethods)) {
-        showError(t('充值方式设置不是合法的 JSON 字符串'));
-        return;
-      }
-    }
-
-    if (
-      originInputs['AmountOptions'] !== inputs.AmountOptions &&
-      inputs.AmountOptions.trim() !== ''
-    ) {
-      if (!verifyJSON(inputs.AmountOptions)) {
-        showError(t('自定义充值数量选项不是合法的 JSON 数组'));
-        return;
-      }
-    }
-
-    if (
-      originInputs['AmountDiscount'] !== inputs.AmountDiscount &&
-      inputs.AmountDiscount.trim() !== ''
-    ) {
-      if (!verifyJSON(inputs.AmountDiscount)) {
-        showError(t('充值金额折扣配置不是合法的 JSON 对象'));
-        return;
-      }
-    }
-
-    if (
-      originInputs['MallLinks'] !== inputs.MallLinks &&
-      inputs.MallLinks.trim() !== ''
-    ) {
-      if (!verifyJSON(inputs.MallLinks)) {
-        showError(t('商品链接配置不是合法的 JSON 对象'));
-        return;
-      }
-    }
-
+  const loadChannels = async () => {
     setLoading(true);
     try {
-      const options = [
-        { key: 'PayAddress', value: removeTrailingSlash(inputs.PayAddress) },
-      ];
-
-      if (inputs.EpayId !== '') {
-        options.push({ key: 'EpayId', value: inputs.EpayId });
-      }
-      if (inputs.EpayKey !== undefined && inputs.EpayKey !== '') {
-        options.push({ key: 'EpayKey', value: inputs.EpayKey });
-      }
-      if (inputs.Price !== '') {
-        options.push({ key: 'Price', value: inputs.Price.toString() });
-      }
-      if (inputs.MinTopUp !== '') {
-        options.push({ key: 'MinTopUp', value: inputs.MinTopUp.toString() });
-      }
-      if (inputs.CustomCallbackAddress !== '') {
-        options.push({
-          key: 'CustomCallbackAddress',
-          value: inputs.CustomCallbackAddress,
-        });
-      }
-      if (originInputs['TopupGroupRatio'] !== inputs.TopupGroupRatio) {
-        options.push({ key: 'TopupGroupRatio', value: inputs.TopupGroupRatio });
-      }
-      if (originInputs['PayMethods'] !== inputs.PayMethods) {
-        options.push({ key: 'PayMethods', value: inputs.PayMethods });
-      }
-      if (originInputs['AmountOptions'] !== inputs.AmountOptions) {
-        options.push({
-          key: 'payment_setting.amount_options',
-          value: inputs.AmountOptions,
-        });
-      }
-      if (originInputs['AmountDiscount'] !== inputs.AmountDiscount) {
-        options.push({
-          key: 'payment_setting.amount_discount',
-          value: inputs.AmountDiscount,
-        });
-      }
-      if (originInputs['MallLinks'] !== inputs.MallLinks) {
-        options.push({
-          key: 'payment_setting.mall_links',
-          value: inputs.MallLinks,
-        });
-      }
-
-      // 发送请求
-      const requestQueue = options.map((opt) =>
-        API.put('/api/option/', {
-          key: opt.key,
-          value: opt.value,
-        }),
-      );
-
-      const results = await Promise.all(requestQueue);
-
-      // 检查所有请求是否成功
-      const errorResults = results.filter((res) => !res.data.success);
-      if (errorResults.length > 0) {
-        errorResults.forEach((res) => {
-          showError(res.data.message);
-        });
-      } else {
-        showSuccess(t('更新成功'));
-        // 更新本地存储的原始值
-        setOriginInputs({ ...inputs });
-        props.refresh && props.refresh();
-      }
+      const response = await API.get('/api/option/epay/channels');
+      if (!response.data.success) throw new Error(response.data.message);
+      setChannels(response.data.data || []);
     } catch (error) {
-      showError(t('更新失败'));
+      showError(error.message || translate('加载失败'));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadChannels();
+  }, []);
+  useEffect(() => {
+    globalApi?.setValues({
+      epayAmounts:
+        options['epay_setting.amount_options'] ||
+        '[10,20,50,100,200,500,1000,2000,5000]',
+      amountOptions:
+        options['payment_setting.amount_options'] || '[10,20,50,100,200,500]',
+      mallLinks: options['payment_setting.mall_links'] || '{}',
+    });
+  }, [options, globalApi]);
+
+  const saveGlobals = async () => {
+    setSaving(true);
+    try {
+      const values = await globalApi.validate();
+      for (const field of ['epayAmounts', 'amountOptions']) {
+        const parsed = JSON.parse(values[field]);
+        if (
+          !Array.isArray(parsed) ||
+          !parsed.length ||
+          parsed.length > 50 ||
+          new Set(parsed).size !== parsed.length ||
+          parsed.some(
+            (amount) =>
+              !Number.isSafeInteger(amount) ||
+              amount <= 0 ||
+              amount > 100000000,
+          )
+        )
+          throw new Error(translate('充值金额选项必须是有效的正整数数组'));
+      }
+      const links = JSON.parse(values.mallLinks);
+      if (!links || Array.isArray(links) || typeof links !== 'object')
+        throw new Error(translate('商品链接配置必须是 JSON 对象'));
+      const updates = [
+        ['epay_setting.amount_options', values.epayAmounts],
+        ['payment_setting.amount_options', values.amountOptions],
+        ['payment_setting.mall_links', values.mallLinks],
+      ];
+      for (const [key, value] of updates) {
+        const response = await API.put('/api/option/', { key, value });
+        if (!response.data.success) throw new Error(response.data.message);
+      }
+      showSuccess(translate('更新成功'));
+      refresh?.();
+    } catch (error) {
+      showError(error.message || translate('更新失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveChannel = async () => {
+    setSaving(true);
+    try {
+      const values = await formApi.validate();
+      const payload = { ...editing, ...values };
+      for (const field of [
+        'topup_offer_percent',
+        'topup_offer_threshold_cny',
+        'subscription_discount_percent',
+        'subscription_offer_threshold_cny',
+      ])
+        payload[field] = String(payload[field] ?? '0');
+      payload.payment_method_limits = Object.fromEntries(
+        Object.entries(payload.payment_method_limits).map(
+          ([method, limits]) => [
+            method,
+            Object.fromEntries(
+              ['min_pay_cny', 'max_pay_cny', 'daily_limit_cny'].map((field) => [
+                field,
+                String(limits[field] ?? ''),
+              ]),
+            ),
+          ],
+        ),
+      );
+      const response = editing.id
+        ? await API.put(`/api/option/epay/channels/${editing.id}`, payload)
+        : await API.post('/api/option/epay/channels', payload);
+      if (!response.data.success) throw new Error(response.data.message);
+      setEditing(null);
+      showSuccess(translate('更新成功'));
+      await loadChannels();
+    } catch (error) {
+      showError(error.message || translate('更新失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const moveChannel = async (sourceID, targetID) => {
+    if (channelBusy) return;
+    const previous = channels;
+    const reordered = reorderEpayChannels(channels, sourceID, targetID);
+    if (reordered === channels) return;
+    setOrdering(true);
+    setChannels(reordered);
+    try {
+      const response = await API.put('/api/option/epay/channels/order', {
+        channel_ids: reordered.map((channel) => channel.id),
+        expected_ids: previous.map((channel) => channel.id),
+      });
+      if (!response.data.success) throw new Error(response.data.message);
+    } catch (error) {
+      setChannels(previous);
+      showError(error.message || translate('更新失败'));
+      await loadChannels();
+    } finally {
+      setOrdering(false);
+    }
+  };
+
+  const toggleChannel = async (channel, enabled) => {
+    if (channelBusy) return;
+    setTogglingID(channel.id);
+    try {
+      const response = await API.put(
+        `/api/option/epay/channels/${channel.id}/enabled`,
+        { enabled, revision_id: channel.revision_id },
+      );
+      if (!response.data.success) throw new Error(response.data.message);
+      setChannels((current) =>
+        current.map((item) =>
+          item.id === channel.id ? { ...item, enabled } : item,
+        ),
+      );
+    } catch (error) {
+      showError(error.message || translate('更新失败'));
+      await loadChannels();
+    } finally {
+      setTogglingID(null);
+    }
   };
 
   return (
     <Spin spinning={loading}>
-      <Form
-        initValues={inputs}
-        onValueChange={handleFormChange}
-        getFormApi={(api) => (formApiRef.current = api)}
-      >
-        <Form.Section text={t('支付设置')}>
-          <Text>
-            {t(
-              '（当前仅支持易支付接口，默认使用上方服务器地址作为回调地址！）',
-            )}
-          </Text>
-          <Row gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.Input
-                field='PayAddress'
-                label={t('支付地址')}
-                placeholder={t('例如：https://yourdomain.com')}
-              />
-            </Col>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.Input
-                field='EpayId'
-                label={t('易支付商户ID')}
-                placeholder={t('例如：1001')}
-              />
-            </Col>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.Input
-                field='EpayKey'
-                label={t('易支付商户密钥')}
-                placeholder={t('敏感信息不会发送到前端显示')}
-                type='password'
-              />
-            </Col>
-          </Row>
-          <Row
-            gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
-            style={{ marginTop: 16 }}
-          >
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.Input
-                field='CustomCallbackAddress'
-                label={t('回调地址')}
-                placeholder={t('例如：https://yourdomain.com')}
-              />
-            </Col>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.InputNumber
-                field='Price'
-                precision={2}
-                label={t('充值价格（x元 / 美金）')}
-                placeholder={t('例如：7.3，就是 1 美金')}
-              />
-            </Col>
-            <Col xs={24} sm={24} md={8} lg={8} xl={8}>
-              <Form.InputNumber
-                field='MinTopUp'
-                label={t('最低充值美金数量')}
-                placeholder={t('例如：1，就是最低充值$1')}
-              />
-            </Col>
-          </Row>
-          <Form.TextArea
-            field='TopupGroupRatio'
-            label={t('充值分组倍率')}
-            placeholder={t('为一个 JSON 文本，键为组名称，值为倍率')}
-            autosize
-          />
-          <Form.TextArea
-            field='PayMethods'
-            label={t('充值方式设置')}
-            placeholder={t('为一个 JSON 文本')}
-            autosize
-          />
-
-          <Row
-            gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
-            style={{ marginTop: 16 }}
-          >
-            <Col span={24}>
-              <Form.TextArea
-                field='AmountOptions'
-                label={t('自定义充值数量选项')}
-                placeholder={t(
-                  '为一个 JSON 数组，例如：[10, 20, 50, 100, 200, 500]',
-                )}
-                autosize
-                extraText={t(
-                  '设置用户可选择的充值数量选项，例如：[10, 20, 50, 100, 200, 500]',
-                )}
-              />
-            </Col>
-          </Row>
-
-          <Row
-            gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
-            style={{ marginTop: 16 }}
-          >
-            <Col span={24}>
-              <Form.TextArea
-                field='AmountDiscount'
-                label={t('充值金额折扣配置')}
-                placeholder={t(
-                  '为一个 JSON 对象，例如：{"100": 0.95, "200": 0.9, "500": 0.85}',
-                )}
-                autosize
-                extraText={t(
-                  '设置不同充值金额对应的折扣，键为充值金额，值为折扣率，例如：{"100": 0.95, "200": 0.9, "500": 0.85}',
-                )}
-              />
-            </Col>
-          </Row>
-
-          <Row
-            gutter={{ xs: 8, sm: 16, md: 24, lg: 24, xl: 24, xxl: 24 }}
-            style={{ marginTop: 16 }}
-          >
-            <Col span={24}>
-              <Form.TextArea
-                field='MallLinks'
-                label={t('商品链接配置')}
-                placeholder={t(
-                  '为一个 JSON 对象，例如：{"100": "https://taobao.com/a.html", "200": "https://taobao.com/b.html"}',
-                )}
-                autosize
-                extraText={t(
-                  '当支付方式为 mall 时，按所选充值金额匹配对应商品链接并跳转（新窗口），例如：{"100": "https://taobao.com/a.html", "200": "https://taobao.com/b.html"}',
-                )}
-              />
-            </Col>
-          </Row>
-
-          <Button onClick={submitPayAddress}>{t('更新支付设置')}</Button>
-        </Form.Section>
+      <Typography.Title heading={5}>{translate('易支付设置')}</Typography.Title>
+      <Typography.Paragraph type='tertiary'>
+        {translate(
+          '易支付共用系统美元汇率：余额基础到账 USD = 输入 CNY ÷ 汇率；订阅原价 CNY = 套餐 USD × 汇率，优惠由各渠道独立配置。',
+        )}
+      </Typography.Paragraph>
+      <Form getFormApi={setGlobalApi} labelPosition='top'>
+        <Form.TextArea
+          field='epayAmounts'
+          label={translate('易支付快捷充值金额（CNY）')}
+          autosize
+        />
+        <Form.TextArea
+          field='amountOptions'
+          label={translate('Stripe / 商城充值数量选项')}
+          autosize
+        />
+        <Form.TextArea
+          field='mallLinks'
+          label={translate('商城充值商品链接')}
+          extraText={translate(
+            '按充值数量映射商品链接，不再设置最低充值数量。',
+          )}
+          autosize
+        />
+        <Button onClick={saveGlobals} loading={saving}>
+          {translate('保存公共设置')}
+        </Button>
       </Form>
+      <div className='my-4 flex items-center justify-between'>
+        <Typography.Title heading={6}>
+          {translate('易支付渠道')}
+        </Typography.Title>
+        <Button
+          theme='solid'
+          disabled={channelBusy}
+          onClick={() => setEditing(channelEditorValues(emptyChannel))}
+        >
+          {translate('新增易支付渠道')}
+        </Button>
+      </div>
+      <Typography.Paragraph type='tertiary'>
+        {translate(
+          '拖动六点手柄调整渠道顺序，松开后自动保存；也可聚焦手柄后使用上下方向键。',
+        )}
+      </Typography.Paragraph>
+      <Table
+        dataSource={channels}
+        rowKey='id'
+        pagination={false}
+        loading={ordering}
+        onRow={(channel) => ({
+          onDragOver: (event) => {
+            if (draggedID === null || channelBusy) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            setDropTargetID(channel.id);
+          },
+          onDrop: (event) => {
+            if (draggedID === null || channelBusy) return;
+            event.preventDefault();
+            moveChannel(draggedID, channel.id);
+            setDraggedID(null);
+            setDropTargetID(null);
+          },
+          style: {
+            opacity: draggedID === channel.id ? 0.5 : 1,
+            outline:
+              dropTargetID === channel.id && draggedID !== channel.id
+                ? '2px solid var(--semi-color-primary)'
+                : undefined,
+            outlineOffset: -2,
+          },
+        })}
+        columns={[
+          {
+            title: '',
+            key: 'drag',
+            width: 44,
+            render: (_, channel, index) => (
+              <button
+                type='button'
+                draggable={!channelBusy}
+                disabled={channelBusy}
+                aria-label={translate('拖动排序')}
+                title={translate('拖动排序')}
+                className='flex items-center justify-center rounded p-1 text-[var(--semi-color-text-2)] disabled:opacity-40'
+                style={{ cursor: channelBusy ? 'not-allowed' : 'grab' }}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', String(channel.id));
+                  setDraggedID(channel.id);
+                }}
+                onDragEnd={() => {
+                  setDraggedID(null);
+                  setDropTargetID(null);
+                }}
+                onKeyDown={(event) => {
+                  const direction =
+                    event.key === 'ArrowUp'
+                      ? -1
+                      : event.key === 'ArrowDown'
+                        ? 1
+                        : 0;
+                  if (!direction) return;
+                  event.preventDefault();
+                  const target = channels[index + direction];
+                  if (target) moveChannel(channel.id, target.id);
+                }}
+              >
+                <GripVertical size={18} />
+              </button>
+            ),
+          },
+          { title: 'ID', dataIndex: 'id', width: 60 },
+          { title: translate('渠道名称'), dataIndex: 'name' },
+          {
+            title: translate('状态'),
+            render: (_, channel) => (
+              <Space vertical align='start' spacing={4}>
+                <Typography.Text size='small' type='tertiary'>
+                  {channel.enabled ? translate('已启用') : translate('已停用')}
+                </Typography.Text>
+                <Switch
+                  checked={channel.enabled}
+                  disabled={channelBusy}
+                  loading={togglingID === channel.id}
+                  aria-label={translate(channel.enabled ? '停用' : '启用')}
+                  onChange={(enabled) => toggleChannel(channel, enabled)}
+                />
+              </Space>
+            ),
+          },
+          {
+            title: translate('支付方式'),
+            render: (_, channel) => channel.payment_methods.join(' / '),
+          },
+          {
+            title: translate('支付方式限额（实付 CNY）'),
+            render: (_, channel) =>
+              channel.payment_methods.map((method) => {
+                const limits = channel.payment_method_limits?.[method];
+                return (
+                  <div key={method} className='mb-1 text-xs'>
+                    {translate(EPAY_METHOD_NAMES[method])}：
+                    {limits?.min_pay_cny} – {limits?.max_pay_cny}
+                    <span className='ml-2'>
+                      {translate('每日限额')}：
+                      {Number(limits?.daily_limit_cny) > 0
+                        ? limits.daily_limit_cny
+                        : translate('不限')}
+                    </span>
+                  </div>
+                );
+              }),
+          },
+          {
+            title: translate('余额优惠'),
+            render: (_, channel) =>
+              channel.topup_offer_type === 'none'
+                ? translate('无优惠')
+                : `${translate(channel.topup_offer_type === 'bonus' ? '赠金' : '折扣')} ${channel.topup_offer_percent}% / ${translate('起点')} ¥${channel.topup_offer_threshold_cny}`,
+          },
+          {
+            title: translate('订阅折扣'),
+            render: (_, channel) =>
+              `${channel.subscription_discount_percent}% / ${translate('起点')} ¥${channel.subscription_offer_threshold_cny}`,
+          },
+          {
+            title: translate('操作'),
+            render: (_, channel) => (
+              <Button
+                disabled={channelBusy}
+                onClick={() => setEditing(channelEditorValues(channel))}
+              >
+                {translate('编辑')}
+              </Button>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        title={translate(editing?.id ? '编辑易支付渠道' : '新增易支付渠道')}
+        visible={!!editing}
+        onCancel={() => setEditing(null)}
+        onOk={saveChannel}
+        confirmLoading={saving}
+        centered
+        width='min(720px, calc(100vw - 32px))'
+        bodyStyle={{ maxHeight: 'calc(100dvh - 180px)', overflowY: 'auto' }}
+        keepDOM={false}
+      >
+        {editing && (
+          <Form
+            key={`${editing.id || 'new'}-${editing.revision_id}`}
+            initValues={editing}
+            getFormApi={setFormApi}
+            labelPosition='top'
+          >
+            <Form.Switch field='enabled' label={translate('启用渠道')} />
+            <Form.Input
+              field='name'
+              label={translate('渠道名称')}
+              rules={[{ required: true }]}
+            />
+            <Form.TextArea
+              field='description'
+              label={translate('渠道说明')}
+              autosize
+            />
+            <Form.Input
+              field='pay_address'
+              label={translate('支付地址')}
+              rules={[{ required: true }]}
+            />
+            <Form.Input
+              field='merchant_id'
+              label={translate('易支付商户ID')}
+              rules={[{ required: true }]}
+            />
+            <Form.Input
+              field='merchant_key'
+              type='password'
+              label={translate('易支付商户密钥')}
+              extraText={translate(
+                '已保存的密钥不会回显；编辑时留空保持不变。',
+              )}
+            />
+            <Form.Input
+              field='callback_address'
+              label={translate('回调地址')}
+              extraText={translate(
+                '留空使用系统服务器地址，仅填写基础地址，系统自动追加回调路径。',
+              )}
+            />
+            <Form.CheckboxGroup
+              field='payment_methods'
+              label={translate('支付方式')}
+              options={[
+                { label: translate('微信支付'), value: 'wxpay' },
+                { label: translate('支付宝'), value: 'alipay' },
+                { label: 'QQ', value: 'qqpay' },
+              ]}
+            />
+            <Typography.Paragraph type='tertiary'>
+              {translate(
+                '各支付方式独立限额，余额充值与订阅共用；每日限额填 0 表示不限，按服务器本地时间 0 点至次日 0 点统计。待支付订单会占用当日额度。',
+              )}
+            </Typography.Paragraph>
+            {Object.entries(EPAY_METHOD_NAMES).map(([method, name]) => (
+              <div
+                key={method}
+                className='mb-3 rounded-lg border border-[var(--semi-color-border)] p-3'
+              >
+                <Typography.Text strong>{translate(name)}</Typography.Text>
+                <div className='grid grid-cols-1 gap-x-3 sm:grid-cols-3'>
+                  <Form.Input
+                    field={`payment_method_limits.${method}.min_pay_cny`}
+                    label={translate('单笔最低（实付 CNY）')}
+                    rules={[{ required: true }]}
+                  />
+                  <Form.Input
+                    field={`payment_method_limits.${method}.max_pay_cny`}
+                    label={translate('单笔最高（实付 CNY）')}
+                    rules={[{ required: true }]}
+                  />
+                  <Form.Input
+                    field={`payment_method_limits.${method}.daily_limit_cny`}
+                    label={translate('每日限额（实付 CNY）')}
+                    rules={[{ required: true }]}
+                  />
+                </div>
+              </div>
+            ))}
+            <Form.Select
+              field='topup_offer_type'
+              label={translate('余额充值优惠')}
+              optionList={[
+                { label: translate('无优惠'), value: 'none' },
+                { label: translate('赠金'), value: 'bonus' },
+                { label: translate('折扣'), value: 'discount' },
+              ]}
+            />
+            <Form.Input
+              field='topup_offer_percent'
+              label={translate('余额优惠百分比')}
+              extraText={translate(
+                '赠金填大于 100 的百分比，如 102；折扣填 0 到 100 之间的百分比，如 98。',
+              )}
+            />
+            <Form.Input
+              field='topup_offer_threshold_cny'
+              label={translate('余额优惠起点金额（优惠前 CNY）')}
+            />
+            <Form.Input
+              field='subscription_discount_percent'
+              label={translate('订阅折扣百分比')}
+              extraText={translate(
+                '订阅仅支持折扣；100 表示无折扣，98 表示按原价的 98% 实付。',
+              )}
+            />
+            <Form.Input
+              field='subscription_offer_threshold_cny'
+              label={translate('订阅优惠起点金额（优惠前 CNY）')}
+            />
+          </Form>
+        )}
+      </Modal>
     </Spin>
   );
 }

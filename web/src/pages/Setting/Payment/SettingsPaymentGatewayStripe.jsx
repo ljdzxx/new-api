@@ -33,6 +33,7 @@ import {
   removeTrailingSlash,
   showError,
   showSuccess,
+  verifyJSON,
 } from '../../../helpers';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -46,6 +47,7 @@ export default function SettingsPaymentGateway(props) {
     StripeUnitPrice: 8.0,
     StripeMinTopUp: 1,
     StripePromotionCodesEnabled: false,
+    StripeAmountDiscount: '{}',
   });
   const [originInputs, setOriginInputs] = useState({});
   const formApiRef = useRef(null);
@@ -53,6 +55,8 @@ export default function SettingsPaymentGateway(props) {
   useEffect(() => {
     if (props.options && formApiRef.current) {
       const currentInputs = {
+        StripeAmountDiscount:
+          props.options['payment_setting.amount_discount'] || '{}',
         StripeApiSecret: props.options.StripeApiSecret || '',
         StripeWebhookSecret: props.options.StripeWebhookSecret || '',
         StripePriceId: props.options.StripePriceId || '',
@@ -80,6 +84,10 @@ export default function SettingsPaymentGateway(props) {
   };
 
   const submitStripeSetting = async () => {
+    if (!verifyJSON(inputs.StripeAmountDiscount)) {
+      showError(t('Stripe 充值金额折扣报价必须是合法 JSON 对象'));
+      return;
+    }
     if (props.options.ServerAddress === '') {
       showError(t('请先填写服务器地址'));
       return;
@@ -88,6 +96,10 @@ export default function SettingsPaymentGateway(props) {
     setLoading(true);
     try {
       const options = [];
+      options.push({
+        key: 'payment_setting.amount_discount',
+        value: inputs.StripeAmountDiscount,
+      });
 
       if (inputs.StripeApiSecret && inputs.StripeApiSecret !== '') {
         options.push({ key: 'StripeApiSecret', value: inputs.StripeApiSecret });
@@ -231,14 +243,14 @@ export default function SettingsPaymentGateway(props) {
               <Form.InputNumber
                 field='StripeUnitPrice'
                 precision={2}
-                label={t('充值价格（x元/美金）')}
+                label={t('Stripe 报价单价（CNY/USD）')}
                 placeholder={t('例如：7，就是7元/美金')}
               />
             </Col>
             <Col xs={24} sm={24} md={8} lg={8} xl={8}>
               <Form.InputNumber
                 field='StripeMinTopUp'
-                label={t('最低充值美元数量')}
+                label={t('Stripe 最低充值美元数量')}
                 placeholder={t('例如：2，就是最低充值2$')}
               />
             </Col>
@@ -252,6 +264,14 @@ export default function SettingsPaymentGateway(props) {
               />
             </Col>
           </Row>
+          <Form.TextArea
+            field='StripeAmountDiscount'
+            label={t('Stripe充值金额折扣报价')}
+            autosize
+            extraText={t(
+              '仅影响本站 Stripe 报价，不会自动应用到 Stripe 收银台；实际收费由价格 ID 决定。例如：{"100":0.95}。',
+            )}
+          />
           <Button onClick={submitStripeSetting}>{t('更新 Stripe 设置')}</Button>
         </Form.Section>
       </Form>
