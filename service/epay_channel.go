@@ -85,6 +85,11 @@ func SaveEpayChannel(id int, input *EpayChannelInput) error {
 	if err := validateEpayURL(input.CallbackAddress, true); err != nil {
 		return err
 	}
+	queryAPI, err := normalizeEpayQueryAPI(input.QueryAPI)
+	if err != nil {
+		return err
+	}
+	input.QueryAPI = queryAPI
 	if len(input.Methods) == 0 || len(input.Methods) > 3 {
 		return fmt.Errorf("请至少开启一种支付方式")
 	}
@@ -183,6 +188,10 @@ func ListAdminEpayChannels() ([]EpayChannelAdminView, error) {
 	result := make([]EpayChannelAdminView, 0, len(channels))
 	for _, channel := range channels {
 		revision, err := model.GetEpayChannelRevision(channel.CurrentRevisionId)
+		if err != nil {
+			return nil, err
+		}
+		revision.QueryAPI, err = normalizeEpayQueryAPI(revision.QueryAPI)
 		if err != nil {
 			return nil, err
 		}

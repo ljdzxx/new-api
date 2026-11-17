@@ -118,19 +118,33 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	plan := model.SubscriptionPlan{Title: "epay callback plan", PriceAmount: 10, Enabled: true, DurationUnit: "month", DurationValue: 1, TotalAmount: 5000000}
 	require.NoError(test, database.Create(&plan).Error)
 	orders := make(map[string]map[string]string)
+	remoteOrders := make(map[string]map[string]string)
 	queryCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		queryCount++
-		require.Equal(test, "/api/pay/query", request.URL.Path)
 		require.NoError(test, request.ParseForm())
-		order := orders[request.PostForm.Get("out_trade_no")]
+		var order map[string]string
+		code := 0
+		if request.Method == http.MethodGet {
+			code = 1
+			require.Equal(test, "/xpay/epay/api.php", request.URL.Path)
+			require.Equal(test, "order", request.Form.Get("act"))
+			require.False(test, request.Form.Has("out_trade_no"))
+			order = remoteOrders[request.Form.Get("trade_no")]
+			require.NotNil(test, order)
+			require.Equal(test, "merchant-key-"+order["pid"], request.Form.Get("key"))
+		} else {
+			require.Equal(test, http.MethodPost, request.Method)
+			require.Equal(test, "/api/pay/query", request.URL.Path)
+			order = orders[request.PostForm.Get("out_trade_no")]
+			require.NotNil(test, order)
+			require.Equal(test, expectedEpayMD5Sign(request.PostForm, "merchant-key-"+order["pid"]), request.PostForm.Get("sign"))
+		}
 		require.NotNil(test, order)
 		merchant := order["pid"]
-		key := "merchant-key-" + merchant
-		require.Equal(test, merchant, request.PostForm.Get("pid"))
-		require.Equal(test, expectedEpayMD5Sign(request.PostForm, key), request.PostForm.Get("sign"))
-		_, _ = fmt.Fprintf(writer, `{"code":0,"trade_no":"remote-%s","out_trade_no":%q,"pid":%q,"type":%q,"money":%q,"status":"1"}`,
-			merchant, order["out_trade_no"], merchant, order["type"], order["money"])
+		require.Equal(test, merchant, request.Form.Get("pid"))
+		_, _ = fmt.Fprintf(writer, `{"code":%d,"trade_no":"remote-%s","out_trade_no":%q,"pid":%q,"type":%q,"money":%q,"status":"1"}`,
+			code, merchant, order["out_trade_no"], merchant, order["type"], order["money"])
 	}))
 	defer server.Close()
 	channels := make([]model.EpayChannel, 0, 2)
@@ -138,12 +152,14 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	for channelIndex, offerType := range []string{"bonus", "discount"} {
 		merchant := fmt.Sprint(channelIndex + 1)
 		percent := "102"
+		queryAPI, payAddress := types.EpayQueryAPISigned, server.URL
 		if offerType == "discount" {
 			percent = "98"
+			queryAPI, payAddress = types.EpayQueryAPIPHP, server.URL+"/xpay/epay"
 		}
 		input := service.EpayChannelInput{
 			EpayChannelConfig: model.EpayChannelConfig{
-				Name: "channel-" + merchant, PayAddress: server.URL, MerchantId: merchant, CallbackAddress: "https://callback.example.com",
+				Name: "channel-" + merchant, PayAddress: payAddress, QueryAPI: queryAPI, MerchantId: merchant, CallbackAddress: "https://callback.example.com",
 				MinPayCNY: "1", MaxPayCNY: "5000", TopupOfferType: offerType, TopupOfferPercent: percent, TopupOfferThresholdCNY: "100",
 				SubscriptionDiscountPercent: "90", SubscriptionOfferThresholdCNY: "73",
 			}, Enabled: true, MerchantKey: "merchant-key-" + merchant, Methods: []string{"wxpay", "alipay"},
@@ -192,6 +208,7 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		require.NoError(test, err)
 		fields := checkout.Form.Fields
 		orders[fields["out_trade_no"]] = fields
+		remoteOrders["remote-"+fields["pid"]] = fields
 		merchantKey := inputs[channelIndex].MerchantKey
 		require.Equal(test, "fail", invokeCallback(fields, "other-channel-key", "topup", false))
 		require.Equal(test, "fail", invokeCallback(fields, merchantKey, "topup", true))
@@ -206,6 +223,11 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		require.Zero(test, queryCount)
 		input := inputs[channelIndex]
 		input.RevisionID, input.Enabled, input.MerchantKey, input.TopupOfferPercent = channel.CurrentRevisionId, false, "rotated-key", "105"
+		if input.QueryAPI == types.EpayQueryAPIPHP {
+			input.QueryAPI = types.EpayQueryAPISigned
+		} else {
+			input.QueryAPI = types.EpayQueryAPIPHP
+		}
 		if input.TopupOfferType == "discount" {
 			input.TopupOfferPercent = "95"
 		}
@@ -222,34 +244,37 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	total, err := model.GetUserTotalRechargeAmount(user.Id)
 	require.NoError(test, err)
 	require.Equal(test, float64(198), total)
-	input := inputs[0]
-	var current model.EpayChannel
-	require.NoError(test, database.First(&current, channels[0].Id).Error)
-	input.RevisionID = current.CurrentRevisionId
-	require.NoError(test, service.SaveEpayChannel(current.Id, &input))
-	operation_setting.USDExchangeRate = 7.3
-	quote, err := service.QuoteEpay(current.Id, "alipay", types.PaymentSceneSubscription, "", &plan)
-	require.NoError(test, err)
-	checkout, err := provider.CreateSubscriptionCheckout(&plan, &types.SubscriptionCheckoutRequest{
-		UserID: user.Id, PlanID: plan.Id, EpayChannelID: current.Id, PaymentMethod: "alipay", QuoteToken: quote.Token,
-	})
-	require.NoError(test, err)
-	require.Equal(test, "65.70", checkout.Form.Fields["money"])
-	require.Equal(test, "https://callback.example.com/api/subscription/epay/notify", checkout.Form.Fields["notify_url"])
-	orders[checkout.Form.Fields["out_trade_no"]] = checkout.Form.Fields
-	operation_setting.USDExchangeRate = 100
-	require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
-	require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
+	for channelIndex, channel := range channels {
+		input := inputs[channelIndex]
+		var current model.EpayChannel
+		require.NoError(test, database.First(&current, channel.Id).Error)
+		input.RevisionID = current.CurrentRevisionId
+		require.NoError(test, service.SaveEpayChannel(current.Id, &input))
+		operation_setting.USDExchangeRate = 7.3
+		quote, err := service.QuoteEpay(current.Id, "alipay", types.PaymentSceneSubscription, "", &plan)
+		require.NoError(test, err)
+		checkout, err := provider.CreateSubscriptionCheckout(&plan, &types.SubscriptionCheckoutRequest{
+			UserID: user.Id, PlanID: plan.Id, EpayChannelID: current.Id, PaymentMethod: "alipay", QuoteToken: quote.Token,
+		})
+		require.NoError(test, err)
+		require.Equal(test, "65.70", checkout.Form.Fields["money"])
+		require.Equal(test, "https://callback.example.com/api/subscription/epay/notify", checkout.Form.Fields["notify_url"])
+		orders[checkout.Form.Fields["out_trade_no"]] = checkout.Form.Fields
+		remoteOrders["remote-"+checkout.Form.Fields["pid"]] = checkout.Form.Fields
+		operation_setting.USDExchangeRate = 100
+		require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
+		require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
+		var audit model.TopUp
+		require.NoError(test, database.Where("trade_no = ?", checkout.Form.Fields["out_trade_no"]).First(&audit).Error)
+		require.EqualValues(test, 0, audit.Amount)
+		require.Equal(test, "65.70", audit.EpayPayCNY)
+	}
 	var subscriptionCount int64
 	require.NoError(test, database.Model(&model.UserSubscription{}).Where("user_id = ?", user.Id).Count(&subscriptionCount).Error)
-	require.EqualValues(test, 1, subscriptionCount)
+	require.EqualValues(test, 2, subscriptionCount)
 	require.NoError(test, database.First(&reloaded, user.Id).Error)
 	require.Equal(test, 20200000, reloaded.Quota)
 	total, err = model.GetUserTotalRechargeAmount(user.Id)
 	require.NoError(test, err)
 	require.Equal(test, float64(198), total)
-	var audit model.TopUp
-	require.NoError(test, database.Where("trade_no = ?", checkout.Form.Fields["out_trade_no"]).First(&audit).Error)
-	require.EqualValues(test, 0, audit.Amount)
-	require.Equal(test, "65.70", audit.EpayPayCNY)
 }

@@ -7,7 +7,7 @@
 1. 先读本手册，直接使用已授权的 ray 只读 SSH 入口；不重复询问这里已有的主机、用户名、密钥路径或诊断权限。
 2. 先执行 diag status、diag nginx；需要时间关联时执行 diag host，确认四个实例状态和当前路由。
 3. 用户指定 master/slave 时遵从指定；没有指定时，按当前 Nginx 路由定位承接请求的实例。上次排查目标为 new-api master / 13000，不把历史指向当作当前状态。
-4. 对目标执行 inspect、status probe、最近一小时 logs，必要时与另一节点对照。健康状态不等于模型推理成功。
+4. 对目标执行 inspect、status probe、最近一小时 logs，必要时与另一节点对照。历史故障优先使用已授权的 `docker logs --since ... --until ... CONTAINER`，不受 diag 的最近 2,000 行限制。健康状态不等于模型推理成功。
 5. 用问题相关 request ID、时间窗、channel_id 筛选证据。需要 API 复测时使用当前可用的授权凭据，先发小规模请求，立即关联目标实例日志。
 6. 报告实际项目、节点、端口、渠道和请求结果；区分 SSH 连通、HTTP 成功、响应 completed 与子代理任务成功。
 
@@ -23,7 +23,7 @@
 | 本次 Windows 私钥位置 | C:\Users\ray\.ssh\ray_readonly_key |
 | 本地项目目录 | C:\vs_project\new-api |
 | 本地终端 | PowerShell |
-| 连接方式 | 强制命令门禁，只执行授权诊断，不是交互式 Linux shell |
+| 连接方式 | 强制命令门禁，支持授权诊断、docker logs 及只读 SFTP，不是交互式 Linux shell |
 
 PowerShell 最小检查（整行执行）：
 
@@ -56,7 +56,7 @@ Invoke-ProductionDiag 'diag probe new-api master status'
 Invoke-ProductionDiag 'diag logs new-api master 1'
 ~~~
 
-每次只传一个白名单命令，不传 cd/cat/grep、管道、分号、docker/sudo 命令串。筛选在本机进行。此入口不提供任意 shell、SFTP/SCP、SSH 端口转发、Docker 组或广泛 sudo。
+每次只传一个白名单命令，不传 cd/cat/grep、管道、分号或 sudo 命令串；Docker 目前仅放行 `docker logs ...`。筛选在本机进行。门禁不提供任意 shell、SSH 端口转发、Docker 组或广泛 sudo。2026-11-17 已复核旧门禁还保留显式 `/usr/lib/openssh/sftp-server` 的只读 SFTP 分支，使用方式与读取边界见下文；不能将其等同于任意 SSH 文件读取或写入权限。
 
 ## 两项目、四实例与部署路径
 
@@ -110,6 +110,7 @@ PROJECT 仅接受 new-api / sub2api，ROLE 仅接受 master / slave。
 | diag inspect PROJECT ROLE | 指定容器与镜像状态、ID、时间、端口、挂载和允许的版本标签；不输出完整环境变量 |
 | diag top PROJECT ROLE | 指定容器有限进程摘要 |
 | diag logs PROJECT ROLE [HOURS] | HOURS=1–24，默认 1；最多最近 2,000 行，另有约 2 MB 输出上限和脱敏 |
+| docker logs --timestamps --since START --until END CONTAINER | 2026-11-17 用户已开通并实测；直接按时间窗读取容器 stdout/stderr，无 diag 的 2,000 行限制；原始输出必须本机筛选脱敏 |
 | diag probe PROJECT ROLE status | 主机回环 GET：new-api 为 /api/status，sub2api 为 /health |
 
 ~~~text
@@ -129,7 +130,22 @@ diag probe new-api slave status
 
 logs 最后一个数字是小时，不是行数；24 小时仍受最近 2,000 行限制。高流量时及时采集本次 ID，未命中需考虑截断、实例、时间及路由变化。只落盘和展示相关请求，并再次脱敏。
 
+用户于 2026-11-17 明确授权直接执行 `docker logs`，并已在生产 root 终端完成配置：现有 SSH 门禁分派 `docker logs ...` 到 `sudo -n /usr/bin/docker logs ...`，sudoers 文件为 `/etc/sudoers.d/ray-docker-logs`，门禁备份为 `/usr/local/bin/sub2api-diag-entry.before-docker-logs-20261117-073316`。15:34（Asia/Shanghai）已实测能读取 new-api master 的历史错误日志，不需再次索要该权限。不因此执行其他 Docker 命令，也不延伸为部署、重启、补单或写数据库权限。
+
+~~~powershell
+Invoke-ProductionDiag 'docker logs --timestamps --since 2026-11-17T14:56:40+08:00 --until 2026-11-17T15:00:20+08:00 new-api-master'
+~~~
+
+调用日志命令时在本机捕获 stdout 和 stderr，先按订单号、请求 ID 或错误类型筛选，再对 `sign`、`key`、令牌和其他敏感字段脱敏后展示；不直接打印或落盘整个时间窗的生产原始日志。先取短时间窗，避免无边界读取或 `--follow` 长期占用连接。
+
 Docker 外层日志时间曾为 UTC（Z），内层应用为 Asia/Shanghai。跨午夜时 request ID 日期与本地日期可能不同，用完整 ID 与带时区时间关联。
+
+### new-api 历史日志的只读 SFTP 入口（2026-11-17 复核）
+
+- Windows OpenSSH 使用 `sftp -s /usr/lib/openssh/sftp-server -b -`，沿用相同密钥、主机校验和连接参数。该分支在服务端以 `-R` 只读运行，文件权限仍有效；不上传、不修改权限。
+- 已验证可以读取 `/opt/new-api/deploy/data/master/logs/oneapi-20261117.log`、`/var/log/nginx/alb.jucodex.com/access.log` 及 `/opt/new-api/` 下必要源码。日志达数百 MB，应按时间戳定位字节区间，在本机内存中筛选目标请求；不能整份下载或保存带签名的原始回调 URL。
+- `controller/topup.go` 的易支付校验、入账错误当前使用标准库 `log.Printf`，写入容器 stderr；`logger.SetupLogger` 仅将 Gin writer 和项目 logger 写入每日文件。因此每日文件有回调访问记录，不等于有对应错误正文。
+- 直接读取 new-api master 的 Docker JSON 日志文件曾被权限拒绝，不能绕过；2026-11-17 后续已由用户开通 `docker logs` 白名单，可通过时间窗读取同一容器的 stdout/stderr，无需再读原始 JSON 文件或让用户代查。
 
 ## 诊断门禁与权限维护
 
@@ -179,6 +195,18 @@ C:\Users\ray\AppData\Local\Temp\new-api-production-responses-probe\sse-channel31
 - `calculated_quota=2807` 是估算；同一日志的 `pre_consume_path=minimum_balance`、`effective_preconsume_quota=0` 表示最低余额门槛策略下实际预扣为零，不是本次 400 的原因，也不是实际结算凭据。未做数据库余额对账。
 - 取证限制：诊断门禁的最近 2,000 行上限使 master 的 `logs ... 24` 仅覆盖排查时最近几分钟，未命中原始请求 ID；相关 sub2api 只读错误/系统日志时间窗查询也未命中，不能用未命中排除其他上游。尚无故障请求体，不能区分真实工具结果漏关联 ID，与 Desktop 页面快照、自动化/委派启动上下文被包装成无调用 ID 的工具输出等兼容情形。
 - 后续仍以 HTTP/SSE 为准：真实工具结果应携带原始 `call_id` 和可重放的对应调用历史；无真实调用的客户端注入上下文应由明确识别其协议的兼容层规范化，不能随意补造 `call_id`。进一步取证只需脱敏的 item `type/name/namespace/call_id`、调用对应关系及 `previous_response_id` 是否存在，不索要 API Key 或工具输出正文。本次未部署、重启、修改生产配置或发起模型/WS 探针。
+
+## 2026-11-17：new-api 易支付异步通知返回 fail
+
+- 用户提供收单号 `20261117145618502361`，三次通知显示 HTTP 200、正文 `fail`。实时 Nginx `alb.jucodex.com` / `newapi_backend` 指向 `127.0.0.1:13000`；new-api master 容器 `f317c212fda6` 健康运行，启动于当日 14:41:26（Asia/Shanghai），重启次数为 0，状态探针 HTTP 200。这里不把聚合状态输出中的其他项目当作本次排查目标。
+- 只读读取 new-api master 每日日志，在 14:56:57、14:59:59、15:00:00 匹配到三次 `GET /api/user/epay/notify`，收单号均为上述号码，本站商户单号为 `USR1NOYifzaH1794898578`，支付方式 `wxpay`、通知金额 `5`、支付状态 `TRADE_SUCCESS`。访问日志仅证明请求到达；没有查询生产数据库或证明余额是否入账。签名不归档。
+- 生产工作目录 `service/payment_epay_query.go`、`controller/epay_guard.go`、`controller/topup.go` 与本机提交 `11a3044aa4` 对应文件逐字节相同；没有容器构建提交标签，这不单独证明运行二进制与源码一致。
+- 已复现协议问题：`QueryEpayOrder` 将渠道地址拼接为 `.../api/pay/query`，以 POST 和 MD5 签名查单；对现有渠道候选地址 `https://pay.88yyw.cn/xpay/epay/api/pay/query` 做不含密钥的只读探测，HTTP 200、响应为 `{"code":404,"message":"Not Found","data":{},"redirect":""}`。`/xpay/epay/api.php?act=order` 最初依据常见易支付协议及本机另一项目既有适配代码提出，并非来自该商户平台的官方文档；未填商户 ID 返回“请输入商户ID”，只填通知中的商户 ID 返回“请输入商户通讯密钥”。这些响应仅证明该 PHP 兼容候选入口会处理商户认证校验，不能证明 `act=order` 已被认证调用并返回正确订单。未读取或使用商户密钥，没有完成该笔订单的认证查单，不能将该候选写成已确认的正确查单接口，也不能断言成功响应结构及成功码。
+- 15:34 复核：用户开通 `docker logs` 后，直接读取 `new-api-master` 的 14:56:40–15:00:20 +08:00 时间窗，共返回 3,989 行，在本机仅筛选出本单三条访问日志及三条错误日志。14:56:57、14:59:59、15:00:00 三条错误完全一致：`易支付回调校验失败 order=USR1NOYifzaH1794898578 err=epay order query failed: code=404 msg=`。至此已逐条确认，不再只是候选原因。
+- 故障链路为：通知到达 new-api → 订单/渠道、本地签名、支付方式及通知金额检查通过 → 主动远程查单返回业务码 404 → 拒绝该回调并回复 HTTP 200、正文 `fail`。这三次均未进入 `CompleteEpayTopup` 入账步骤；不是三次通知没有送达，也不是这三次本地验签或充值限额拒绝。`msg` 为空是因为解析器只读 `msg`，而该网关错误字段名为 `message`。
+- 排查结论：new-api 查单协议/路径适配错误，导致这三次真实付款通知均被主动查单校验拒绝。尚未查询订单数据库或认证查单，因此不把“三次回调未入账”等同于“该订单从未通过其他方式入账”，也不据此直接补发余额。修复协议并核对订单状态后，才能使用幂等处理安全重试。
+- 本次仅状态、路由、目标历史访问日志、相关源码及无认证网关路由探测；未部署、重启、改渠道、改余额、补单或重放支付通知。修复应适配实际易支付查单协议和返回结构，保留签名、商户、订单、方式和实付金额核验，不能直接跳过远程验证或将 `fail` 改为 `success`。
+- 后续用户提供该平台官方查单文档，明确 `GET /xpay/epay/api.php?act=order&pid=...&key=...`，支持 `trade_no` 或 `out_trade_no`，查询成功码为 `1`、支付成功状态为 `1`。据此在本地实现按渠道选择原 POST 签名协议或 PHP GET 密钥协议，配置说明见 [易支付多渠道配置与切换](epay-multi-channel.zh-CN.md#查单接口选择)。这属于用户提供的协议依据，不是生产认证查单验证；尚未部署修复或恢复本单。接口随订单渠道版本冻结，修改当前渠道不会自动更改本单历史版本。
 
 本文含内部地址和运维路径，未经要求不公开发布。实际 API Key、SSH 私钥、生产 .env 及未筛选完整日志不写入本文或 Git。
 

@@ -342,6 +342,7 @@ func TestEpayChannelValidation(test *testing.T) {
 		{"unsupported URL", func(input *EpayChannelInput) { input.PayAddress = "file:///etc/passwd" }},
 		{"URL credentials", func(input *EpayChannelInput) { input.PayAddress = "https://user:password@pay.example.com" }},
 		{"callback query", func(input *EpayChannelInput) { input.CallbackAddress = "https://site.example.com?x=1" }},
+		{"unsupported query API", func(input *EpayChannelInput) { input.QueryAPI = "automatic" }},
 		{"missing methods", func(input *EpayChannelInput) { input.Methods = nil }},
 		{"duplicate methods", func(input *EpayChannelInput) { input.Methods = []string{"alipay", "alipay"} }},
 		{"unsupported method", func(input *EpayChannelInput) { input.Methods = []string{"stripe"} }},
@@ -411,6 +412,7 @@ func TestEpayChannelRevisionAndCheckoutSnapshot(test *testing.T) {
 	})
 	revision, err := GetEnabledEpayRevision(channel.Id, "wxpay")
 	require.NoError(test, err)
+	require.Equal(test, types.EpayQueryAPISigned, revision.QueryAPI)
 	_, err = GetEnabledEpayRevision(channel.Id, "alipay")
 	require.ErrorContains(test, err, "不支持")
 	quote, err := QuoteEpay(channel.Id, "wxpay", types.PaymentSceneTopup, "100", nil)
@@ -437,17 +439,26 @@ func TestEpayChannelRevisionAndCheckoutSnapshot(test *testing.T) {
 	require.ErrorContains(test, err, "报价")
 	operation_setting.USDExchangeRate = 5
 	input.Methods = []string{"wxpay", "alipay"}
+	input.QueryAPI = types.EpayQueryAPIPHP
 	input.RevisionID, input.MerchantKey, input.TopupOfferPercent = revision.Id, "", "103"
 	require.NoError(test, SaveEpayChannel(channel.Id, &input))
 	updated, err := GetEnabledEpayRevision(channel.Id, "alipay")
 	require.NoError(test, err)
 	require.NotEqual(test, revision.Id, updated.Id)
+	require.Equal(test, types.EpayQueryAPIPHP, updated.QueryAPI)
 	require.Equal(test, revision.MerchantKey, updated.MerchantKey)
 	_, err = provider.CreateTopupCheckout(request)
 	require.ErrorContains(test, err, "报价")
 	require.ErrorContains(test, SaveEpayChannel(channel.Id, &input), "已更新")
 	views, err := ListAdminEpayChannels()
 	require.NoError(test, err)
+	var adminQueryAPI string
+	for _, view := range views {
+		if view.ID == channel.Id {
+			adminQueryAPI = view.QueryAPI
+		}
+	}
+	require.Equal(test, types.EpayQueryAPIPHP, adminQueryAPI)
 	encoded, err := common.Marshal(views)
 	require.NoError(test, err)
 	require.NotContains(test, string(encoded), revision.MerchantKey)
@@ -455,7 +466,7 @@ func TestEpayChannelRevisionAndCheckoutSnapshot(test *testing.T) {
 	require.NoError(test, err)
 	encoded, err = common.Marshal(public)
 	require.NoError(test, err)
-	for _, private := range []string{"merchant_id", "merchant_key", "pay_address", "callback_address"} {
+	for _, private := range []string{"merchant_id", "merchant_key", "pay_address", "callback_address", "query_api"} {
 		require.NotContains(test, string(encoded), private)
 	}
 	input.RevisionID, input.Enabled, input.MerchantKey = updated.Id, false, "rotated-key"
@@ -465,6 +476,7 @@ func TestEpayChannelRevisionAndCheckoutSnapshot(test *testing.T) {
 	frozen, err := model.GetEpayChannelRevision(topup.EpayChannelRevisionId)
 	require.NoError(test, err)
 	require.Equal(test, "102", frozen.TopupOfferPercent)
+	require.Equal(test, types.EpayQueryAPISigned, frozen.QueryAPI)
 	require.Equal(test, revision.MerchantKey, frozen.MerchantKey)
 	require.Equal(test, quote.CreditQuota, topup.CreditQuota)
 }

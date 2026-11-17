@@ -199,7 +199,7 @@ func validateEpayReconcileOrder(topUp *model.TopUp, orderInfo *EpayOrderInfo) er
 	if orderInfo == nil {
 		return errors.New("Epay 查单结果为空")
 	}
-	if orderInfo.Code != 0 {
+	if !orderInfo.IsSuccess() {
 		return fmt.Errorf("Epay 查单返回异常: code=%d msg=%s", orderInfo.Code, orderInfo.Msg)
 	}
 	if orderInfo.Status != "1" {

@@ -74,7 +74,7 @@ func validateEpayCallbackBase(ctx context.Context, revision *model.EpayChannelRe
 	if err != nil {
 		return fmt.Errorf("query epay order failed: %w", err)
 	}
-	if orderInfo.Code != 0 {
+	if !orderInfo.IsSuccess() {
 		return fmt.Errorf("epay order query failed: code=%d msg=%s", orderInfo.Code, orderInfo.Msg)
 	}
 	if orderInfo.Status != "1" {

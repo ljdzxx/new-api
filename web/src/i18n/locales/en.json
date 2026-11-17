@@ -1,5 +1,8 @@
 {
   "translation": {
+    "查单接口": "Order query API",
+    "按支付平台文档选择，不会自动切换。接口路径追加在支付地址后，例如 https://pay.example.com/xpay/epay + /api.php。": "Choose according to your payment platform's documentation. No automatic fallback occurs. The endpoint is appended to the payment base URL, e.g. https://pay.example.com/xpay/epay + /api.php.",
+    "查单接口随订单冻结；修改仅影响新订单，已有订单仍使用创建时的接口。": "The query API is fixed when an order is created. Changes affect new orders only; existing orders keep their original API.",
     "易支付共用系统美元汇率：余额基础到账 USD = 输入 CNY ÷ 汇率；订阅原价 CNY = 套餐 USD × 汇率，优惠由各渠道独立配置。": "EPay uses the system USD exchange rate: base wallet credit in USD = input CNY ÷ rate; subscription base price in CNY = plan USD × rate. Promotions are configured per channel.",
     "拖动六点手柄调整渠道顺序，松开后自动保存；也可聚焦手柄后使用上下方向键。": "Drag the six-dot handle to reorder channels; changes save automatically on drop. You can also focus the handle and use the up/down arrow keys.",
     "拖动排序": "Drag to reorder",

@@ -43,6 +43,7 @@ const defaultMethodLimits = () =>
 
 const channelEditorValues = (channel) => ({
   ...channel,
+  query_api: channel.query_api || 'api_pay_query',
   merchant_key: '',
   payment_method_limits: {
     ...defaultMethodLimits(),
@@ -55,6 +56,7 @@ const emptyChannel = {
   description: '',
   enabled: false,
   pay_address: '',
+  query_api: 'api_pay_query',
   merchant_id: '',
   merchant_key: '',
   callback_address: '',
@@ -351,6 +353,13 @@ export default function SettingsPaymentGateway({ options, refresh }) {
           { title: 'ID', dataIndex: 'id', width: 60 },
           { title: translate('渠道名称'), dataIndex: 'name' },
           {
+            title: translate('查单接口'),
+            render: (_, channel) =>
+              channel.query_api === 'api_php'
+                ? 'GET /api.php?act=order'
+                : 'POST /api/pay/query',
+          },
+          {
             title: translate('状态'),
             render: (_, channel) => (
               <Space vertical align='start' spacing={4}>
@@ -449,6 +458,30 @@ export default function SettingsPaymentGateway({ options, refresh }) {
               label={translate('支付地址')}
               rules={[{ required: true }]}
             />
+            <Form.Select
+              field='query_api'
+              label={translate('查单接口')}
+              rules={[{ required: true }]}
+              optionList={[
+                {
+                  label: 'POST /api/pay/query',
+                  value: 'api_pay_query',
+                },
+                {
+                  label: 'GET /api.php?act=order',
+                  value: 'api_php',
+                },
+              ]}
+              extraText={translate(
+                '按支付平台文档选择，不会自动切换。接口路径追加在支付地址后，例如 https://pay.example.com/xpay/epay + /api.php。',
+              )}
+              style={{ width: '100%' }}
+            />
+            <Typography.Paragraph type='tertiary' size='small'>
+              {translate(
+                '查单接口随订单冻结；修改仅影响新订单，已有订单仍使用创建时的接口。',
+              )}
+            </Typography.Paragraph>
             <Form.Input
               field='merchant_id'
               label={translate('易支付商户ID')}

@@ -1,5 +1,8 @@
 {
   "translation": {
+    "查单接口": "API tra cứu đơn hàng",
+    "按支付平台文档选择，不会自动切换。接口路径追加在支付地址后，例如 https://pay.example.com/xpay/epay + /api.php。": "Chọn theo tài liệu của nền tảng thanh toán. Không tự động chuyển đổi. Đường dẫn API được nối vào URL thanh toán gốc, ví dụ https://pay.example.com/xpay/epay + /api.php.",
+    "查单接口随订单冻结；修改仅影响新订单，已有订单仍使用创建时的接口。": "API tra cứu được cố định khi tạo đơn. Thay đổi chỉ áp dụng cho đơn mới; đơn hiện có vẫn dùng API ban đầu.",
     "易支付共用系统美元汇率：余额基础到账 USD = 输入 CNY ÷ 汇率；订阅原价 CNY = 套餐 USD × 汇率，优惠由各渠道独立配置。": "EPay dùng tỷ giá USD của hệ thống: số dư cơ bản bằng USD = CNY nhập ÷ tỷ giá; giá gốc gói bằng CNY = giá USD × tỷ giá. Ưu đãi được cấu hình riêng cho từng kênh.",
     "拖动六点手柄调整渠道顺序，松开后自动保存；也可聚焦手柄后使用上下方向键。": "Kéo tay nắm sáu chấm để sắp xếp kênh; thứ tự tự lưu khi thả. Bạn cũng có thể chọn tay nắm và dùng phím mũi tên lên/xuống.",
     "拖动排序": "Kéo để sắp xếp",

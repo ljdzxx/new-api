@@ -83,6 +83,11 @@ type SubscriptionCheckoutRequest struct {
 	ReturnURL     string `json:"-"`
 }
 
+const (
+	EpayQueryAPISigned = "api_pay_query"
+	EpayQueryAPIPHP    = "api_php"
+)
+
 type EpayMethodLimits struct {
 	MinPayCNY     string `json:"min_pay_cny"`
 	MaxPayCNY     string `json:"max_pay_cny"`
