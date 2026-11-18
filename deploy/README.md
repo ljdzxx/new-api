@@ -46,6 +46,8 @@ ENV_FILE=/absolute/path/.env bash deploy/deploy.sh start slave
 
 主从部署应在共享 `.env` 中配置同一个外部数据库、Redis 以及一致的会话密钥；两个独立目录中的 SQLite 文件不会自动同步。
 
+master 和 slave 启动时都会检查并执行主库迁移。配置独立日志库时也会迁移日志库。多个节点连接同一库时会排队执行迁移，两个节点的数据库账号都需要相应的建表、改表和建索引权限。
+
 容器内 `127.0.0.1` 指向容器自身。如果连接 `deploy-mysql.sh` 发布在宿主机 `4810` 端口的 MySQL，可在 `.env` 中使用以下占位配置，并替换用户名、密码和库名：
 
 ```dotenv
