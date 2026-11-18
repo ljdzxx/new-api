@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 		&model.Token{},
 		&model.Log{},
 		&model.Channel{},
+		&model.EpayCheckoutSlot{},
 		&model.EpayChannel{},
 		&model.EpayChannelRevision{},
 		&model.SubscriptionPlan{},

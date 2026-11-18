@@ -28,12 +28,13 @@ import {
   copy,
   executePaymentCheckout,
 } from '../../helpers';
-import { Modal, Toast } from '@douyinfe/semi-ui';
+import { Banner, Modal, Toast } from '@douyinfe/semi-ui';
 import { useTranslation } from 'react-i18next';
 import { UserContext } from '../../context/User';
 import { StatusContext } from '../../context/Status';
 import { REDEMPTION_REWARD_TYPES } from '../../constants/redemption.constants';
 
+import { EpayHoldingPanel, useEpayHolding } from './EpayHoldingPanel';
 import RechargeCard from './RechargeCard';
 import InvitationCard from './InvitationCard';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
@@ -102,6 +103,7 @@ const resolveDefaultTopUpCount = (amountOptions, fallbackValue) => {
 const TopUp = () => {
   const { t } = useTranslation();
   const [userState, userDispatch] = useContext(UserContext);
+  const holding = useEpayHolding(userState?.user?.id);
   const [statusState] = useContext(StatusContext);
 
   const [redemptionCode, setRedemptionCode] = useState('');
@@ -416,6 +418,12 @@ const TopUp = () => {
     await Promise.all([getUserQuota(), getSubscriptionSelf()]);
   };
 
+  useEffect(() => {
+    if (holding.outcome?.status === 'success') {
+      handleSubscriptionPurchaseSuccess().catch(showError);
+    }
+  }, [holding.outcome]);
+
   const updateBillingPreference = async (pref) => {
     const previousPref = billingPreference;
     setBillingPreference(pref);
@@ -718,62 +726,80 @@ const TopUp = () => {
 
       {/* Main content */}
       <div className='flex w-full flex-col gap-4'>
-        <RechargeCard
-          t={t}
-          epayChannels={epayChannels}
-          usdExchangeRate={usdExchangeRate}
-          epayPresets={epayPresets}
-          enableOnlineTopUp={enableOnlineTopUp}
-          enableStripeTopUp={enableStripeTopUp}
-          enableCreemTopUp={enableCreemTopUp}
-          creemProducts={creemProducts}
-          creemPreTopUp={creemPreTopUp}
-          presetAmounts={presetAmounts}
-          selectedPreset={selectedPreset}
-          selectPresetAmount={selectPresetAmount}
-          formatLargeNumber={formatLargeNumber}
-          priceRatio={priceRatio}
-          topUpCount={topUpCount}
-          renderQuotaWithAmount={renderQuotaWithAmount}
-          getAmount={getAmount}
-          setTopUpCount={setTopUpCount}
-          setSelectedPreset={setSelectedPreset}
-          renderAmount={renderAmount}
-          amountLoading={amountLoading}
-          payMethods={payMethods}
-          hasMallPayMethod={hasMallPayMethod}
-          preTopUp={preTopUp}
-          paymentLoading={paymentLoading}
-          payWay={payWay}
-          redemptionCode={redemptionCode}
-          setRedemptionCode={setRedemptionCode}
-          topUp={topUp}
-          isSubmitting={isSubmitting}
-          topUpLink={topUpLink}
-          openTopUpLink={openTopUpLink}
-          userState={userState}
-          renderQuota={renderQuota}
-          statusLoading={statusLoading}
-          topupInfo={topupInfo}
-          onOpenHistory={handleOpenHistory}
-          onOpenLotteryPrizes={handleOpenLotteryPrizes}
-          subscriptionLoading={subscriptionLoading}
-          subscriptionPlans={subscriptionPlans}
-          billingPreference={billingPreference}
-          onChangeBillingPreference={updateBillingPreference}
-          activeSubscriptions={activeSubscriptions}
-          allSubscriptions={allSubscriptions}
-          reloadSubscriptionSelf={getSubscriptionSelf}
-          onSubscriptionPurchaseSuccess={handleSubscriptionPurchaseSuccess}
-        />
-        <InvitationCard
-          t={t}
-          userState={userState}
-          renderQuota={renderQuota}
-          affLink={affLink}
-          handleAffLinkClick={handleAffLinkClick}
-          invitationRewardInfo={invitationRewardInfo}
-        />
+        {holding.order && (
+          <EpayHoldingPanel key={holding.order.trade_no} order={holding.order} refresh={holding.refresh} t={t} />
+        )}
+        {holding.outcome && (
+          <div role='status'>
+            <Banner key={holding.outcome.trade_no} type={holding.outcome.status === 'success' ? 'success' : 'info'}
+              title={holding.outcome.status === 'success'
+                ? (holding.outcome.scene === 'subscription' ? t('支付成功，订阅已开通') : t('支付成功，充值已到账'))
+                : ({ cancelled: t('订单已取消'), expired: t('已过期'), refunded: t('已退款'), invalidated: t('已作废') }[holding.outcome.status] || t('订单状态'))}
+              description={holding.outcome.status === 'success' ? undefined : holding.outcome.trade_no} onClose={holding.dismiss} />
+          </div>
+        )}
+        {!holding.order && (
+          <>
+            <RechargeCard
+              epayBlocked={!holding.ready}
+              refreshHolding={holding.trackCheckout}
+              t={t}
+              epayChannels={epayChannels}
+              usdExchangeRate={usdExchangeRate}
+              epayPresets={epayPresets}
+              enableOnlineTopUp={enableOnlineTopUp}
+              enableStripeTopUp={enableStripeTopUp}
+              enableCreemTopUp={enableCreemTopUp}
+              creemProducts={creemProducts}
+              creemPreTopUp={creemPreTopUp}
+              presetAmounts={presetAmounts}
+              selectedPreset={selectedPreset}
+              selectPresetAmount={selectPresetAmount}
+              formatLargeNumber={formatLargeNumber}
+              priceRatio={priceRatio}
+              topUpCount={topUpCount}
+              renderQuotaWithAmount={renderQuotaWithAmount}
+              getAmount={getAmount}
+              setTopUpCount={setTopUpCount}
+              setSelectedPreset={setSelectedPreset}
+              renderAmount={renderAmount}
+              amountLoading={amountLoading}
+              payMethods={payMethods}
+              hasMallPayMethod={hasMallPayMethod}
+              preTopUp={preTopUp}
+              paymentLoading={paymentLoading}
+              payWay={payWay}
+              redemptionCode={redemptionCode}
+              setRedemptionCode={setRedemptionCode}
+              topUp={topUp}
+              isSubmitting={isSubmitting}
+              topUpLink={topUpLink}
+              openTopUpLink={openTopUpLink}
+              userState={userState}
+              renderQuota={renderQuota}
+              statusLoading={statusLoading}
+              topupInfo={topupInfo}
+              onOpenHistory={handleOpenHistory}
+              onOpenLotteryPrizes={handleOpenLotteryPrizes}
+              subscriptionLoading={subscriptionLoading}
+              subscriptionPlans={subscriptionPlans}
+              billingPreference={billingPreference}
+              onChangeBillingPreference={updateBillingPreference}
+              activeSubscriptions={activeSubscriptions}
+              allSubscriptions={allSubscriptions}
+              reloadSubscriptionSelf={getSubscriptionSelf}
+              onSubscriptionPurchaseSuccess={handleSubscriptionPurchaseSuccess}
+            />
+            <InvitationCard
+              t={t}
+              userState={userState}
+              renderQuota={renderQuota}
+              affLink={affLink}
+              handleAffLinkClick={handleAffLinkClick}
+              invitationRewardInfo={invitationRewardInfo}
+            />
+          </>
+        )}
       </div>
     </div>
   );

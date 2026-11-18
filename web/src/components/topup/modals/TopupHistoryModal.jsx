@@ -46,6 +46,7 @@ const { Text } = Typography;
 const STATUS_CONFIG = {
   success: { type: 'success', key: '成功' },
   pending: { type: 'warning', key: '待支付' },
+  cancelled: { type: 'tertiary', key: '已取消' },
   expired: { type: 'danger', key: '已过期' },
   refunded: { type: 'danger', key: '已退款' },
 };

@@ -28,19 +28,20 @@ type TopUp struct {
 	EpayPayCents          int64   `json:"-" gorm:"type:bigint;default:0"`
 	EpayCreditUSD         string  `json:"epay_credit_usd" gorm:"type:varchar(64)"`
 	EpayBonusUSD          string  `json:"epay_bonus_usd" gorm:"type:varchar(64)"`
+	EpayCheckoutFormJSON  string  `gorm:"-" json:"-"`
 	EpayQuoteSnapshot     string  `json:"-" gorm:"type:text"`
 	BaseQuota             int     `json:"base_quota"`
 	BonusQuota            int     `json:"bonus_quota"`
 	CreditQuota           int     `json:"credit_quota"`
 	TradeNo               string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod         string  `json:"payment_method" gorm:"type:varchar(50);index:idx_epay_topup_daily,priority:2"`
-	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:'';index:idx_epay_topup_expiry,priority:1"`
 	ReconcileStatus       string  `json:"reconcile_status" gorm:"type:varchar(32);default:'unchecked';index"`
 	ReconcileTime         int64   `json:"reconcile_time"`
 	ReconcileMessage      string  `json:"reconcile_message" gorm:"type:text"`
-	CreateTime            int64   `json:"create_time" gorm:"index:idx_epay_topup_daily,priority:3"`
+	CreateTime            int64   `json:"create_time" gorm:"index:idx_epay_topup_daily,priority:3;index:idx_epay_topup_expiry,priority:3"`
 	CompleteTime          int64   `json:"complete_time"`
-	Status                string  `json:"status"`
+	Status                string  `json:"status" gorm:"index:idx_epay_topup_expiry,priority:2"`
 	RefundTime            int64   `json:"refund_time" gorm:"column:refund_time"`
 	RefundOperatorId      int     `json:"refund_operator_id" gorm:"column:refund_operator_id;index"`
 	RefundReason          string  `json:"refund_reason" gorm:"type:text;column:refund_reason"`
@@ -48,6 +49,18 @@ type TopUp struct {
 	Refundable            bool    `json:"refundable" gorm:"-"`
 	SubscriptionStatus    string  `json:"subscription_status,omitempty" gorm:"-"`
 	SubscriptionSource    string  `json:"subscription_source,omitempty" gorm:"-"`
+}
+
+// EpayPayCNY preserves the checkout quote. Money records actual receipts on settlement.
+func (topup *TopUp) EpayQuotedMoney() float64 {
+	if topup.EpayPayCNY == "" {
+		return topup.Money
+	}
+	amount, err := EpayAmountCents(topup.EpayPayCNY)
+	if err != nil {
+		return 0
+	}
+	return float64(amount) / 100
 }
 
 const (
@@ -933,7 +946,11 @@ func ManualCompleteTopUp(tradeNo string) error {
 	if tradeNo == "" {
 		return errors.New("未提供订单号")
 	}
-	if topup := GetTopUpByTradeNo(tradeNo); topup != nil && topup.PaymentProvider == PaymentProviderEpay {
+	topup := GetTopUpByTradeNo(tradeNo)
+	if topup == nil {
+		return ErrTopUpNotFound
+	}
+	if topup.PaymentProvider == PaymentProviderEpay {
 		return CompleteEpayTopup(tradeNo)
 	}
 

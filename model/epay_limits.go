@@ -114,14 +114,21 @@ func getEpayDailyUsedTx(transaction *gorm.DB, channelID int, method string, star
 	return total, nil
 }
 
-func createEpayLimitedOrder(channelID, revisionID int, method, payCNY string, insert func(*gorm.DB, int64, int64) error) error {
+func createEpayLimitedOrder(userID int, tradeNo, formJSON string, channelID, revisionID int, method, payCNY string, insert func(*gorm.DB, int64, int64) error) error {
 	return DB.Transaction(func(transaction *gorm.DB) error {
+		if err := reserveEpayCheckout(transaction, userID, tradeNo, formJSON); err != nil {
+			return err
+		}
 		var channel EpayChannel
 		if err := lockForUpdate(transaction).First(&channel, channelID).Error; err != nil {
 			return err
 		}
 		if !channel.Enabled || channel.CurrentRevisionId != revisionID {
 			return errors.New("渠道已停用或配置已更新，请重新获取报价")
+		}
+		now := time.Now()
+		if err := checkEpayPendingLimit(transaction, userID, now.Unix()); err != nil {
+			return err
 		}
 		var revision EpayChannelRevision
 		if err := transaction.First(&revision, revisionID).Error; err != nil {
@@ -150,7 +157,6 @@ func createEpayLimitedOrder(channelID, revisionID int, method, payCNY string, in
 		if err != nil || cents < minimum || cents > maximum {
 			return errors.New("实付金额不符合所选支付方式的单笔限额")
 		}
-		now := time.Now()
 		if daily > 0 {
 			start, end := EpayLocalDayBounds(now)
 			used, err := getEpayDailyUsedTx(transaction, channelID, method, start, end)
@@ -169,7 +175,7 @@ func CreateEpayTopupOrder(topup *TopUp) error {
 	if topup == nil || topup.PaymentProvider != PaymentProviderEpay || topup.Status != common.TopUpStatusPending || topup.Amount <= 0 {
 		return errors.New("易支付充值订单参数无效")
 	}
-	return createEpayLimitedOrder(topup.EpayChannelId, topup.EpayChannelRevisionId, topup.PaymentMethod, topup.EpayPayCNY,
+	return createEpayLimitedOrder(topup.UserId, topup.TradeNo, topup.EpayCheckoutFormJSON, topup.EpayChannelId, topup.EpayChannelRevisionId, topup.PaymentMethod, topup.EpayPayCNY,
 		func(transaction *gorm.DB, cents, now int64) error {
 			topup.EpayPayCents, topup.CreateTime = cents, now
 			return transaction.Create(topup).Error
@@ -180,7 +186,7 @@ func CreateEpaySubscriptionOrder(order *SubscriptionOrder) error {
 	if order == nil || order.PaymentProvider != PaymentProviderEpay || order.Status != common.TopUpStatusPending {
 		return errors.New("易支付订阅订单参数无效")
 	}
-	return createEpayLimitedOrder(order.EpayChannelId, order.EpayChannelRevisionId, order.PaymentMethod, order.EpayPayCNY,
+	return createEpayLimitedOrder(order.UserId, order.TradeNo, order.EpayCheckoutFormJSON, order.EpayChannelId, order.EpayChannelRevisionId, order.PaymentMethod, order.EpayPayCNY,
 		func(transaction *gorm.DB, cents, now int64) error {
 			order.EpayPayCents, order.CreateTime = cents, now
 			return transaction.Create(order).Error

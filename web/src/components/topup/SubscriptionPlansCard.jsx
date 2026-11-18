@@ -103,6 +103,8 @@ const SubscriptionPlansCard = ({
   userQuota = 0,
   onPurchaseSuccess,
   withCard = true,
+  epayBlocked,
+  refreshHolding,
   showOverview = true,
 }) => {
   const [open, setOpen] = useState(false);
@@ -242,6 +244,7 @@ const SubscriptionPlansCard = ({
     if (!res.data?.success) {
       throw new Error(res.data?.message || t('发起支付失败'));
     }
+    if (epay) refreshHolding?.(res.data.data);
     executePaymentCheckout(res.data.data);
     showSuccess(t('已发起支付'));
     closeBuy();
@@ -285,6 +288,7 @@ const SubscriptionPlansCard = ({
       setSelectedEpayMethod(paymentMethod);
       await paySubscriptionWithUnifiedCheckout(paymentMethod);
     } catch (e) {
+      refreshHolding?.();
       showError(e.message || t('发起支付失败'));
       await openBuy(selectedPlan);
     } finally {
@@ -999,7 +1003,7 @@ const SubscriptionPlansCard = ({
         onCancel={closeBuy}
         onAfterClose={handleBuyAfterClose}
         selectedPlan={selectedPlan}
-        providerMeta={selectedProviderMeta}
+        providerMeta={epayBlocked ? { ...selectedProviderMeta, epay_channels: [] } : selectedProviderMeta}
         paying={paying}
         selectedEpayMethod={selectedEpayMethod}
         setSelectedEpayMethod={setSelectedEpayMethod}

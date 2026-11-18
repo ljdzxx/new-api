@@ -75,6 +75,8 @@ const formatSubscriptionEndTime = (endTime) => {
 
 const RechargeCard = ({
   t,
+  epayBlocked,
+  refreshHolding,
   epayChannels = [],
   usdExchangeRate,
   epayPresets = [],
@@ -600,7 +602,8 @@ const RechargeCard = ({
       ) : shouldShowTopupPanel ? (
         <div className='space-y-4'>
           <EpayRechargePanel
-            channels={epayChannels}
+            refreshHolding={refreshHolding}
+            channels={epayBlocked ? [] : epayChannels}
             exchangeRate={usdExchangeRate}
             amountOptions={epayPresets}
           />
@@ -875,6 +878,8 @@ const RechargeCard = ({
                   </span>
                 </div>
                 <SubscriptionPlansCard
+                  epayBlocked={epayBlocked}
+                  refreshHolding={refreshHolding}
                   t={t}
                   loading={subscriptionLoading}
                   plans={subscriptionPlans}

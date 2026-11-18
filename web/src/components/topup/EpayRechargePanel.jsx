@@ -20,6 +20,7 @@ const money = (amount) =>
   });
 
 export default function EpayRechargePanel({
+  refreshHolding,
   channels = [],
   exchangeRate,
   amountOptions = [],
@@ -94,10 +95,12 @@ export default function EpayRechargePanel({
         quote_token: quote.quote_token,
       });
       if (!response.data.success) throw new Error(response.data.message);
+      refreshHolding?.(response.data.data);
       executePaymentCheckout(response.data.data);
       setConfirming(false);
     } catch (error) {
       showError(error.message || translate('发起支付失败'));
+      refreshHolding?.();
       setQuote(null);
       setQuoteError(translate('请重新选择金额获取最新报价'));
       setConfirming(false);

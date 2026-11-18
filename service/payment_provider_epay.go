@@ -126,6 +126,11 @@ func (provider *EpayPaymentProvider) CreateTopupCheckout(request *types.TopupChe
 		EpayInputCNY: quote.InputCNY, EpayPayCNY: quote.PayCNY, EpayCreditUSD: quote.CreditUSD, EpayBonusUSD: quote.BonusUSD,
 		EpayQuoteSnapshot: string(snapshot), BaseQuota: quote.BaseQuota, BonusQuota: quote.BonusQuota, CreditQuota: quote.CreditQuota,
 	}
+	formJSON, err := common.Marshal(types.CheckoutForm{URL: uri, Fields: fields})
+	if err != nil {
+		return nil, err
+	}
+	topup.EpayCheckoutFormJSON = string(formJSON)
 	if err := model.CreateEpayTopupOrder(topup); err != nil {
 		return nil, err
 	}
@@ -184,6 +189,11 @@ func (provider *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.Subs
 		EpayChannelId: revision.ChannelId, EpayChannelRevisionId: revision.Id, EpayChannelName: revision.Name,
 		EpayPayCNY: quote.PayCNY, EpayQuoteSnapshot: string(snapshot),
 	}
+	formJSON, err := common.Marshal(types.CheckoutForm{URL: uri, Fields: fields})
+	if err != nil {
+		return nil, err
+	}
+	order.EpayCheckoutFormJSON = string(formJSON)
 	if err := model.CreateEpaySubscriptionOrder(order); err != nil {
 		return nil, err
 	}

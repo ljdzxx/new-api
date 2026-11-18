@@ -220,13 +220,14 @@ type SubscriptionOrder struct {
 	EpayChannelName       string  `json:"epay_channel_name" gorm:"type:varchar(128)"`
 	EpayPayCNY            string  `json:"epay_pay_cny" gorm:"type:varchar(64)"`
 	EpayPayCents          int64   `json:"-" gorm:"type:bigint;default:0"`
+	EpayCheckoutFormJSON  string  `gorm:"-" json:"-"`
 	EpayQuoteSnapshot     string  `json:"-" gorm:"type:text"`
 
 	TradeNo          string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
 	PaymentMethod    string `json:"payment_method" gorm:"type:varchar(50);index:idx_epay_subscription_daily,priority:2"`
-	PaymentProvider  string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status           string `json:"status"`
-	CreateTime       int64  `json:"create_time" gorm:"index:idx_epay_subscription_daily,priority:3"`
+	PaymentProvider  string `json:"payment_provider" gorm:"type:varchar(50);default:'';index:idx_epay_sub_expiry,priority:1"`
+	Status           string `json:"status" gorm:"index:idx_epay_sub_expiry,priority:2"`
+	CreateTime       int64  `json:"create_time" gorm:"index:idx_epay_subscription_daily,priority:3;index:idx_epay_sub_expiry,priority:3"`
 	CompleteTime     int64  `json:"complete_time"`
 	RefundTime       int64  `json:"refund_time"`
 	RefundOperatorId int    `json:"refund_operator_id" gorm:"type:int;default:0;index"`
@@ -763,7 +764,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status == common.TopUpStatusSuccess {
 			return nil
 		}
-		if order.Status != common.TopUpStatusPending {
+		if order.Status != common.TopUpStatusPending || (order.PaymentProvider == PaymentProviderEpay && epayOrderExpired(order.CreateTime, common.GetTimestamp())) {
 			return ErrSubscriptionOrderStatusInvalid
 		}
 		plan, err := getSubscriptionPlanByIdTx(tx, order.PlanId)

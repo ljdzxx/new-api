@@ -121,3 +121,51 @@ func CreatePaymentSubscriptionCheckout(c *gin.Context) {
 	}
 	common.ApiSuccess(c, result)
 }
+
+func GetPendingEpayOrder(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	order, err := model.CurrentEpayOrder(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, order)
+}
+
+func GetEpayOrderStatus(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var req struct {
+		TradeNo string             `form:"trade_no" binding:"required,max=255"`
+		Scene   types.PaymentScene `form:"scene" binding:"required,oneof=topup subscription"`
+	}
+	if err := c.ShouldBindQuery(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	order, err := model.GetEpayOrderStatus(c.GetInt("id"), req.Scene, req.TradeNo)
+	if err == model.ErrTopUpNotFound {
+		c.JSON(404, gin.H{"success": false})
+		return
+	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, order)
+}
+
+func CancelEpayOrder(c *gin.Context) {
+	var req struct {
+		TradeNo string             `json:"trade_no" binding:"required"`
+		Scene   types.PaymentScene `json:"scene" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ApiErrorMsg(c, "参数错误")
+		return
+	}
+	if err := service.CancelPendingEpayOrder(c.Request.Context(), c.GetInt("id"), req.TradeNo, req.Scene); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
+}

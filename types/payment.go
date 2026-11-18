@@ -131,6 +131,7 @@ type EpayQuote struct {
 	BaseUSD           string       `json:"base_usd"`
 	BonusUSD          string       `json:"bonus_usd"`
 	CreditUSD         string       `json:"credit_usd"`
+	QuotaPerUnit      string       `json:"quota_per_unit,omitempty"`
 	USDExchangeRate   string       `json:"usd_exchange_rate"`
 	OfferType         string       `json:"offer_type"`
 	OfferPercent      string       `json:"offer_percent"`

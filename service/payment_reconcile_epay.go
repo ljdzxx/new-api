@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/shopspring/decimal"
 )
 
 const epayTopUpReconcileBatchSize = 100
@@ -221,8 +222,13 @@ func validateEpayReconcileOrder(topUp *model.TopUp, orderInfo *EpayOrderInfo) er
 	if orderInfo.Pid != revision.MerchantId {
 		return fmt.Errorf("Epay 商户号不一致: query=%s", orderInfo.Pid)
 	}
-	if !EpayMoneyMatches(orderInfo.Money, topUp.Money) {
+	difference, ok := EpayPaymentDifference(revision.QueryAPI, orderInfo.Money, topUp.EpayQuotedMoney())
+	if !ok {
 		return fmt.Errorf("Epay 金额不一致: query=%s local=%.6f", orderInfo.Money, topUp.Money)
+	}
+	// Reconcile the exact amount booked to a wallet after settlement.
+	if topUp.Amount > 0 && (topUp.Status == common.TopUpStatusSuccess || topUp.Status == common.TopUpStatusRefunded) && !decimal.NewFromFloat(topUp.EpayQuotedMoney()).Add(difference).Equal(decimal.NewFromFloat(topUp.Money)) {
+		return errors.New("Epay 实付金额与充值入账记录不一致")
 	}
 	return nil
 }

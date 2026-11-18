@@ -55,7 +55,8 @@ func TestValidateEpayTopUpCallbackChecksRemoteOrder(t *testing.T) {
 		Money:           12.34,
 		EpayChannelId:   1, EpayChannelRevisionId: revision.Id,
 	}
-	require.NoError(t, validateEpayTopUpCallback(context.Background(), verifyInfo, topUp))
+	_, err := validateEpayTopUpCallback(context.Background(), verifyInfo, topUp)
+	require.NoError(t, err)
 }
 
 func TestValidateEpayTopUpCallbackRejectsProviderMismatch(t *testing.T) {
@@ -72,7 +73,8 @@ func TestValidateEpayTopUpCallbackRejectsProviderMismatch(t *testing.T) {
 		PaymentProvider: model.PaymentProviderStripe,
 		Money:           12.34,
 	}
-	require.Error(t, validateEpayTopUpCallback(context.Background(), verifyInfo, topUp))
+	_, err := validateEpayTopUpCallback(context.Background(), verifyInfo, topUp)
+	require.Error(t, err)
 }
 
 func TestValidateEpayCallbackQueryProtocols(test *testing.T) {
@@ -124,7 +126,7 @@ func TestValidateEpayCallbackQueryProtocols(test *testing.T) {
 						"pid": "1001", "type": "alipay", "money": "12.34", "status": 1,
 					}
 					payload[scenario.field] = scenario.value
-					err := validateEpayTopUpCallback(context.Background(), verifyInfo, topup)
+					_, err := validateEpayTopUpCallback(context.Background(), verifyInfo, topup)
 					if scenario.name == "paid" {
 						require.NoError(test, err)
 					} else {

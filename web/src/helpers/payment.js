@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-export function submitPaymentForm({ url, fields }) {
+export function submitPaymentForm({ url, fields }, newWindow = false) {
   if (!url) {
     throw new Error('支付表单地址无效');
   }
@@ -27,7 +27,7 @@ export function submitPaymentForm({ url, fields }) {
   const isSafari =
     navigator.userAgent.indexOf('Safari') > -1 &&
     navigator.userAgent.indexOf('Chrome') < 1;
-  if (!isSafari) {
+  if (newWindow || !isSafari) {
     form.target = '_blank';
   }
   Object.keys(fields || {}).forEach((key) => {
@@ -61,7 +61,7 @@ export function executePaymentCheckout(result) {
       submitPaymentForm({
         url: result.form.url,
         fields: result.form.fields || {},
-      });
+      }, result.provider === 'epay');
       return;
     case 'qr_code':
       if (!result.qr_code_url) {

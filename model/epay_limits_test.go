@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	_ "time/tzdata"
@@ -43,7 +44,7 @@ func TestEpayLocalDayBounds(test *testing.T) {
 
 func createEpayLimitsFixture(test *testing.T) (*EpayChannel, *EpayChannelRevision) {
 	test.Helper()
-	require.NoError(test, DB.AutoMigrate(&TopUp{}, &SubscriptionOrder{}, &EpayChannel{}, &EpayChannelRevision{}))
+	require.NoError(test, DB.AutoMigrate(&EpayCheckoutSlot{}, &TopUp{}, &SubscriptionOrder{}, &EpayChannel{}, &EpayChannelRevision{}))
 	limitsJSON, err := common.Marshal(map[string]types.EpayMethodLimits{
 		"wxpay":  {MinPayCNY: "1", MaxPayCNY: "100", DailyLimitCNY: "100"},
 		"alipay": {MinPayCNY: "10", MaxPayCNY: "200", DailyLimitCNY: "200"},
@@ -64,8 +65,10 @@ func createEpayLimitsFixture(test *testing.T) (*EpayChannel, *EpayChannelRevisio
 	return channel, revision
 }
 
+var epayLimitFixtureUser atomic.Int64
+
 func epayLimitTopup(channel *EpayChannel, revision *EpayChannelRevision, method, amount, suffix string) *TopUp {
-	return &TopUp{TradeNo: fmt.Sprintf("limits-%d-%s", channel.Id, suffix), UserId: 1, Amount: 1,
+	return &TopUp{TradeNo: fmt.Sprintf("limits-%d-%s", channel.Id, suffix), UserId: int(epayLimitFixtureUser.Add(1)) + 100000, Amount: 1,
 		PaymentProvider: PaymentProviderEpay, PaymentMethod: method, Status: common.TopUpStatusPending,
 		EpayChannelId: channel.Id, EpayChannelRevisionId: revision.Id, EpayPayCNY: amount,
 	}
@@ -77,7 +80,7 @@ func TestEpayDailyLimitsShareWalletAndSubscriptions(test *testing.T) {
 	require.NoError(test, CreateEpayTopupOrder(topup))
 	require.EqualValues(test, 6000, topup.EpayPayCents)
 	subscription := &SubscriptionOrder{
-		TradeNo: fmt.Sprintf("limits-%d-subscription", channel.Id), UserId: 1, PlanId: 1,
+		TradeNo: fmt.Sprintf("limits-%d-subscription", channel.Id), UserId: int(epayLimitFixtureUser.Add(1)) + 100000, PlanId: 1,
 		PaymentProvider: PaymentProviderEpay, PaymentMethod: "wxpay", Status: common.TopUpStatusPending,
 		EpayChannelId: channel.Id, EpayChannelRevisionId: revision.Id, EpayPayCNY: "40.00",
 	}
@@ -182,7 +185,7 @@ func TestEpayDailyLimitConcurrentReservations(test *testing.T) {
 				return
 			}
 			results <- CreateEpaySubscriptionOrder(&SubscriptionOrder{
-				TradeNo: fmt.Sprintf("limits-%d-concurrent-subscription-%d", channel.Id, index), UserId: 1, PlanId: 1,
+				TradeNo: fmt.Sprintf("limits-%d-concurrent-subscription-%d", channel.Id, index), UserId: int(epayLimitFixtureUser.Add(1)) + 100000, PlanId: 1,
 				PaymentProvider: PaymentProviderEpay, PaymentMethod: "wxpay", Status: common.TopUpStatusPending,
 				EpayChannelId: channel.Id, EpayChannelRevisionId: revision.Id, EpayPayCNY: "10.00",
 			})
@@ -202,7 +205,8 @@ func TestEpayDailyLimitConcurrentReservations(test *testing.T) {
 	require.EqualValues(test, 10000, used)
 }
 
-func TestEpayDailyLimitConcurrentSQLiteConnections(test *testing.T) {
+func useEpayFileDatabase(test *testing.T) {
+	test.Helper()
 	originalDB := DB
 	database, err := gorm.Open(sqlite.Open(filepath.Join(test.TempDir(), "epay-limits.db")+"?_pragma=busy_timeout(5000)"), &gorm.Config{})
 	require.NoError(test, err)
@@ -215,6 +219,10 @@ func TestEpayDailyLimitConcurrentSQLiteConnections(test *testing.T) {
 		DB = originalDB
 		require.NoError(test, sqlDatabase.Close())
 	})
+}
+
+func TestEpayDailyLimitConcurrentSQLiteConnections(test *testing.T) {
+	useEpayFileDatabase(test)
 	channel, revision := createEpayLimitsFixture(test)
 	var wait sync.WaitGroup
 	results := make(chan error, 20)

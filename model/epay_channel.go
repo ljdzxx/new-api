@@ -3,8 +3,11 @@ package model
 import (
 	"errors"
 	"sort"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/types"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
@@ -164,7 +167,54 @@ func SetEpayChannelEnabled(id int, enabled bool, expectedRevision int) error {
 	})
 }
 
+// addEpayDifference applies the verified PHP gateway surcharge at the original
+// exchange rate, independently of any discount or bonus on the quoted amount.
+func (topup *TopUp) addEpayDifference(difference decimal.Decimal) error {
+	var quote types.EpayQuote
+	if err := common.UnmarshalJsonStr(topup.EpayQuoteSnapshot, &quote); err != nil {
+		return errors.New("易支付报价快照无效")
+	}
+	rate, err := decimal.NewFromString(quote.USDExchangeRate)
+	if err != nil || !rate.IsPositive() {
+		return errors.New("易支付报价汇率无效")
+	}
+	var units decimal.Decimal
+	if quote.QuotaPerUnit == "" {
+		// Older quotes saved the base quota and its USD equivalent.
+		baseUSD, err := decimal.NewFromString(quote.BaseUSD)
+		if err != nil || !baseUSD.IsPositive() {
+			return errors.New("易支付报价基础金额无效")
+		}
+		units = decimal.NewFromInt(int64(topup.BaseQuota)).Div(baseUSD)
+	} else {
+		units, err = decimal.NewFromString(quote.QuotaPerUnit)
+		if err != nil {
+			return errors.New("易支付报价额度单位无效")
+		}
+	}
+	if !units.IsPositive() {
+		return errors.New("易支付报价额度单位无效")
+	}
+	additional, err := common.QuotaFromDecimalStrict(difference.Mul(units).Div(rate))
+	if err != nil || additional < 0 || topup.CreditQuota >= common.MaxQuota-additional {
+		return errors.New("含支付尾差的充值额度超出安全范围")
+	}
+	actual := decimal.NewFromFloat(topup.EpayQuotedMoney()).Add(difference)
+	topup.Money = actual.InexactFloat64()
+	// Conservatively account for any fraction of a cent in daily channel limits.
+	topup.EpayPayCents = actual.Shift(2).Ceil().IntPart()
+	topup.BaseQuota += additional
+	topup.CreditQuota += additional
+	topup.Amount = int64(topup.CreditQuota)
+	topup.EpayCreditUSD = decimal.NewFromInt(topup.Amount).Div(units).String()
+	return nil
+}
+
 func CompleteEpayTopup(tradeNo string) error {
+	return CompleteEpayTopupWithDifference(tradeNo, decimal.Zero)
+}
+
+func CompleteEpayTopupWithDifference(tradeNo string, difference decimal.Decimal) error {
 	var completed TopUp
 	changed := false
 	err := DB.Transaction(func(transaction *gorm.DB) error {
@@ -178,14 +228,30 @@ func CompleteEpayTopup(tradeNo string) error {
 		if topup.Status == common.TopUpStatusSuccess {
 			return nil
 		}
-		if topup.Status != common.TopUpStatusPending {
+		if topup.Status != common.TopUpStatusPending || epayOrderExpired(topup.CreateTime, common.GetTimestamp()) {
 			return ErrTopUpStatusInvalid
 		}
 		if topup.CreditQuota <= 0 || topup.CreditQuota >= common.MaxQuota || topup.BaseQuota <= 0 || topup.BonusQuota < 0 || topup.BaseQuota != topup.CreditQuota-topup.BonusQuota {
 			return errors.New("无效的易支付入账额度")
 		}
+		updates := map[string]interface{}{"status": common.TopUpStatusSuccess, "complete_time": common.GetTimestamp()}
+		if !difference.IsZero() {
+			if difference.IsNegative() || !difference.LessThan(decimal.NewFromInt(1)) || topup.EpayPayCNY == "" || topup.Money <= 0 || topup.EpayQuotedMoney() != topup.Money {
+				return errors.New("易支付尾差无效")
+			}
+			var revision EpayChannelRevision
+			if err := transaction.Where("id = ? AND channel_id = ? AND query_api = ?", topup.EpayChannelRevisionId, topup.EpayChannelId, types.EpayQueryAPIPHP).First(&revision).Error; err != nil {
+				return errors.New("易支付尾差渠道版本无效")
+			}
+			if err := topup.addEpayDifference(difference); err != nil {
+				return err
+			}
+			updates["money"], updates["epay_pay_cents"] = topup.Money, topup.EpayPayCents
+			updates["amount"], updates["epay_credit_usd"] = topup.Amount, topup.EpayCreditUSD
+			updates["base_quota"], updates["credit_quota"] = topup.BaseQuota, topup.CreditQuota
+		}
 		result := transaction.Model(&TopUp{}).Where("id = ? AND status = ?", topup.Id, common.TopUpStatusPending).
-			Updates(map[string]interface{}{"status": common.TopUpStatusSuccess, "complete_time": common.GetTimestamp()})
+			Updates(updates)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -214,7 +280,7 @@ func CompleteEpayTopup(tradeNo string) error {
 	})
 	if err == nil && changed {
 		_ = invalidateUserCache(completed.UserId)
-		RecordLog(completed.UserId, LogTypeTopup, "易支付充值成功，渠道："+completed.EpayChannelName+"，实付 CNY："+completed.EpayPayCNY+"，到账 USD："+completed.EpayCreditUSD+"，赠金 USD："+completed.EpayBonusUSD)
+		RecordLog(completed.UserId, LogTypeTopup, "易支付充值成功，渠道："+completed.EpayChannelName+"，实付 CNY："+strconv.FormatFloat(completed.Money, 'f', -1, 64)+"，到账 USD："+completed.EpayCreditUSD+"，赠金 USD："+completed.EpayBonusUSD)
 	}
 	return err
 }

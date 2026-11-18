@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -107,14 +108,25 @@ func createEpaySettlementFixture(test *testing.T) (*User, *TopUp) {
 	user := createRegisteredUser(test, "epay_settlement")
 	require.NoError(test, DB.Model(user).Update("quota", 100).Error)
 	topup := &TopUp{
-		UserId: user.Id, Amount: 7140000, Money: 100, TradeNo: fmt.Sprintf("epay-settlement-%d", user.Id),
+		CreateTime: common.GetTimestamp(), UserId: user.Id, Amount: 7140000, Money: 100, TradeNo: fmt.Sprintf("epay-settlement-%d", user.Id),
 		PaymentMethod: "wxpay", PaymentProvider: PaymentProviderEpay, Status: common.TopUpStatusPending,
 		EpayChannelId: 1, EpayChannelRevisionId: 1, EpayChannelName: "original channel",
 		EpayInputCNY: "100.00", EpayPayCNY: "100.00", EpayCreditUSD: "14.28", EpayBonusUSD: "0.28",
 		BaseQuota: 7000000, BonusQuota: 140000, CreditQuota: 7140000,
 	}
 	require.NoError(test, topup.Insert())
+	test.Cleanup(func() { DB.Where("user_id = ?", user.Id).Delete(&TopUp{}) })
 	return user, topup
+}
+
+func TestEpayDifferenceCreditsOnlyFaceValueWithLegacyBonusQuote(t *testing.T) {
+	order := TopUp{BaseQuota: 1000000, BonusQuota: 500000, CreditQuota: 1500000,
+		EpayPayCNY: "10", EpayQuoteSnapshot: `{"usd_exchange_rate":"5","base_usd":"2"}`}
+	require.NoError(t, order.addEpayDifference(decimal.RequireFromString("0.37")))
+	require.Equal(t, 1537000, order.CreditQuota)
+	require.Equal(t, 500000, order.BonusQuota)
+	require.Equal(t, "3.074", order.EpayCreditUSD)
+	require.Equal(t, 10.37, order.Money)
 }
 
 func TestCompleteEpayTopupConcurrentAndIdempotent(test *testing.T) {

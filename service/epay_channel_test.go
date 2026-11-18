@@ -233,6 +233,7 @@ func TestEpayCheckoutRechecksSharedDailyCapacityAfterQuote(test *testing.T) {
 	request.QuoteToken = quote.Token
 	_, err = provider.CreateTopupCheckout(request)
 	require.NoError(test, err)
+	require.NoError(test, model.DB.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Update("status", common.TopUpStatusSuccess).Error)
 	request.AmountCNY, request.QuoteToken = "50", walletQuote.Token
 	_, err = provider.CreateTopupCheckout(request)
 	require.ErrorContains(test, err, "今日剩余额度不足")
@@ -249,6 +250,7 @@ func TestEpayCheckoutRechecksSharedDailyCapacityAfterQuote(test *testing.T) {
 	require.NoError(test, err)
 	quote, err = QuoteEpay(channel.Id, "alipay", types.PaymentSceneSubscription, "", plan)
 	require.NoError(test, err)
+	require.NoError(test, model.DB.Model(&model.TopUp{}).Where("user_id = ?", user.Id).Update("status", common.TopUpStatusSuccess).Error)
 	subscriptionRequest.PaymentMethod, subscriptionRequest.QuoteToken = "alipay", quote.Token
 	_, err = provider.CreateSubscriptionCheckout(plan, subscriptionRequest)
 	require.NoError(test, err)
@@ -388,6 +390,18 @@ func TestEpayMoneyMatchesExactly(test *testing.T) {
 	}
 	for _, expected := range []float64{0, -1, math.NaN(), math.Inf(1)} {
 		require.False(test, EpayMoneyMatches("12.34", expected))
+	}
+}
+
+func TestEpayPHPPaymentDifference(t *testing.T) {
+	for _, tc := range []struct{ paid, extra string }{
+		{"12.339999", ""}, {"12.3400", "0"}, {"12.35", "0.01"}, {"13.339999", "0.999999"}, {"13.34", ""}, {"14", ""}, {"1e1", ""}, {"NaN", ""},
+	} {
+		diff, ok := EpayPaymentDifference(types.EpayQueryAPIPHP, tc.paid, 12.34)
+		require.Equal(t, tc.extra != "", ok, tc.paid)
+		if ok {
+			require.Equal(t, tc.extra, diff.String())
+		}
 	}
 }
 

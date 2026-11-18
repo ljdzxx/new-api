@@ -51,12 +51,27 @@ func epayDecimal(value string, maxPlaces int32) (decimal.Decimal, error) {
 	return number, nil
 }
 
-func EpayMoneyMatches(actual string, expected float64) bool {
-	if expected <= 0 || math.IsNaN(expected) || math.IsInf(expected, 0) {
-		return false
+// EpayPaymentDifference compares the exact remote amount to the original quote.
+// PHP gateways may add a fractional yuan to identify the payment.
+func EpayPaymentDifference(queryAPI, actual string, expected float64) (decimal.Decimal, bool) {
+	if expected <= 0 || expected > maxEpayAmountCNY || math.IsNaN(expected) || math.IsInf(expected, 0) {
+		return decimal.Zero, false
 	}
-	amount, err := epayDecimal(actual, 6)
-	return err == nil && amount.IsPositive() && amount.Equal(decimal.NewFromFloat(expected).Round(2))
+	actual = strings.TrimSpace(actual)
+	if len(actual) == 0 || len(actual) > 32 || strings.ContainsAny(actual, "eE") {
+		return decimal.Zero, false
+	}
+	amount, err := decimal.NewFromString(actual)
+	if err != nil || !amount.IsPositive() || amount.Exponent() < -6 {
+		return decimal.Zero, false
+	}
+	diff := amount.Sub(decimal.NewFromFloat(expected).Round(2))
+	return diff, diff.IsZero() || (queryAPI == types.EpayQueryAPIPHP && diff.IsPositive() && diff.LessThan(decimal.NewFromInt(1)))
+}
+
+func EpayMoneyMatches(actual string, expected float64) bool {
+	_, ok := EpayPaymentDifference(types.EpayQueryAPISigned, actual, expected)
+	return ok
 }
 
 func validateEpayURL(value string, optional bool) error {
@@ -321,6 +336,7 @@ func CalculateEpayQuote(revision *model.EpayChannelRevision, method string, scen
 			return nil, fmt.Errorf("余额优惠配置无效")
 		}
 		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		quote.QuotaPerUnit = quotaPerUnit.String()
 		quote.BaseQuota, err = common.QuotaFromDecimalStrict(input.Mul(quotaPerUnit).Div(rate))
 		if err != nil || quote.BaseQuota <= 0 {
 			return nil, fmt.Errorf("充值额度超出安全范围")

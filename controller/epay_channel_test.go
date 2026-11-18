@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -108,7 +109,7 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	require.NoError(test, err)
 	sqlDatabase.SetMaxOpenConns(1)
 	require.NoError(test, database.AutoMigrate(
-		&model.User{}, &model.Log{}, &model.TopUp{}, &model.EpayChannel{}, &model.EpayChannelRevision{},
+		&model.User{}, &model.Log{}, &model.EpayCheckoutSlot{}, &model.TopUp{}, &model.EpayChannel{}, &model.EpayChannelRevision{},
 		&model.SubscriptionPlan{}, &model.SubscriptionOrder{}, &model.UserSubscription{}, &model.UserSubscriptionDailyStat{},
 	))
 	require.NoError(test, setting.UpdateUserLevelPoliciesByJSONString(`[]`))
@@ -119,6 +120,7 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	require.NoError(test, database.Create(&plan).Error)
 	orders := make(map[string]map[string]string)
 	remoteOrders := make(map[string]map[string]string)
+	remoteStatus := "1"
 	queryCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		queryCount++
@@ -129,8 +131,12 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 			code = 1
 			require.Equal(test, "/xpay/epay/api.php", request.URL.Path)
 			require.Equal(test, "order", request.Form.Get("act"))
-			require.False(test, request.Form.Has("out_trade_no"))
-			order = remoteOrders[request.Form.Get("trade_no")]
+			if remoteTrade := request.Form.Get("trade_no"); remoteTrade != "" {
+				require.False(test, request.Form.Has("out_trade_no"))
+				order = remoteOrders[remoteTrade]
+			} else {
+				order = orders[request.Form.Get("out_trade_no")]
+			}
 			require.NotNil(test, order)
 			require.Equal(test, "merchant-key-"+order["pid"], request.Form.Get("key"))
 		} else {
@@ -143,8 +149,8 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		require.NotNil(test, order)
 		merchant := order["pid"]
 		require.Equal(test, merchant, request.Form.Get("pid"))
-		_, _ = fmt.Fprintf(writer, `{"code":%d,"trade_no":"remote-%s","out_trade_no":%q,"pid":%q,"type":%q,"money":%q,"status":"1"}`,
-			code, merchant, order["out_trade_no"], merchant, order["type"], order["money"])
+		_, _ = fmt.Fprintf(writer, `{"code":%d,"trade_no":"remote-%s","out_trade_no":%q,"pid":%q,"type":%q,"money":%q,"status":%q}`,
+			code, merchant, order["out_trade_no"], merchant, order["type"], order["money"], remoteStatus)
 	}))
 	defer server.Close()
 	channels := make([]model.EpayChannel, 0, 2)
@@ -199,6 +205,31 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		return recorder.Body.String()
 	}
 	provider := service.EpayPaymentProvider{}
+	readStatus := func(userID int, scene types.PaymentScene, trade, expected string) {
+		test.Helper()
+		r := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(r)
+		c.Set("id", userID)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/payment/epay/order?scene="+string(scene)+"&trade_no="+url.QueryEscape(trade), nil)
+		GetEpayOrderStatus(c)
+		require.Equal(test, "no-store", r.Header().Get("Cache-Control"))
+		if expected == "" {
+			require.Equal(test, http.StatusNotFound, r.Code)
+			return
+		}
+		var resp struct {
+			Success bool
+			Data    model.EpayPendingOrder
+		}
+		require.NoError(test, common.Unmarshal(r.Body.Bytes(), &resp))
+		require.True(test, resp.Success)
+		require.Equal(test, trade, resp.Data.TradeNo)
+		require.Equal(test, scene, resp.Data.Scene)
+		require.Equal(test, expected, resp.Data.Status)
+		if expected != common.TopUpStatusPending {
+			require.Nil(test, resp.Data.Form)
+		}
+	}
 	for channelIndex, channel := range channels {
 		quote, err := service.QuoteEpay(channel.Id, "wxpay", types.PaymentSceneTopup, "100", nil)
 		require.NoError(test, err)
@@ -207,6 +238,8 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		})
 		require.NoError(test, err)
 		fields := checkout.Form.Fields
+		readStatus(user.Id, types.PaymentSceneTopup, fields["out_trade_no"], common.TopUpStatusPending)
+		readStatus(user.Id+1, types.PaymentSceneTopup, fields["out_trade_no"], "")
 		orders[fields["out_trade_no"]] = fields
 		remoteOrders["remote-"+fields["pid"]] = fields
 		merchantKey := inputs[channelIndex].MerchantKey
@@ -232,18 +265,22 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 			input.TopupOfferPercent = "95"
 		}
 		require.NoError(test, service.SaveEpayChannel(channel.Id, &input))
+		if inputs[channelIndex].QueryAPI == types.EpayQueryAPIPHP {
+			fields["money"] = "98.37"
+		}
 		operation_setting.USDExchangeRate = 10
 		require.Equal(test, "success", invokeCallback(fields, merchantKey, "topup", false))
 		require.Equal(test, "success", invokeCallback(fields, merchantKey, "topup", false))
 		queryCount = 0
+		readStatus(user.Id, types.PaymentSceneTopup, fields["out_trade_no"], common.TopUpStatusSuccess)
 		operation_setting.USDExchangeRate = 5
 	}
 	var reloaded model.User
 	require.NoError(test, database.First(&reloaded, user.Id).Error)
-	require.Equal(test, 20200000, reloaded.Quota)
+	require.Equal(test, 20237000, reloaded.Quota)
 	total, err := model.GetUserTotalRechargeAmount(user.Id)
 	require.NoError(test, err)
-	require.Equal(test, float64(198), total)
+	require.Equal(test, 198.37, total)
 	for channelIndex, channel := range channels {
 		input := inputs[channelIndex]
 		var current model.EpayChannel
@@ -261,20 +298,56 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		require.Equal(test, "https://callback.example.com/api/subscription/epay/notify", checkout.Form.Fields["notify_url"])
 		orders[checkout.Form.Fields["out_trade_no"]] = checkout.Form.Fields
 		remoteOrders["remote-"+checkout.Form.Fields["pid"]] = checkout.Form.Fields
+		if input.QueryAPI == types.EpayQueryAPIPHP {
+			checkout.Form.Fields["money"] = "66.69"
+		}
 		operation_setting.USDExchangeRate = 100
 		require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
 		require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
 		var audit model.TopUp
+		readStatus(user.Id, types.PaymentSceneSubscription, checkout.Form.Fields["out_trade_no"], common.TopUpStatusSuccess)
+		readStatus(user.Id, types.PaymentSceneTopup, checkout.Form.Fields["out_trade_no"], "")
 		require.NoError(test, database.Where("trade_no = ?", checkout.Form.Fields["out_trade_no"]).First(&audit).Error)
 		require.EqualValues(test, 0, audit.Amount)
 		require.Equal(test, "65.70", audit.EpayPayCNY)
+	}
+	// Use real checkout, cancel and callback handlers with the local gateway.
+	for _, scene := range []types.PaymentScene{types.PaymentSceneTopup, types.PaymentSceneSubscription} {
+		operation_setting.USDExchangeRate = 7.3
+		channel := channels[1]
+		q, err := service.QuoteEpay(channel.Id, "alipay", scene, "100", &plan)
+		require.NoError(test, err)
+		var result *types.CheckoutResult
+		if scene == types.PaymentSceneTopup {
+			result, err = provider.CreateTopupCheckout(&types.TopupCheckoutRequest{UserID: user.Id, EpayChannelID: channel.Id, PaymentMethod: "alipay", AmountCNY: "100", QuoteToken: q.Token})
+		} else {
+			result, err = provider.CreateSubscriptionCheckout(&plan, &types.SubscriptionCheckoutRequest{UserID: user.Id, PlanID: plan.Id, EpayChannelID: channel.Id, PaymentMethod: "alipay", QuoteToken: q.Token})
+		}
+		require.NoError(test, err)
+		fields := result.Form.Fields
+		trade := fields["out_trade_no"]
+		if scene == types.PaymentSceneTopup {
+			fields["money"] = "98.01"
+		} else {
+			fields["money"] = "66.02"
+		}
+		orders[trade], remoteOrders["remote-"+fields["pid"]] = fields, fields
+		require.ErrorContains(test, service.CancelPendingEpayOrder(context.Background(), user.Id, trade, scene), "平台已确认付款")
+		remoteStatus = "0"
+		require.NoError(test, service.CancelPendingEpayOrder(context.Background(), user.Id, trade, scene))
+		remoteStatus = "1"
+		require.Equal(test, "fail", invokeCallback(fields, inputs[1].MerchantKey, string(scene), false))
+		readStatus(user.Id, scene, trade, common.TopUpStatusCancelled)
+		if scene == types.PaymentSceneTopup {
+			require.Error(test, model.ManualCompleteTopUp(trade))
+		}
 	}
 	var subscriptionCount int64
 	require.NoError(test, database.Model(&model.UserSubscription{}).Where("user_id = ?", user.Id).Count(&subscriptionCount).Error)
 	require.EqualValues(test, 2, subscriptionCount)
 	require.NoError(test, database.First(&reloaded, user.Id).Error)
-	require.Equal(test, 20200000, reloaded.Quota)
+	require.Equal(test, 20237000, reloaded.Quota)
 	total, err = model.GetUserTotalRechargeAmount(user.Id)
 	require.NoError(test, err)
-	require.Equal(test, float64(198), total)
+	require.Equal(test, 198.37, total)
 }

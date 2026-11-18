@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,15 @@ func TestEpayReconcileQueryProtocols(test *testing.T) {
 			info, err := QueryEpayOrder(context.Background(), &revision, topup.TradeNo, "")
 			require.NoError(test, err)
 			require.NoError(test, validateEpayReconcileOrder(topup, info))
+			if queryAPI == types.EpayQueryAPIPHP {
+				booked := *topup
+				booked.EpayPayCNY, booked.Amount, booked.Status, booked.Money = "12.30", 100, common.TopUpStatusSuccess, 12.67
+				paid := *info
+				paid.Money = "12.6700"
+				require.NoError(test, validateEpayReconcileOrder(&booked, &paid))
+				paid.Money = "12.68"
+				require.Error(test, validateEpayReconcileOrder(&booked, &paid))
+			}
 			for _, scenario := range []struct {
 				name   string
 				change func(*EpayOrderInfo)
@@ -81,7 +91,7 @@ func TestEpayReconcileQueryProtocols(test *testing.T) {
 				{"wrong order", func(info *EpayOrderInfo) { info.OutTradeNo = "other-order" }},
 				{"wrong merchant", func(info *EpayOrderInfo) { info.Pid = "other-merchant" }},
 				{"wrong method", func(info *EpayOrderInfo) { info.Type = "alipay" }},
-				{"wrong amount", func(info *EpayOrderInfo) { info.Money = "12.31" }},
+				{"wrong amount", func(info *EpayOrderInfo) { info.Money = "13.30" }},
 				{"missing platform order", func(info *EpayOrderInfo) { info.TradeNo = "" }},
 			} {
 				test.Run(scenario.name, func(test *testing.T) {

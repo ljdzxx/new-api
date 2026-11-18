@@ -16,6 +16,11 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(middleware.RouteTag("api"))
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
+	// The holding page polls these authenticated reads throughout checkout.
+	// Register them before the shared per-IP API budget.
+	epayPolling := apiRouter.Group("/payment/epay", middleware.UserAuth())
+	epayPolling.GET("/pending", controller.GetPendingEpayOrder)
+	epayPolling.GET("/order", controller.GetEpayOrderStatus)
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
 	{
 		apiRouter.GET("/setup", controller.GetSetup)
@@ -200,6 +205,7 @@ func SetApiRouter(router *gin.Engine) {
 		paymentRoute.Use(middleware.UserAuth())
 		{
 			paymentRoute.GET("/topup/meta", controller.GetPaymentTopupMeta)
+			paymentRoute.POST("/epay/cancel", middleware.CriticalRateLimit(), controller.CancelEpayOrder)
 			paymentRoute.POST("/epay/quote", controller.GetEpayQuote)
 			paymentRoute.POST("/topup/checkout", middleware.CriticalRateLimit(), controller.CreatePaymentTopupCheckout)
 			paymentRoute.GET("/subscription/meta", controller.GetPaymentSubscriptionMeta)

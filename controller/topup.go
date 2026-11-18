@@ -87,13 +87,14 @@ func EpayNotify(context *gin.Context) {
 		_, _ = context.Writer.Write([]byte("fail"))
 		return
 	}
-	if err := validateEpayTopUpCallback(context.Request.Context(), verified, topup); err != nil {
+	difference, err := validateEpayTopUpCallback(context.Request.Context(), verified, topup)
+	if err != nil {
 		log.Printf("易支付回调校验失败 order=%s err=%v", topup.TradeNo, err)
 		_, _ = context.Writer.Write([]byte("fail"))
 		return
 	}
-	if err := model.CompleteEpayTopup(topup.TradeNo); err != nil {
-		log.Printf("易支付入账失败 order=%s err=%v", topup.TradeNo, err)
+	if err := model.CompleteEpayTopupWithDifference(topup.TradeNo, difference); err != nil {
+		log.Printf("易支付充值已核实支付通知，入账失败，请核对 order=%s err=%v", topup.TradeNo, err)
 		_, _ = context.Writer.Write([]byte("fail"))
 		return
 	}

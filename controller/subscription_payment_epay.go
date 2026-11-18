@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/Calcium-Ion/go-epay/epay"
@@ -66,7 +67,11 @@ func completeEpaySubscriptionCallback(context *gin.Context) error {
 	if err := validateEpaySubscriptionCallback(context.Request.Context(), verified, order); err != nil {
 		return err
 	}
-	return model.CompleteSubscriptionOrder(order.TradeNo, common.GetJsonString(verified), model.PaymentProviderEpay, verified.Type)
+	err = model.CompleteSubscriptionOrder(order.TradeNo, common.GetJsonString(verified), model.PaymentProviderEpay, verified.Type)
+	if err != nil {
+		log.Printf("易支付订阅已核实支付通知，发放失败，请核对 order=%s err=%v", order.TradeNo, err)
+	}
+	return err
 }
 
 func SubscriptionEpayNotify(context *gin.Context) {

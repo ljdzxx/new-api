@@ -137,7 +137,7 @@ func setupPaymentChannelDB(test *testing.T) {
 	originalDB := model.DB
 	test.Cleanup(func() { model.DB = originalDB })
 	database := setupTokenControllerTestDB(test)
-	if err := database.AutoMigrate(&model.EpayChannel{}, &model.EpayChannelRevision{}); err != nil {
+	if err := database.AutoMigrate(&model.EpayCheckoutSlot{}, &model.EpayChannel{}, &model.EpayChannelRevision{}); err != nil {
 		test.Fatal(err)
 	}
 }
