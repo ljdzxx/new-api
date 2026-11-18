@@ -2,7 +2,6 @@ package controller
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"maps"
 	"net/http"
@@ -121,7 +120,6 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	require.NoError(test, database.Create(&plan).Error)
 	orders := make(map[string]map[string]string)
 	remoteOrders := make(map[string]map[string]string)
-	remoteStatus := "1"
 	queryCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		queryCount++
@@ -150,8 +148,8 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		require.NotNil(test, order)
 		merchant := order["pid"]
 		require.Equal(test, merchant, request.Form.Get("pid"))
-		_, _ = fmt.Fprintf(writer, `{"code":%d,"trade_no":"remote-%s","out_trade_no":%q,"pid":%q,"type":%q,"money":%q,"status":%q}`,
-			code, merchant, order["out_trade_no"], merchant, order["type"], order["money"], remoteStatus)
+		_, _ = fmt.Fprintf(writer, `{"code":%d,"trade_no":"remote-%s","out_trade_no":%q,"pid":%q,"type":%q,"money":%q,"status":"1"}`,
+			code, merchant, order["out_trade_no"], merchant, order["type"], order["money"])
 	}))
 	defer server.Close()
 	channels := make([]model.EpayChannel, 0, 2)
@@ -174,6 +172,9 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 				"wxpay":  {MinPayCNY: "1", MaxPayCNY: "5000", DailyLimitCNY: "0"},
 				"alipay": {MinPayCNY: "1", MaxPayCNY: "5000", DailyLimitCNY: "0"},
 			},
+		}
+		if offerType == "discount" {
+			input.ProductNameTemplate = "储值卡：{amount}"
 		}
 		require.NoError(test, service.SaveEpayChannel(0, &input))
 		var channel model.EpayChannel
@@ -239,6 +240,7 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		})
 		require.NoError(test, err)
 		fields := checkout.Form.Fields
+		require.Equal(test, []string{"TUC100", "储值卡：98"}[channelIndex], fields["name"])
 		readStatus(user.Id, types.PaymentSceneTopup, fields["out_trade_no"], common.TopUpStatusPending)
 		readStatus(user.Id+1, types.PaymentSceneTopup, fields["out_trade_no"], "")
 		orders[fields["out_trade_no"]] = fields
@@ -298,6 +300,7 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		})
 		require.NoError(test, err)
 		require.Equal(test, "65.70", checkout.Form.Fields["money"])
+		require.Equal(test, []string{"SUB:" + plan.Title, "储值卡：65.7"}[channelIndex], checkout.Form.Fields["name"])
 		require.Equal(test, "https://callback.example.com/api/subscription/epay/notify", checkout.Form.Fields["notify_url"])
 		orders[checkout.Form.Fields["out_trade_no"]] = checkout.Form.Fields
 		remoteOrders["remote-"+checkout.Form.Fields["pid"]] = checkout.Form.Fields
@@ -337,10 +340,18 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 			fields["money"] = "66.02"
 		}
 		orders[trade], remoteOrders["remote-"+fields["pid"]] = fields, fields
-		require.ErrorContains(test, service.CancelPendingEpayOrder(context.Background(), user.Id, trade, scene), "平台已确认付款")
-		remoteStatus = "0"
-		require.NoError(test, service.CancelPendingEpayOrder(context.Background(), user.Id, trade, scene))
-		remoteStatus = "1"
+		queriesBeforeCancel := queryCount
+		body, err := common.Marshal(gin.H{"trade_no": trade, "scene": scene})
+		require.NoError(test, err)
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Set("id", user.Id)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/payment/epay/cancel", bytes.NewReader(body))
+		CancelEpayOrder(c)
+		var response struct{ Success bool }
+		require.NoError(test, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(test, response.Success)
+		require.Equal(test, queriesBeforeCancel, queryCount)
 		require.Equal(test, "fail", invokeCallback(fields, inputs[1].MerchantKey, string(scene), false))
 		readStatus(user.Id, scene, trade, common.TopUpStatusCancelled)
 		if scene == types.PaymentSceneTopup {

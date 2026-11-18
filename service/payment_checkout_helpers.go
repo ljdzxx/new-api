@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/QuantumNous/new-api/types"
+	"github.com/shopspring/decimal"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	"github.com/thanhpk/randstr"
@@ -328,24 +328,16 @@ func buildMallTopupLink(amount int64) (string, error) {
 	return link, nil
 }
 
-func buildTopupPurchaseArgs(paymentMethod, tradeNo string, amount string, payMoney float64, notifyURL, returnURL *url.URL) *epay.PurchaseArgs {
-	return &epay.PurchaseArgs{
-		Type:           paymentMethod,
-		ServiceTradeNo: tradeNo,
-		Name:           "TUC" + amount,
-		Money:          strconv.FormatFloat(payMoney, 'f', 2, 64),
-		Device:         epay.PC,
-		NotifyUrl:      notifyURL,
-		ReturnUrl:      returnURL,
+func buildEpayPurchaseArgs(paymentMethod, tradeNo, nameTemplate, defaultName string, payMoney decimal.Decimal, notifyURL, returnURL *url.URL) *epay.PurchaseArgs {
+	name := defaultName
+	if nameTemplate != "" {
+		name = strings.ReplaceAll(nameTemplate, "{amount}", payMoney.String())
 	}
-}
-
-func buildSubscriptionPurchaseArgs(paymentMethod, tradeNo, title string, price float64, notifyURL, returnURL *url.URL) *epay.PurchaseArgs {
 	return &epay.PurchaseArgs{
 		Type:           paymentMethod,
 		ServiceTradeNo: tradeNo,
-		Name:           fmt.Sprintf("SUB:%s", title),
-		Money:          strconv.FormatFloat(price, 'f', 2, 64),
+		Name:           name,
+		Money:          payMoney.StringFixed(2),
 		Device:         epay.PC,
 		NotifyUrl:      notifyURL,
 		ReturnUrl:      returnURL,

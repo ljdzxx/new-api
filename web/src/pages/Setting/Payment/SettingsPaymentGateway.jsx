@@ -54,6 +54,7 @@ const channelEditorValues = (channel) => ({
 const emptyChannel = {
   name: '',
   description: '',
+  product_name_template: '',
   enabled: false,
   pay_address: '',
   query_api: 'api_pay_query',
@@ -452,6 +453,14 @@ export default function SettingsPaymentGateway({ options, refresh }) {
               field='description'
               label={translate('渠道说明')}
               autosize
+            />
+            <Form.Input
+              field='product_name_template'
+              label={translate('商品名称模板')}
+              maxLength={128}
+              extraText={translate(
+                '传给易支付的商品名称，例如“储值卡：{amount}”。{amount} 会替换为订单实付金额，留空使用默认名称。',
+              )}
             />
             <Form.Input
               field='pay_address'

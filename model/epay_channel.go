@@ -22,6 +22,7 @@ type EpayChannel struct {
 
 type EpayChannelConfig struct {
 	Name                          string `json:"name" gorm:"type:varchar(128)"`
+	ProductNameTemplate           string `json:"product_name_template" gorm:"type:varchar(128)"`
 	Description                   string `json:"description" gorm:"type:text"`
 	PayAddress                    string `json:"pay_address" gorm:"type:varchar(2048)"`
 	QueryAPI                      string `json:"query_api" gorm:"type:varchar(32);default:'api_pay_query'"`

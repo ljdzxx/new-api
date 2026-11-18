@@ -163,7 +163,7 @@ func CancelEpayOrder(c *gin.Context) {
 		common.ApiErrorMsg(c, "参数错误")
 		return
 	}
-	if err := service.CancelPendingEpayOrder(c.Request.Context(), c.GetInt("id"), req.TradeNo, req.Scene); err != nil {
+	if err := model.CancelEpayOrder(c.GetInt("id"), req.TradeNo, req.Scene); err != nil {
 		common.ApiError(c, err)
 		return
 	}

@@ -110,7 +110,7 @@ func (provider *EpayPaymentProvider) CreateTopupCheckout(request *types.TopupChe
 	}
 	tradeNo := buildTopupTradeNo(request.UserID)
 	payMoney, _ := epayDecimal(quote.PayCNY, 2)
-	uri, fields, err := client.Purchase(buildTopupPurchaseArgs(request.PaymentMethod, tradeNo, request.AmountCNY, payMoney.InexactFloat64(), notifyURL, returnURL))
+	uri, fields, err := client.Purchase(buildEpayPurchaseArgs(request.PaymentMethod, tradeNo, revision.ProductNameTemplate, "TUC"+request.AmountCNY, payMoney, notifyURL, returnURL))
 	if err != nil {
 		return nil, fmt.Errorf("拉起支付失败")
 	}
@@ -175,7 +175,7 @@ func (provider *EpayPaymentProvider) CreateSubscriptionCheckout(plan *model.Subs
 	}
 	tradeNo := buildSubscriptionEpayTradeNo(request.UserID)
 	payMoney, _ := epayDecimal(quote.PayCNY, 2)
-	uri, fields, err := client.Purchase(buildSubscriptionPurchaseArgs(request.PaymentMethod, tradeNo, plan.Title, payMoney.InexactFloat64(), notifyURL, returnURL))
+	uri, fields, err := client.Purchase(buildEpayPurchaseArgs(request.PaymentMethod, tradeNo, revision.ProductNameTemplate, "SUB:"+plan.Title, payMoney, notifyURL, returnURL))
 	if err != nil {
 		return nil, fmt.Errorf("拉起支付失败")
 	}

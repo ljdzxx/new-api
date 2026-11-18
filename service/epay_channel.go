@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/common"
@@ -87,6 +88,10 @@ func validateEpayURL(value string, optional bool) error {
 
 func SaveEpayChannel(id int, input *EpayChannelInput) error {
 	input.Name = strings.TrimSpace(input.Name)
+	input.ProductNameTemplate = strings.TrimSpace(input.ProductNameTemplate)
+	if utf8.RuneCountInString(input.ProductNameTemplate) > 128 {
+		return fmt.Errorf("商品名称模板最多支持 128 个字符")
+	}
 	input.PayAddress = strings.TrimRight(strings.TrimSpace(input.PayAddress), "/")
 	input.CallbackAddress = strings.TrimRight(strings.TrimSpace(input.CallbackAddress), "/")
 	input.MerchantId = strings.TrimSpace(input.MerchantId)
