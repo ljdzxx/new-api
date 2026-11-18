@@ -62,8 +62,7 @@ func validateEpayCallbackBase(ctx context.Context, revision *model.EpayChannelRe
 	if paymentMethod != verifyInfo.Type {
 		return decimal.Zero, fmt.Errorf("payment method mismatch: order=%s callback=%s", paymentMethod, verifyInfo.Type)
 	}
-	callbackDiff, ok := service.EpayPaymentDifference(revision.QueryAPI, verifyInfo.Money, expectedMoney)
-	if !ok {
+	if _, ok := service.EpayPaymentDifference(revision.QueryAPI, verifyInfo.Money, expectedMoney); !ok {
 		return decimal.Zero, fmt.Errorf("payment money mismatch: order=%.6f callback=%s", expectedMoney, verifyInfo.Money)
 	}
 
@@ -89,8 +88,9 @@ func validateEpayCallbackBase(ctx context.Context, revision *model.EpayChannelRe
 	if orderInfo.Pid != revision.MerchantId {
 		return decimal.Zero, fmt.Errorf("epay pid mismatch: query=%s", orderInfo.Pid)
 	}
+	// PHP notifications may quote the original price. Settle the surcharge from the verified order query.
 	queryDiff, ok := service.EpayPaymentDifference(revision.QueryAPI, orderInfo.Money, expectedMoney)
-	if !ok || !queryDiff.Equal(callbackDiff) {
+	if !ok {
 		return decimal.Zero, fmt.Errorf("epay query money mismatch: query=%s callback=%s order=%.6f", orderInfo.Money, verifyInfo.Money, expectedMoney)
 	}
 	return queryDiff, nil

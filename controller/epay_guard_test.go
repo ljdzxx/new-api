@@ -118,7 +118,9 @@ func TestValidateEpayCallbackQueryProtocols(test *testing.T) {
 				{"wrong merchant order", "out_trade_no", "other-order"},
 				{"wrong merchant", "pid", "other-merchant"},
 				{"wrong method", "type", "wxpay"},
-				{"wrong amount", "money", "12.35"},
+				{"underpaid", "money", "12.33"},
+				{"upper bound excluded", "money", "13.34"},
+				{"one cent surcharge", "money", "12.35"},
 			} {
 				test.Run(scenario.name, func(test *testing.T) {
 					payload = map[string]any{
@@ -127,7 +129,7 @@ func TestValidateEpayCallbackQueryProtocols(test *testing.T) {
 					}
 					payload[scenario.field] = scenario.value
 					_, err := validateEpayTopUpCallback(context.Background(), verifyInfo, topup)
-					if scenario.name == "paid" {
+					if scenario.name == "paid" || (scenario.name == "one cent surcharge" && queryAPI == types.EpayQueryAPIPHP) {
 						require.NoError(test, err)
 					} else {
 						require.Error(test, err)

@@ -218,5 +218,10 @@ C:\Users\ray\AppData\Local\Temp\new-api-production-responses-probe\sse-channel31
 - 本地 `MarkTopUpRefunded` 的余额订单分支要求订单此前为成功状态，记录退款并重算累计充值和等级。可用额度需另查余额变动记录，单独执行标记退款不会扣回该笔额度。
 
 
+## 2026-11-18：微信充值通知金额与主动查单金额不同
+
+- 北京时间 20:52:10，生产 new-api master（13000）收到充值单 `USR1NOTTQS5O1795006279` 的 `wxpay` 成功通知。目标订单日志记录 `epay query money mismatch: query=1.08 callback=1 order=1.000000`。
+- 本地 `controller/epay_guard.go` 要求主动查单和通知算出的差额一致。该笔分别为 0.08 元和 0 元，处理函数在调用充值入账前返回 `fail`。诊断依据为生产容器日志和本地代码，账务终态未通过数据库核验。
+
 本文含内部地址和运维路径，未经要求不公开发布。实际 API Key、SSH 私钥、生产 .env 及未筛选完整日志不写入本文或 Git。
 

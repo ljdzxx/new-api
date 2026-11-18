@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -266,7 +267,9 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		}
 		require.NoError(test, service.SaveEpayChannel(channel.Id, &input))
 		if inputs[channelIndex].QueryAPI == types.EpayQueryAPIPHP {
-			fields["money"] = "98.37"
+			remote := maps.Clone(fields)
+			remote["money"] = "98.37"
+			remoteOrders["remote-"+fields["pid"]] = remote
 		}
 		operation_setting.USDExchangeRate = 10
 		require.Equal(test, "success", invokeCallback(fields, merchantKey, "topup", false))
@@ -299,7 +302,9 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 		orders[checkout.Form.Fields["out_trade_no"]] = checkout.Form.Fields
 		remoteOrders["remote-"+checkout.Form.Fields["pid"]] = checkout.Form.Fields
 		if input.QueryAPI == types.EpayQueryAPIPHP {
-			checkout.Form.Fields["money"] = "66.69"
+			remote := maps.Clone(checkout.Form.Fields)
+			remote["money"] = "66.69"
+			remoteOrders["remote-"+remote["pid"]] = remote
 		}
 		operation_setting.USDExchangeRate = 100
 		require.Equal(test, "success", invokeCallback(checkout.Form.Fields, input.MerchantKey, "subscription", false))
@@ -350,4 +355,31 @@ func TestEpayMultiChannelCheckoutAndCallbacks(test *testing.T) {
 	total, err = model.GetUserTotalRechargeAmount(user.Id)
 	require.NoError(test, err)
 	require.Equal(test, 198.37, total)
+
+	test.Run("one yuan wxpay notification with eight cent query surcharge", func(test *testing.T) {
+		operation_setting.USDExchangeRate = 5
+		channel := channels[1]
+		quote, err := service.QuoteEpay(channel.Id, "wxpay", types.PaymentSceneTopup, "1", nil)
+		require.NoError(test, err)
+		checkout, err := provider.CreateTopupCheckout(&types.TopupCheckoutRequest{
+			UserID: user.Id, EpayChannelID: channel.Id, PaymentMethod: "wxpay", AmountCNY: "1", QuoteToken: quote.Token,
+		})
+		require.NoError(test, err)
+		fields := checkout.Form.Fields
+		require.Equal(test, "1.00", fields["money"])
+		remote := maps.Clone(fields)
+		remote["money"] = "1.08"
+		remoteOrders["remote-"+remote["pid"]] = remote
+		fields["money"] = "1"
+		before := reloaded.Quota
+		for i := 0; i < 2; i++ {
+			require.Equal(test, "success", invokeCallback(fields, inputs[1].MerchantKey, "topup", false))
+		}
+		readStatus(user.Id, types.PaymentSceneTopup, fields["out_trade_no"], common.TopUpStatusSuccess)
+		require.NoError(test, database.First(&reloaded, user.Id).Error)
+		require.Equal(test, 108000, reloaded.Quota-before)
+		var receipt model.TopUp
+		require.NoError(test, database.Where("trade_no = ?", fields["out_trade_no"]).First(&receipt).Error)
+		require.Equal(test, 1.08, receipt.Money)
+	})
 }
