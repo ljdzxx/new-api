@@ -324,3 +324,19 @@ func TestOaiResponsesStreamHandlerPreservesInputTokenDetailsForBilling(t *testin
 	require.NotNil(t, usage.BillingUsage)
 	require.Equal(t, 70, usage.BillingUsage.OpenAIUsage.InputTokensDetails.CachedTokens)
 }
+
+func TestResponsesSSEToolCallIDOnWire(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	item := `{"type":"function_call","id":"fc_item","call_id":"call_original","name":"run","arguments":"{}"}`
+	var body strings.Builder
+	for _, event := range []string{`{"type":"response.output_item.added","item":` + item + `}`, `{"type":"response.output_item.done","item":` + item + `}`, `{"type":"response.completed","response":{"output":[` + item + `],"usage":{"input_tokens":8,"output_tokens":2}}}`} {
+		body.WriteString("data: " + event + "\n\n")
+	}
+	resp := &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body.String()))}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelSetting: dto.ChannelSettings{PassThroughBodyEnabled: true}}, PriceData: types.PriceData{GlobalModelRatio: 2}}
+	_, apiErr := OaiResponsesStreamHandler(ctx, info, resp)
+	require.Nil(t, apiErr)
+	require.Equal(t, 3, strings.Count(recorder.Body.String(), `"call_id":"call_original"`))
+}

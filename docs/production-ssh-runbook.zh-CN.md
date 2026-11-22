@@ -223,5 +223,18 @@ C:\Users\ray\AppData\Local\Temp\new-api-production-responses-probe\sse-channel31
 - 北京时间 20:52:10，生产 new-api master（13000）收到充值单 `USR1NOTTQS5O1795006279` 的 `wxpay` 成功通知。目标订单日志记录 `epay query money mismatch: query=1.08 callback=1 order=1.000000`。
 - 本地 `controller/epay_guard.go` 要求主动查单和通知算出的差额一致。该笔分别为 0.08 元和 0 元，处理函数在调用充值入账前返回 `fail`。诊断依据为生产容器日志和本地代码，账务终态未通过数据库核验。
 
+## 2026-11-22：渠道 350 的 HTTP Responses 工具结果校验失败
+
+- 北京时间 20:18:19，`new-api-master`（13000）记录请求 `20261122121818759308343YN9lEdeM`，`POST /v1/responses` 经渠道 350 转发 `gpt-6.2-sol`，渠道开启请求体透传，约 285 ms 后返回 HTTP 400，错误为 `function_call_output requires call_id on HTTP requests`。排查时 Nginx 的 `/v1/responses` 指向该实例，状态探针返回 200。
+- 在 master 的 20:17:18–20:19:20 日志中，按请求 ID 关联同一窗口内选中渠道 350、该模型的记录和最终访问记录，找到 5 个 HTTP 200、4 个 HTTP 400。渠道 350 的相同校验错误涉及 4 个不同请求 ID。
+- new-api 将这条错误记录在渠道 350 名下，报错指向工具结果的 `call_id`。定位具体输入项及字段在哪一层缺失，需要比对该请求入站与转发时的脱敏字段。
+- 本次请求按最低余额策略计算额度 10163，钱包实际预扣为 0。日志仅反映预扣阶段。
+
+- 扩展到 20:10–20:55 的 master 日志，按请求 ID 去重，共 8 笔相同报错，均属于同一用户、同一令牌、渠道 350。首末时间分别为 20:18:19 和 20:35:12。7 笔使用 `gpt-6.2-sol`，1 笔使用 `gpt-6.1-sol`。同窗口中选中渠道 350 和 `gpt-6.2-sol` 的请求有 127 笔最终 HTTP 200。8 笔均无 item ID 清理或 reasoning 恢复日志。示例请求同秒、同路径、同状态的源站访问记录只有一条，User-Agent 含 Codex 标识。
+- 本地以 HTTP 模拟上游捕获渠道透传的实际请求体。并行调用的结果倒序返回时，原有 `call_id` 保持对应，包括触发非法 item `id` 清理的情况。客户端省略 `call_id` 或仅传空格时，原值也会到达上游。原生 SSE 的工具调用 added、done 和 completed 三个事件保留了上游提供的 `call_id`。生产既有日志缺少工具项结构，无法回溯这 8 笔的入站字段。
+
+- 另查北京时间 18:42–18:53，渠道 350 对用户 ID 374 的 7 个独立请求返回相同 `function_call_output requires call_id` 错误，首末为 18:43:53 和 18:51:06，涉及 5 个模型。结合 20:10–20:55 窗口，两个用户 ID（374、140）共出现 15 笔同文 400，对当日影响范围只取下限。
+- 11:23–11:27 窗口内，11:25:04 的请求 `20261122032503947935152Lv0wkQ7u`（用户 ID 4090、渠道 350、`gpt-6.2-astra`）返回 HTTP 400，错误原文指出该模型不支持值 `none`，列出的支持值为 `low`、`medium`、`high`、`xhigh` 和 `max`。该窗口命中 `function_call_output requires call_id` 的请求数为 0。
+
 本文含内部地址和运维路径，未经要求不公开发布。实际 API Key、SSH 私钥、生产 .env 及未筛选完整日志不写入本文或 Git。
 

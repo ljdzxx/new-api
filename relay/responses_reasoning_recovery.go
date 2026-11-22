@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -24,6 +25,7 @@ import (
 // billing session are replaced. An encrypted-content rejection or HTTP 502/503
 // with encrypted reasoning can be replayed before real output, at most once.
 func doResponsesRequestWithReasoningRecovery(c *gin.Context, info *relaycommon.RelayInfo, adaptor relaychannel.Adaptor, requestBody io.Reader, outboundBody []byte) (usage any, apiErr *types.NewAPIError) {
+	attemptBody := outboundBody
 	recoveryAttempted := false
 	defer func() {
 		if common.GetContextKeyBool(c, constant.ContextKeyResponsesRecoveryNoRetry) && apiErr != nil {
@@ -52,6 +54,13 @@ func doResponsesRequestWithReasoningRecovery(c *gin.Context, info *relaycommon.R
 		if httpResp != nil && httpResp.StatusCode != http.StatusOK {
 			usage = nil
 			apiErr = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+			if httpResp.StatusCode == http.StatusBadRequest && apiErr != nil && strings.Contains(apiErr.Error(), "function_call_output requires call_id") {
+				if req, ok := info.Request.(*dto.OpenAIResponsesRequest); ok && req != nil {
+					logger.LogWarn(c, fmt.Sprintf("responses tool output rejected: channel_id=%d inbound=%+v outbound=%+v", info.ChannelId,
+						toolOutputShape(gjson.ParseBytes(req.Input), strings.TrimSpace(req.PreviousResponseID) != ""),
+						toolOutputShape(gjson.GetBytes(attemptBody, "input"), strings.TrimSpace(gjson.GetBytes(attemptBody, "previous_response_id").String()) != "")))
+				}
+			}
 		} else {
 			usage, apiErr = adaptor.DoResponse(c, httpResp, info)
 		}
@@ -89,8 +98,39 @@ func doResponsesRequestWithReasoningRecovery(c *gin.Context, info *relaycommon.R
 		logger.LogWarn(c, fmt.Sprintf("responses reasoning recovery retry: channel_id=%d removed_reasoning=%d before_bytes=%d after_bytes=%d", info.ChannelId, removed, len(outboundBody), size))
 		info.UpstreamRequestBodySize = size
 		requestBody = body
+		attemptBody = rebuilt
 		recoveryAttempted = true
 	}
+}
+
+// Only inspect top-level input items on this rejection. Never log tool data or IDs.
+type responsesToolOutputShape struct {
+	Calls, Outputs, MissingCallID int
+	FirstMissingIndex             int
+	PreviousResponse              bool
+}
+
+func toolOutputShape(input gjson.Result, previous bool) responsesToolOutputShape {
+	shape := responsesToolOutputShape{FirstMissingIndex: -1, PreviousResponse: previous}
+	if input.IsArray() {
+		input.ForEach(func(index, item gjson.Result) bool {
+			switch item.Get("type").String() {
+			case "function_call":
+				shape.Calls++
+			case "function_call_output":
+				shape.Outputs++
+				id := item.Get("call_id")
+				if id.Type != gjson.String || strings.TrimSpace(id.Str) == "" {
+					shape.MissingCallID++
+					if shape.FirstMissingIndex < 0 {
+						shape.FirstMissingIndex = int(index.Int())
+					}
+				}
+			}
+			return true
+		})
+	}
+	return shape
 }
 
 func shouldRecoverResponsesReasoning(apiErr *types.NewAPIError, resp *http.Response, body []byte) bool {

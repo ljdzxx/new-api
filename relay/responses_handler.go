@@ -134,6 +134,25 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		if filterErr != nil {
 			return types.NewError(filterErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 		}
+		normalizedBody, normalizedNames, normalizeErr := relaycommon.NormalizeCodexUntrustedContext(filteredBody)
+		if normalizeErr != nil {
+			return types.NewError(normalizeErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		if len(normalizedNames) > 0 {
+			filteredBody = normalizedBody
+			logger.LogWarn(c, fmt.Sprintf(
+				"[responses codex context normalize] normalized=%d names=%v passthrough=true request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q",
+				len(normalizedNames),
+				normalizedNames,
+				c.Request.URL.Path,
+				info.RelayMode,
+				info.ChannelId,
+				info.ChannelType,
+				info.ApiType,
+				info.OriginModelName,
+				info.UpstreamModelName,
+			))
+		}
 		bodyChanged := !bytes.Equal(filteredBody, outboundRequestBody)
 		outboundRequestBody = filteredBody
 		removedImageTools := 0
@@ -226,6 +245,27 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 				originalJSONSize,
 				len(jsonData),
 			))
+		}
+		if !geminiConversion {
+			normalizedBody, normalizedNames, normalizeErr := relaycommon.NormalizeCodexUntrustedContext(jsonData)
+			if normalizeErr != nil {
+				return types.NewError(normalizeErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			if len(normalizedNames) > 0 {
+				jsonData = normalizedBody
+				logger.LogWarn(c, fmt.Sprintf(
+					"[responses codex context normalize] normalized=%d names=%v passthrough=false request_path=%q relay_mode=%d channel_id=%d channel_type=%d api_type=%d origin_model=%q upstream_model=%q",
+					len(normalizedNames),
+					normalizedNames,
+					c.Request.URL.Path,
+					info.RelayMode,
+					info.ChannelId,
+					info.ChannelType,
+					info.ApiType,
+					info.OriginModelName,
+					info.UpstreamModelName,
+				))
+			}
 		}
 		jsonData, removedIDs, err := relaycommon.SanitizeInvalidResponsesItemIDs(jsonData)
 		if err != nil {
