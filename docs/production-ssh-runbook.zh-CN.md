@@ -236,5 +236,17 @@ C:\Users\ray\AppData\Local\Temp\new-api-production-responses-probe\sse-channel31
 - 另查北京时间 18:42–18:53，渠道 350 对用户 ID 374 的 7 个独立请求返回相同 `function_call_output requires call_id` 错误，首末为 18:43:53 和 18:51:06，涉及 5 个模型。结合 20:10–20:55 窗口，两个用户 ID（374、140）共出现 15 笔同文 400，对当日影响范围只取下限。
 - 11:23–11:27 窗口内，11:25:04 的请求 `20261122032503947935152Lv0wkQ7u`（用户 ID 4090、渠道 350、`gpt-6.2-astra`）返回 HTTP 400，错误原文指出该模型不支持值 `none`，列出的支持值为 `low`、`medium`、`high`、`xhigh` 和 `max`。该窗口命中 `function_call_output requires call_id` 的请求数为 0。
 
+### 2026-11-22 晚：根因定位与 new-api 侧兜底（已上线并验证）
+
+- 上游判定条件（依据本机 sub2api 源码 `backend/internal/handler/openai_gateway_handler.go` 的 `validateFunctionCallOutputRequest` 与 `backend/internal/service/openai_tool_continuation.go` 的 `ValidateFunctionCallOutputContextBytes`）按顺序放行：`previous_response_id` 非空即放行；存在任意带非空 `call_id` 的调用项（`function_call` / `custom_tool_call` / `local_shell_call` / `tool_search_call` / `mcp_tool_call`）即放行；否则只要有结果项缺 `call_id` 或为空白，就返回这条 400。错误末尾的 WebSocket 措辞是该分支的通用提示，不表示请求使用过 WebSocket，也不表示必须改用 WebSocket。
+- 22:06:54 的失败请求 `20261122140653817328413z3KxZS03`（用户 140、令牌「土耳其」、渠道 350、`gpt-6.2-sol`）由本次新增诊断日志记录为 `inbound={Calls:0 Outputs:2 MissingCallID:2 FirstMissingIndex:40 PreviousResponse:false}`，出站与入站完全一致。据此确认 new-api 未改动或丢失 `call_id`，该请求属于「输入中没有任何调用项的悬空工具结果」，在严格上游上必然 400。
+- 修复分两次提交。`7496bfd34e` 增加 Codex 外部上下文白名单改写，覆盖 `browser_info`、`goal_objective`、`untrusted_context`、`codex_apps_open_page`、`codex_apps_selected_page_part_N_of_M`，并要求 `namespace=agent` 与合法 output 形状。`06c4b9c779` 增加悬空工具结果兜底，仅在「`previous_response_id` 为空」且「输入内无带 `call_id` 的调用项」且「存在缺 `call_id` 的结果项」时触发，精确复刻上游的接受规则。两处都只改写命中的项为普通 user message，不补造 `call_id`，真实工具调用与其结果保持原样；改写作用于出站副本，不影响客户端保存的历史。
+- 生效日志为 `[responses codex context normalize] normalized=N names=[...] passthrough=...`。白名单命中记录真实项名，被兜底接住的项以 `?` 前缀标记。另在 `responses tool output rejected` 中增加 `MissingNames`，最多记录 5 个缺 `call_id` 的项名（无 name 时取 namespace），不记录 output 正文。
+- 部署与验证：slave（13001）于北京时间 21:59 更新，只含第一版；master（13000）于 22:34 更新，含两版。两节点均 running/healthy、restarts=0，每次切换后以 `diag nginx` 复核 `newapi_backend` 指向。
+- slave 22:00–22:10 窗口：白名单命中 5 次，另有 1 笔 400，即上面的 `Calls:0` 请求。这说明第一版覆盖不足，据此补了第二版。
+- master 22:41:35 以探针 `20261122144135594628489NznLTnYS` 验证兜底：请求体含两个无 `call_id` 的 `function_call_output` 且无 `previous_response_id`，走渠道 350，日志记录 `normalized=2 names=[?probe_dangling ?probe_dangling] passthrough=true`，最终 HTTP 200 且上游返回 `NORMALIZER_OK`。同一形状在 22:06 的 slave 上为 400，构成前后对照。
+- master 22:34:30–22:44:12 全窗口：归一化命中 6 次（5 次渠道 312 页面上下文自然流量 + 1 次上述探针），`function_call_output requires call_id` 400 为 0，`tool output rejected` 诊断日志为 0。
+- 遗留：slave 仍为 21:59 镜像，不含第二版兜底，若流量切回 13001，悬空工具结果类请求会重新 400，两节点应保持一致。master 观察窗口仅约 10 分钟，兜底目前只有探针证据，尚未观察到真实用户以该形状复现；后续可按 `names=[?` 检索自然流量命中。
+
 本文含内部地址和运维路径，未经要求不公开发布。实际 API Key、SSH 私钥、生产 .env 及未筛选完整日志不写入本文或 Git。
 
