@@ -108,6 +108,9 @@ type responsesToolOutputShape struct {
 	Calls, Outputs, MissingCallID int
 	FirstMissingIndex             int
 	PreviousResponse              bool
+	// MissingNames labels call_id-less outputs by name/namespace so an unknown
+	// shape can be identified from logs. Output content is never recorded.
+	MissingNames []string
 }
 
 func toolOutputShape(input gjson.Result, previous bool) responsesToolOutputShape {
@@ -124,6 +127,16 @@ func toolOutputShape(input gjson.Result, previous bool) responsesToolOutputShape
 					shape.MissingCallID++
 					if shape.FirstMissingIndex < 0 {
 						shape.FirstMissingIndex = int(index.Int())
+					}
+					if len(shape.MissingNames) < 5 {
+						label := strings.TrimSpace(item.Get("name").String())
+						if label == "" {
+							label = strings.TrimSpace(item.Get("namespace").String())
+						}
+						if label == "" {
+							label = "unnamed"
+						}
+						shape.MissingNames = append(shape.MissingNames, label)
 					}
 				}
 			}

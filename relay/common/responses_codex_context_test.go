@@ -77,7 +77,9 @@ func TestNormalizeCodexUntrustedContextPreservesRealAndMalformedOutputs(t *testi
 			for key, value := range tc.override {
 				item[key] = value
 			}
-			payload, err := basecommon.Marshal(map[string]any{"model": "gpt-5", "input": []any{item}})
+			// previous_response_id makes the upstream accept dangling outputs, so
+			// these cases isolate the strict whitelist pass only.
+			payload, err := basecommon.Marshal(map[string]any{"model": "gpt-5", "previous_response_id": "resp_keep", "input": []any{item}})
 			require.NoError(t, err)
 			got, names, err := NormalizeCodexUntrustedContext(payload)
 			require.NoError(t, err)
@@ -87,7 +89,7 @@ func TestNormalizeCodexUntrustedContextPreservesRealAndMalformedOutputs(t *testi
 	}
 
 	// Recognized external context cannot make an unrelated tool result valid.
-	body := []byte(`{"model":"gpt-5","input":[{"type":"function_call_output","namespace":"agent","name":"browser_info","output":"tab"},{"type":"function_call_output","namespace":"agent","name":"read_file","output":"result"}]}`)
+	body := []byte(`{"model":"gpt-5","previous_response_id":"resp_keep","input":[{"type":"function_call_output","namespace":"agent","name":"browser_info","output":"tab"},{"type":"function_call_output","namespace":"agent","name":"read_file","output":"result"}]}`)
 	got, names, err := NormalizeCodexUntrustedContext(body)
 	require.NoError(t, err)
 	require.Equal(t, []string{"browser_info"}, names)
@@ -117,7 +119,7 @@ func TestNormalizeCodexUntrustedContextMultipartAndShapeChecks(t *testing.T) {
 		{"codex_apps_open_page", `not json`},
 		{"browser_info", ""},
 	} {
-		payload, err := basecommon.Marshal(map[string]any{"model": "gpt-5", "input": []any{map[string]any{
+		payload, err := basecommon.Marshal(map[string]any{"model": "gpt-5", "previous_response_id": "resp_keep", "input": []any{map[string]any{
 			"type": "function_call_output", "namespace": "agent", "name": tc.name, "output": tc.output,
 		}}})
 		require.NoError(t, err)
@@ -133,6 +135,40 @@ func TestNormalizeCodexUntrustedContextMultipartAndShapeChecks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"untrusted_context"}, names)
 	require.Equal(t, "<external_untrusted_context>external</external_untrusted_context>", gjson.GetBytes(got, "input.0.content.0.text").String())
+}
+
+func TestNormalizeCodexDanglingToolOutputs(t *testing.T) {
+	// No call_id, no call item, no previous_response_id: no strict upstream can
+	// accept this, so the output is rewritten instead of guaranteeing a 400.
+	body := []byte(`{"model":"gpt-5","input":[{"role":"user","content":"hi"},{"type":"function_call_output","name":"something_new","output":"payload"}]}`)
+	got, names, err := NormalizeCodexUntrustedContext(body)
+	require.NoError(t, err)
+	require.Equal(t, []string{"?something_new"}, names)
+	require.Equal(t, "message", gjson.GetBytes(got, "input.1.type").String())
+	require.Equal(t, "user", gjson.GetBytes(got, "input.1.role").String())
+	require.Equal(t, "payload", gjson.GetBytes(got, "input.1.content.0.text").String())
+	require.Equal(t, "hi", gjson.GetBytes(got, "input.0.content").String())
+
+	// Non-string payloads keep their JSON representation.
+	body = []byte(`{"model":"gpt-5","input":[{"type":"custom_tool_call_output","output":[{"type":"text","text":"chunk"}]}]}`)
+	got, names, err = NormalizeCodexUntrustedContext(body)
+	require.NoError(t, err)
+	require.Equal(t, []string{"?custom_tool_call_output"}, names)
+	require.Contains(t, gjson.GetBytes(got, "input.0.content.0.text").String(), "chunk")
+
+	// Accepted by the upstream, so left untouched.
+	for _, untouched := range []string{
+		`{"model":"gpt-5","previous_response_id":"resp_1","input":[{"type":"function_call_output","output":"payload"}]}`,
+		`{"model":"gpt-5","input":[{"type":"function_call","call_id":"call_1","name":"run","arguments":"{}"},{"type":"function_call_output","output":"payload"}]}`,
+		`{"model":"gpt-5","input":[{"type":"function_call_output","call_id":"call_1","output":"payload"}]}`,
+		`{"model":"gpt-5","input":[{"type":"function_call_output","output":""}]}`,
+		`{"model":"gpt-5","input":[{"type":"function_call_output"}]}`,
+	} {
+		got, names, err = NormalizeCodexUntrustedContext([]byte(untouched))
+		require.NoError(t, err)
+		require.Empty(t, names, "body=%s", untouched)
+		require.Equal(t, untouched, string(got))
+	}
 }
 
 func TestNormalizeCodexUntrustedContextNoopAndInvalid(t *testing.T) {

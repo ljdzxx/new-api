@@ -126,7 +126,29 @@ func sanitizeEncryptedProtocolArray(body []byte, path string, topLevel bool) ([]
 	return body, removed, nil
 }
 
-var codexSelectedPageName = regexp.MustCompile(`^codex_apps_selected_page_part_([1-9][0-9]*)_of_([1-9][0-9]*)$`)
+var (
+	codexSelectedPageName = regexp.MustCompile(`^codex_apps_selected_page_part_([1-9][0-9]*)_of_([1-9][0-9]*)$`)
+	codexToolOutputTypes  = map[string]struct{}{
+		"function_call_output":    {},
+		"custom_tool_call_output": {},
+		"tool_search_output":      {},
+		"mcp_tool_call_output":    {},
+	}
+	codexToolCallTypes = map[string]struct{}{
+		"function_call":     {},
+		"custom_tool_call":  {},
+		"tool_call":         {},
+		"local_shell_call":  {},
+		"tool_search_call":  {},
+		"mcp_tool_call":     {},
+	}
+	codexToolOutputMarkers = [][]byte{
+		[]byte("function_call_output"),
+		[]byte("custom_tool_call_output"),
+		[]byte("tool_search_output"),
+		[]byte("mcp_tool_call_output"),
+	}
+)
 
 // NormalizeCodexUntrustedContext rewrites Codex-injected external context into
 // plain user messages so strict HTTP Responses upstreams accept the request.
@@ -144,18 +166,19 @@ func NormalizeCodexUntrustedContext(jsonData []byte) ([]byte, []string, error) {
 	if !gjson.ValidBytes(jsonData) {
 		return jsonData, nil, fmt.Errorf("invalid Responses JSON")
 	}
-	// Cheap pre-check: without this item type no rewrite is possible.
-	if !bytes.Contains(jsonData, []byte("function_call_output")) {
+	// Cheap pre-check: without a tool output item type no rewrite is possible.
+	if !containsAnyToolOutputMarker(jsonData) {
 		return jsonData, nil, nil
 	}
-	input := gjson.GetBytes(jsonData, "input")
-	if !input.IsArray() {
+	if !gjson.GetBytes(jsonData, "input").IsArray() {
 		return jsonData, nil, nil
 	}
 
 	var normalized []string
 	var rewriteErr error
-	input.ForEach(func(index, item gjson.Result) bool {
+
+	// Pass 1: known Codex external-context items get a labelled user message.
+	gjson.GetBytes(jsonData, "input").ForEach(func(index, item gjson.Result) bool {
 		kind := item.Get("type")
 		if kind.Type != gjson.String || kind.Str != "function_call_output" {
 			return true
@@ -182,19 +205,7 @@ func NormalizeCodexUntrustedContext(jsonData []byte) ([]byte, []string, error) {
 		if validCodexPageContext(name.Str, output.Str) {
 			text = "<external_" + name.Str + ">\n" + output.Str + "\n</external_" + name.Str + ">"
 		}
-		message, err := basecommon.Marshal(map[string]any{
-			"type": "message",
-			"role": "user",
-			"content": []map[string]string{{
-				"type": "input_text",
-				"text": text,
-			}},
-		})
-		if err != nil {
-			rewriteErr = err
-			return false
-		}
-		updated, err := sjson.SetRawBytes(jsonData, fmt.Sprintf("input.%d", index.Int()), message)
+		updated, err := replaceWithUserMessage(jsonData, index.Int(), text)
 		if err != nil {
 			rewriteErr = err
 			return false
@@ -206,10 +217,116 @@ func NormalizeCodexUntrustedContext(jsonData []byte) ([]byte, []string, error) {
 	if rewriteErr != nil {
 		return jsonData, nil, rewriteErr
 	}
+
+	// Pass 2: dangling tool outputs. With no previous_response_id and no call
+	// item carrying a call_id, a strict upstream rejects the body outright, so
+	// rewriting the outputs beats forwarding a guaranteed 400.
+	if !codexHasContinuationOrCall(jsonData) {
+		gjson.GetBytes(jsonData, "input").ForEach(func(index, item gjson.Result) bool {
+			kind := item.Get("type")
+			if kind.Type != gjson.String {
+				return true
+			}
+			if _, ok := codexToolOutputTypes[kind.Str]; !ok {
+				return true
+			}
+			if callID := item.Get("call_id"); callID.Exists() {
+				if callID.Type != gjson.String || strings.TrimSpace(callID.Str) != "" {
+					return true
+				}
+			}
+			text := codexToolOutputText(item)
+			if strings.TrimSpace(text) == "" {
+				return true
+			}
+			updated, err := replaceWithUserMessage(jsonData, index.Int(), text)
+			if err != nil {
+				rewriteErr = err
+				return false
+			}
+			jsonData = updated
+			normalized = append(normalized, "?"+codexToolOutputLabel(item, kind.Str))
+			return true
+		})
+		if rewriteErr != nil {
+			return jsonData, nil, rewriteErr
+		}
+	}
+
 	if len(normalized) == 0 {
 		return jsonData, nil, nil
 	}
 	return jsonData, normalized, nil
+}
+
+func containsAnyToolOutputMarker(jsonData []byte) bool {
+	for _, marker := range codexToolOutputMarkers {
+		if bytes.Contains(jsonData, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// codexHasContinuationOrCall mirrors the upstream acceptance rule: a non-empty
+// previous_response_id, or any call item carrying a call_id, makes dangling tool
+// outputs acceptable. Only when both are absent is the request guaranteed to fail.
+func codexHasContinuationOrCall(jsonData []byte) bool {
+	if strings.TrimSpace(gjson.GetBytes(jsonData, "previous_response_id").String()) != "" {
+		return true
+	}
+	hasCall := false
+	gjson.GetBytes(jsonData, "input").ForEach(func(_, item gjson.Result) bool {
+		kind := item.Get("type")
+		if kind.Type != gjson.String {
+			return true
+		}
+		if _, ok := codexToolCallTypes[kind.Str]; !ok {
+			return true
+		}
+		if callID := item.Get("call_id"); callID.Exists() && callID.Type == gjson.String && strings.TrimSpace(callID.Str) != "" {
+			hasCall = true
+			return false
+		}
+		return true
+	})
+	return hasCall
+}
+
+func codexToolOutputText(item gjson.Result) string {
+	for _, field := range []string{"output", "content"} {
+		value := item.Get(field)
+		if !value.Exists() {
+			continue
+		}
+		if value.Type == gjson.String {
+			return value.Str
+		}
+		return value.Raw
+	}
+	return ""
+}
+
+func codexToolOutputLabel(item gjson.Result, kind string) string {
+	if name := strings.TrimSpace(item.Get("name").String()); name != "" {
+		return name
+	}
+	return kind
+}
+
+func replaceWithUserMessage(jsonData []byte, index int64, text string) ([]byte, error) {
+	message, err := basecommon.Marshal(map[string]any{
+		"type": "message",
+		"role": "user",
+		"content": []map[string]string{{
+			"type": "input_text",
+			"text": text,
+		}},
+	})
+	if err != nil {
+		return jsonData, err
+	}
+	return sjson.SetRawBytes(jsonData, fmt.Sprintf("input.%d", index), message)
 }
 
 func validCodexUntrustedContext(name, output string) bool {
