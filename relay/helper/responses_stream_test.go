@@ -23,8 +23,8 @@ func TestResponsesFailurePreservesIdentityAndTerminatesOnce(t *testing.T) {
 	SetEventStreamHeaders(c)
 	require.NoError(t, ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "response.created"}, `{"type":"response.created","sequence_number":7,"response":{"id":"resp_original","model":"test-model","created_at":123}}`))
 	err := types.NewOpenAIError(errors.New("upstream disconnected (request id: test)"), types.ErrorCodeBadResponse, 502)
-	require.NoError(t, WriteResponsesStreamFailure(c, err))
-	require.NoError(t, WriteResponsesStreamFailure(c, err))
+	require.NoError(t, WriteResponsesStreamFailure(c, err, nil))
+	require.NoError(t, WriteResponsesStreamFailure(c, err, nil))
 	require.Equal(t, 200, r.Code)
 	require.Equal(t, 1, strings.Count(r.Body.String(), "event: response.failed\n"))
 	parts := strings.Split(r.Body.String(), "event: response.failed\ndata: ")
@@ -62,7 +62,7 @@ func TestResponsesFailurePreservesUpstreamError(t *testing.T) {
 			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 			SetEventStreamHeaders(ctx)
 			apiErr := types.WithOpenAIError(upstreamError, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
-			require.NoError(t, WriteResponsesStreamFailure(ctx, apiErr))
+			require.NoError(t, WriteResponsesStreamFailure(ctx, apiErr, nil))
 			parts := strings.SplitN(recorder.Body.String(), "event: response.failed\ndata: ", 2)
 			require.Len(t, parts, 2)
 			var event struct {
@@ -103,7 +103,7 @@ func TestResponsesFailureDoesNotWriteAfterCancellationOrCompletion(t *testing.T)
 			require.NoError(t, ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "response.completed"}, `{"type":"response.completed","response":{"id":"resp_done"}}`))
 		}
 		before := r.Body.String()
-		err := WriteResponsesStreamFailure(c, types.NewError(errors.New("late failure"), types.ErrorCodeBadResponse))
+		err := WriteResponsesStreamFailure(c, types.NewError(errors.New("late failure"), types.ErrorCodeBadResponse), nil)
 		if cancelRequest {
 			require.ErrorIs(t, err, context.Canceled)
 		} else {

@@ -93,6 +93,10 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 	}
+	responseBody, err = relaycommon.PatchForcedServiceTierResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 	return usage, nil
 }
@@ -136,7 +140,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			return true
 		}
 		if info.RelayFormat == types.RelayFormatOpenAI {
-			if err := helper.ObjectData(c, chunk); err != nil {
+			if err := sendTierStreamObject(c, info, chunk); err != nil {
 				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 				return false
 			}
@@ -540,7 +544,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		if helper.ShouldScaleResponseUsage(info) {
 			clientUsage = helper.ScaleOpenAIUsageForRelayResponse(usage, info)
 		}
-		if err := helper.ObjectData(c, helper.GenerateFinalUsageResponse(responseId, createAt, model, *clientUsage)); err != nil {
+		if err := sendTierStreamObject(c, info, helper.GenerateFinalUsageResponse(responseId, createAt, model, *clientUsage)); err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 		}
 	}

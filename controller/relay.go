@@ -165,6 +165,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	var (
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
+		relayInfo   *relaycommon.RelayInfo
 	)
 	if relayFormat == types.RelayFormatClaude {
 		logClaudeRelayRawRequest(c)
@@ -198,7 +199,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				}
 			}
 			if relayFormat == types.RelayFormatOpenAIResponses && c.Writer.Written() && strings.HasPrefix(c.Writer.Header().Get("Content-Type"), "text/event-stream") {
-				if err := helper.WriteResponsesStreamFailure(c, newAPIError); err != nil {
+				if err := helper.WriteResponsesStreamFailure(c, newAPIError, relayInfo); err != nil {
 					logger.LogWarn(c, "failed to write responses terminal error: "+err.Error())
 				}
 				return
@@ -255,7 +256,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logClaudeRelayDebug(c, "request validated: request_id=%s %s", requestId, summarizeClaudeRelayRequestForLog(request))
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	relayInfo, err = relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		if relayFormat == types.RelayFormatClaude {
 			logClaudeRelayError(c, "relay info generation failed: request_id=%s err=%s request=%s", requestId, err.Error(), summarizeClaudeRelayRequestForLog(request))

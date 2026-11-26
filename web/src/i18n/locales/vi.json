@@ -1,5 +1,9 @@
 {
   "translation": {
+    "仅对 OpenAI 协议的 Chat Completions、Responses 和 Responses Compact 生效。": "Chỉ áp dụng cho Chat Completions, Responses và Responses Compact sử dụng giao thức OpenAI.",
+    "强制使用匹配的 service_tier": "Buộc dùng service_tier khớp quy tắc",
+    "按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用。": "Khớp tên mô hình trước khi ánh xạ. Ưu tiên quy tắc chính xác; * khớp mọi mô hình. Chỉ điều chỉnh phí mô hình, không điều chỉnh phí công cụ riêng.",
+    "固定服务档位计费开启且模型匹配时，普通响应和 SSE 均返回匹配档位，与此开关无关。此开关仅控制是否以匹配档位覆盖上游请求参数，优先于客户端参数及渠道参数覆盖配置；未匹配时不生效。开启前请确保上游支持所填档位。": "Khi tính phí theo cấp dịch vụ cố định được bật và mô hình khớp quy tắc, phản hồi thường và SSE luôn trả về cấp đã khớp, bất kể công tắc này. Công tắc chỉ điều khiển việc ghi đè cấp trong yêu cầu gửi nhà cung cấp, ưu tiên hơn tham số máy khách và cấu hình ghi đè của kênh. Không có hiệu lực nếu không khớp. Trước khi bật, hãy đảm bảo nhà cung cấp hỗ trợ cấp đã cấu hình.",
     "支付成功，充值已到账": "Thanh toán thành công. Số dư đã được cập nhật.",
     "支付成功，订阅已开通": "Thanh toán thành công. Gói đăng ký đã được kích hoạt.",
     "支付页面已在新窗口打开，请在新窗口中完成支付后返回此页面": "Trang thanh toán đã mở trong cửa sổ mới. Hãy hoàn tất thanh toán ở đó rồi quay lại trang này.",

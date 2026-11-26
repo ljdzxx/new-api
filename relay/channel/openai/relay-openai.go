@@ -33,7 +33,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	}
 
 	if !forceFormat && !thinkToContent {
-		return helper.StringData(c, data)
+		return sendTierStreamData(c, info, data)
 	}
 
 	var lastStreamResponse dto.ChatCompletionsStreamResponse
@@ -42,7 +42,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	}
 
 	if !thinkToContent {
-		return helper.ObjectData(c, lastStreamResponse)
+		return sendTierStreamObject(c, info, lastStreamResponse)
 	}
 
 	hasThinkingContent := false
@@ -70,12 +70,12 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 			}
 			info.ThinkingContentInfo.IsFirstThinkingContent = false
 			info.ThinkingContentInfo.HasSentThinkingContent = true
-			return helper.ObjectData(c, response)
+			return sendTierStreamObject(c, info, response)
 		}
 	}
 
 	if lastStreamResponse.Choices == nil || len(lastStreamResponse.Choices) == 0 {
-		return helper.ObjectData(c, lastStreamResponse)
+		return sendTierStreamObject(c, info, lastStreamResponse)
 	}
 
 	// Process each choice
@@ -90,7 +90,9 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 				response.Choices[j].Delta.Reasoning = nil
 			}
 			info.ThinkingContentInfo.SendLastThinkingContent = true
-			helper.ObjectData(c, response)
+			if err := sendTierStreamObject(c, info, response); err != nil {
+				return err
+			}
 		}
 
 		// Convert reasoning content to regular content if any
@@ -105,7 +107,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 		}
 	}
 
-	return helper.ObjectData(c, lastStreamResponse)
+	return sendTierStreamObject(c, info, lastStreamResponse)
 }
 
 func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
@@ -346,6 +348,10 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		if err != nil {
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
+	}
+	responseBody, err = relaycommon.PatchForcedServiceTierResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 

@@ -143,6 +143,13 @@ For request structs that are parsed from client JSON and then re-marshaled to up
   - field explicitly set to zero/false => non-`nil` pointer => must still be sent upstream.
 - Avoid using non-pointer scalars with `omitempty` for optional request parameters, because zero values (`0`, `0.0`, `false`) will be silently dropped during marshal.
 
+## Mandatory Rule: No Unauthorized Debug Servers (禁止擅自启动调试服务)
+
+- 今后任何修改，未经用户针对本次任务明确授权，Codex 不得启动本项目的前端或后端服务进行调试、预览或验证。
+- 禁止擅自执行会启动服务的命令，包括但不限于 `bun run dev`、`npm run dev`、`vite`、`vite preview`、`bun run preview`、`go run`、后端可执行文件，以及通过 Docker、脚本或后台进程间接启动服务。更换端口、隐藏窗口或启动后立即关闭均不构成例外。
+- 用户要求修改代码、修复问题、运行测试或验证功能，不等于授权启动前后端服务；历史任务中的启动授权不得自动沿用。
+- 默认仅使用不启动前后端应用服务的静态检查、构建和自动化测试进行验证。确需启动服务时，必须先说明用途并取得用户明确同意；未获同意则不启动，并如实说明验证限制。
+
 ## Production Diagnostics (项目运维记录)
 
 When the user asks to investigate production (for example, “去生产排查一下”), first read [生产环境 SSH 与排查手册](docs/production-ssh-runbook.zh-CN.md). It records the authorized read-only SSH entry, deployment paths, container/port mappings, diagnostic commands, and prior verification limits.

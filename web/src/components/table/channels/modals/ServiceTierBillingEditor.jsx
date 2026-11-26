@@ -56,11 +56,31 @@ export default function ServiceTierBillingEditor({ value, onChange }) {
       </Space>
       <div className='text-xs text-tertiary mt-2 mb-2'>
         {t(
-          '按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用，不修改上游请求参数。',
+          '按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用。',
         )}
       </div>
       {config.enabled && (
         <>
+          <Space className='mb-2'>
+            <Typography.Text>
+              {t('强制使用匹配的 service_tier')}
+            </Typography.Text>
+            <Switch
+              checked={config.force_service_tier === true}
+              onChange={(force_service_tier) =>
+                onChange({ ...config, force_service_tier })
+              }
+              aria-label={t('强制使用匹配的 service_tier')}
+            />
+          </Space>
+          <div className='text-xs text-tertiary mb-2'>
+            {t(
+              '仅对 OpenAI 协议的 Chat Completions、Responses 和 Responses Compact 生效。',
+            )}{' '}
+            {t(
+              '固定服务档位计费开启且模型匹配时，普通响应和 SSE 均返回匹配档位，与此开关无关。此开关仅控制是否以匹配档位覆盖上游请求参数，优先于客户端参数及渠道参数覆盖配置；未匹配时不生效。开启前请确保上游支持所填档位。',
+            )}
+          </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', minWidth: 720 }}>
               <thead>

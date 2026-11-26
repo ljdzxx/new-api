@@ -8,11 +8,11 @@ import (
 
 const MaxServiceTierMultiplier = 1000
 
-// ServiceTierBilling describes a channel's fixed upstream pricing. It never
-// participates in constructing or overriding an upstream request.
+// ServiceTierBilling describes a channel's fixed pricing and optional upstream tier override.
 type ServiceTierBilling struct {
-	Enabled bool                     `json:"enabled"`
-	Rules   []ServiceTierBillingRule `json:"rules"`
+	Enabled          bool                     `json:"enabled"`
+	ForceServiceTier bool                     `json:"force_service_tier,omitempty"`
+	Rules            []ServiceTierBillingRule `json:"rules"`
 }
 
 type ServiceTierBillingRule struct {

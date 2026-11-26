@@ -196,6 +196,9 @@ type RelayInfo struct {
 	UpstreamRequestBodySize int64
 
 	PriceData types.PriceData
+	// ForcedServiceTier is this attempt's matched tier for downstream responses,
+	// independent of whether the outbound request's tier is overridden.
+	ForcedServiceTier string
 	// BillingPolicySnapshot freezes policy revision, policy contents and the
 	// evaluated adjustment result for the whole request lifecycle.
 	BillingPolicySnapshot *billing_policy.Snapshot
@@ -227,6 +230,7 @@ type RelayInfo struct {
 }
 
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
+	info.ForcedServiceTier = ""
 	info.ResetUpstreamUsage()
 	// 渠道重试不继承前一次 Gemini 搜索计数。
 	if info.ResponsesUsageInfo != nil {

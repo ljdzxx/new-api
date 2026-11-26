@@ -219,7 +219,10 @@ func HandleFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, lastStream
 			}
 			response := helper.GenerateFinalUsageResponse(responseId, createAt, model, *clientUsage)
 			response.SetSystemFingerprint(systemFingerprint)
-			helper.ObjectData(c, response)
+			if err := sendTierStreamObject(c, info, response); err != nil {
+				logger.LogWarn(c, "failed to write final chat usage: "+err.Error())
+				return
+			}
 		}
 		helper.Done(c)
 

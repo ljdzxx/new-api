@@ -54,6 +54,10 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 	}
 	// 写入新的 response body
+	responseBody, err = relaycommon.PatchForcedServiceTierResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	// compute usage
@@ -149,6 +153,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				clientData = string(patched)
 			}
 			if !failed || c.GetBool("responses_websocket_request") {
+				if info.ForcedServiceTier != "" {
+					patched, patchErr := relaycommon.PatchForcedServiceTierResponse(common.StringToByteSlice(clientData), info)
+					if patchErr != nil {
+						streamErr = types.NewOpenAIError(patchErr, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+						sr.Stop(patchErr)
+						return
+					}
+					clientData = string(patched)
+				}
 				if err := sendResponsesStreamData(c, streamResponse, clientData); err != nil {
 					logger.LogWarn(c, "failed to write responses stream data: "+err.Error())
 					streamErr = types.NewClientDisconnectedError(err)

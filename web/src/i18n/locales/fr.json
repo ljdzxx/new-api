@@ -1,5 +1,9 @@
 {
   "translation": {
+    "仅对 OpenAI 协议的 Chat Completions、Responses 和 Responses Compact 生效。": "S'applique uniquement à Chat Completions, Responses et Responses Compact utilisant le protocole OpenAI.",
+    "强制使用匹配的 service_tier": "Forcer le service_tier correspondant",
+    "按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用。": "Correspondance avant le mappage du modèle. Les règles exactes sont prioritaires ; * correspond à tout modèle. Seuls les frais du modèle sont ajustés, pas les frais des outils indépendants.",
+    "固定服务档位计费开启且模型匹配时，普通响应和 SSE 均返回匹配档位，与此开关无关。此开关仅控制是否以匹配档位覆盖上游请求参数，优先于客户端参数及渠道参数覆盖配置；未匹配时不生效。开启前请确保上游支持所填档位。": "Lorsque la facturation par niveau de service fixe est activée et que le modèle correspond, les réponses ordinaires et SSE renvoient toujours le niveau correspondant, indépendamment de cet interrupteur. Celui-ci remplace uniquement le niveau de la requête au fournisseur, en priorité sur les paramètres du client et les substitutions du canal. Sans correspondance, aucun effet. Avant de l'activer, vérifiez que le fournisseur accepte le niveau configuré.",
     "支付成功，充值已到账": "Paiement réussi. Votre solde a été crédité.",
     "支付成功，订阅已开通": "Paiement réussi. Votre abonnement est actif.",
     "支付页面已在新窗口打开，请在新窗口中完成支付后返回此页面": "La page de paiement s’est ouverte dans une nouvelle fenêtre. Effectuez le paiement dans cette fenêtre, puis revenez ici.",

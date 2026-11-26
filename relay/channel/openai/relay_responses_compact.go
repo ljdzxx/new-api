@@ -49,6 +49,10 @@ func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response, info *re
 			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 		}
 	}
+	clientBody, err = relaycommon.PatchForcedServiceTierResponse(clientBody, info)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+	}
 	service.IOCopyBytesGracefully(c, resp, clientBody)
 
 	usage := dto.Usage{}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -82,7 +83,7 @@ func recordResponsesEvent(c *gin.Context, eventType, data string) {
 
 // WriteResponsesStreamFailure ends a committed SSE response instead of appending
 // JSON to it. The caller has already stopped all stream and keepalive writers.
-func WriteResponsesStreamFailure(c *gin.Context, apiErr *types.NewAPIError) error {
+func WriteResponsesStreamFailure(c *gin.Context, apiErr *types.NewAPIError, info *relaycommon.RelayInfo) error {
 	if requestContextDone(c) {
 		return c.Request.Context().Err()
 	}
@@ -110,6 +111,10 @@ func WriteResponsesStreamFailure(c *gin.Context, apiErr *types.NewAPIError) erro
 			"error": gin.H{"type": responseError.Type, "code": responseError.Code, "message": responseError.Message},
 		},
 	})
+	if err != nil {
+		return err
+	}
+	data, err = relaycommon.PatchForcedServiceTierResponse(data, info)
 	if err != nil {
 		return err
 	}

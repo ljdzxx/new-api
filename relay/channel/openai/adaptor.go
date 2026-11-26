@@ -617,6 +617,27 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
+	info.ForcedServiceTier = ""
+	if !c.GetBool("responses_websocket_request") {
+		info.ForcedServiceTier = info.MatchedServiceTier()
+	}
+	if tier := info.ForcedServiceTier; tier != "" && info.ChannelOtherSettings.ServiceTierBilling.ForceServiceTier {
+		jsonData, err := io.ReadAll(requestBody)
+		if err != nil {
+			return nil, fmt.Errorf("read request for service tier override: %w", err)
+		}
+		jsonData, err = relaycommon.SetServiceTierJSON(jsonData, "service_tier", tier)
+		if err != nil {
+			return nil, err
+		}
+		body, size, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
+		if err != nil {
+			return nil, err
+		}
+		defer closer.Close()
+		requestBody = body
+		info.UpstreamRequestBodySize = size
+	}
 	if info.RelayMode == relayconstant.RelayModeAudioTranscription ||
 		info.RelayMode == relayconstant.RelayModeAudioTranslation ||
 		info.RelayMode == relayconstant.RelayModeImagesEdits {
