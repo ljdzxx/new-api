@@ -55,6 +55,35 @@ func ApplyOpenAI(c *gin.Context, req *dto.ClaudeRequest, source *dto.GeneralOpen
 	return AsClientError(apply(c, req, info, intent, true))
 }
 
+// ApplyGemini follows upstream's FromGemini intent parsing before rendering
+// the target Claude model's supported thinking mode.
+func ApplyGemini(c *gin.Context, req *dto.ClaudeRequest, source *dto.GeminiChatRequest, info *relaycommon.RelayInfo) error {
+	intent := Intent{}
+	if source != nil && source.GenerationConfig.ThinkingConfig != nil {
+		config := source.GenerationConfig.ThinkingConfig
+		if config.ThinkingBudget != nil && config.ThinkingLevel != "" {
+			return AsClientError(fmt.Errorf("%w: Gemini thinkingBudget and thinkingLevel cannot both be set", ErrEffortConflict))
+		}
+		intent = Intent{BudgetTokens: config.ThinkingBudget, IncludeThoughts: config.IncludeThoughts, Source: SourceNative, BudgetSource: SourceNative}
+		if config.ThinkingLevel != "" {
+			effort, err := ParseEffort(config.ThinkingLevel)
+			if err != nil {
+				return AsClientError(err)
+			}
+			intent.Effort, intent.Mode = effort, ModeEnabled
+			if effort == EffortNone {
+				intent.Mode = ModeDisabled
+			}
+		}
+	}
+	intent, diagnostics, err := normalizeIntent(intent)
+	recordDiagnostics(c, info, diagnostics...)
+	if err != nil {
+		return AsClientError(err)
+	}
+	return AsClientError(apply(c, req, info, intent, true))
+}
+
 func apply(c *gin.Context, req *dto.ClaudeRequest, info *relaycommon.RelayInfo, source Intent, crossProtocol bool) error {
 	if req == nil {
 		return nil

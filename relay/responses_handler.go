@@ -111,10 +111,10 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	adaptor.Init(info)
 	var requestBody io.Reader
 	var outboundRequestBody []byte
-	// Responses payloads cannot be passed verbatim to generateContent. Keep
+	// Responses payloads cannot be passed verbatim to other protocols. Keep
 	// protocol conversion active even when the channel enables body passthrough.
-	geminiConversion := info.ApiType == appconstant.APITypeGemini || info.ApiType == appconstant.APITypeVertexAi
-	if !geminiConversion && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
+	protocolConversion := info.ApiType == appconstant.APITypeGemini || info.ApiType == appconstant.APITypeVertexAi || info.ApiType == appconstant.APITypeAnthropic
+	if !protocolConversion && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
@@ -195,7 +195,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 		if err != nil {
-			if geminiConversion {
+			if protocolConversion {
 				return types.NewErrorWithStatusCode(err, types.ErrorCodeConvertRequestFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			}
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -246,7 +246,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 				len(jsonData),
 			))
 		}
-		if !geminiConversion {
+		if !protocolConversion {
 			normalizedBody, normalizedNames, normalizeErr := relaycommon.NormalizeCodexUntrustedContext(jsonData)
 			if normalizeErr != nil {
 				return types.NewError(normalizeErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())

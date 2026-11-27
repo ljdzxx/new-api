@@ -204,7 +204,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				}
 				return
 			}
-			if relayFormat == types.RelayFormatGemini && c.GetBool(advancedcustom.StreamStartedKey) {
+			if relayFormat == types.RelayFormatGemini && (c.GetBool(advancedcustom.StreamStartedKey) || c.GetBool(helper.ConvertedGeminiStreamStartedKey)) {
 				// Once Gemini SSE has started, keep errors in SSE framing rather
 				// than appending a bare JSON document to the stream.
 				if err := helper.ObjectData(c, gin.H{"error": gin.H{"code": newAPIError.StatusCode, "message": newAPIError.Error(), "status": "INTERNAL"}}); err != nil {
@@ -215,7 +215,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if types.IsSkipRetryError(newAPIError) || newAPIError.StatusCode < http.StatusInternalServerError {
 				c.Header("x-should-retry", "false")
 			}
-			if (relayFormat == types.RelayFormatOpenAIResponses || relayFormat == types.RelayFormatGemini && common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeAdvancedCustom) && !c.Writer.Written() {
+			if (relayFormat == types.RelayFormatOpenAIResponses || relayFormat == types.RelayFormatGemini && (common.GetContextKeyInt(c, constant.ContextKeyChannelType) == constant.ChannelTypeAdvancedCustom || relayInfo != nil && relayInfo.ApiType == constant.APITypeAnthropic)) && !c.Writer.Written() {
 				// The upstream scanner may have prepared SSE headers before the
 				// first valid event. Uncommitted errors still use a JSON envelope.
 				c.Header("Content-Type", "application/json")

@@ -63,3 +63,18 @@
 - 非透传的原生 Claude 请求转换保留字段内容；缺省时不发送，显式 null、空对象、嵌套 false/0、大整数、科学计数法及对象字段顺序均保留。
 - 新增回归测试覆盖请求解码、DeepCopy、Claude adaptor 转换、禁用字段过滤及无关参数覆盖的完整序列。
 - `go test ./dto ./relay/channel/claude ./relay/claudethinking ./relay/channel/xiaomi ./relay/channel/aws ./relay/channel/vertex ./relay` 全部通过。本次未提交或部署，也未启动应用服务。
+
+## Gemini / Responses → Claude（本地，2026-11-27）
+
+基于同一上游提交 `81c1fd20efade39a5d5692c8018dfef4cfb30e1d` 的请求转换、Gemini 工具历史关联和 Responses 流转换行为，适配本地架构，补齐 Anthropic adaptor 的两个入口。没有引入 relaykit，也没有扩展 AWS / Vertex adaptor 的入口支持。
+
+- 请求：支持系统指令、文本、图片/PDF/文本文件、函数定义、工具调用/结果、采样参数、输出上限及 thinking。Gemini 无 ID 的调用按名字和调用顺序配对结果；Responses namespace/custom 工具沿用本地可逆映射，响应恢复原工具身份。工具结果的媒体保留为内容块，普通 JSON 数组/对象保留为结果文本。
+- 保真：GeminiPart 解码使用 common.UnmarshalUseNumber，避免请求尚未转换时已丢失大整数精度；Schema 保留原始 JSON，Gemini Schema 的类型和 nullable 按关键字修正，保留 properties 顺序。请求可选零值/false 保留；显式 max output tokens 为零按上游 Claude 转换语义使用默认值，默认值和派生值仍受现有 MaxTokensLimit 限制。
+- 响应：普通 JSON 与 SSE 都返回客户端入口协议。Responses 保留 thinking summary、文本、函数参数增量、稳定 item ID / output_index / sequence_number，以及完整终态；Gemini 文本即时输出，工具 JSON 片段聚合完成后再输出 functionCall。缺少 message_stop、未闭合块、非法工具 JSON 或上游错误不会伪造成功终态。
+- 计费：复用 Claude 原始 usage 记录与 Anthropic 计费语义，客户端 usage 的输入包含普通输入及缓存读写；客户端缩放不修改结算 usage。流已开始后禁重试，保留部分 usage，Responses 发送一次 response.failed，Gemini 由统一错误出口使用 SSE 格式返回错误。
+- 入口：全局/渠道透传开关不再绕过这两个跨协议转换；Claude 字节透传只适用于原生 Claude 客户端。未开始输出的转换错误返回 400。
+- 验证：新增最终请求入口测试（内存 HTTP transport，无应用服务）、上游原始 request golden 对比、工具历史/namespace/custom 往返、Schema/大整数、usage/缓存/缩放、截断/异常/断连、首字 flush 和请求不变性测试。`go test ./relay/... ./dto ./service/openaicompat ./controller` 通过；service 的 Gemini 转换与计费相关专项测试通过。
+
+支持范围不是全部供应商扩展的等价实现：Responses 的 previous_response_id / conversation / prompt 托管状态和已启用 multi_agent、Gemini cachedContent / batch 等不能在 Claude 端解析，直接返回请求错误。托管工具、供应商专属输出约束、历史 thinking 签名及其他无法映射的内容按本地 allow/safe/strict 策略记录转换损失或拒绝；没有移植上游完整 hosted-tool bridge、引用转换和插件体系。仅有 allow 策略时，诊断允许的字段/内容会被省略。
+
+未提交、推送、部署或启动前后端应用服务；本次自动化验证不代表已通过生产真实模型端到端验证。

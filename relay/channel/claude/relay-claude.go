@@ -913,7 +913,7 @@ func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, clau
 func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
 	// 透传渠道：原生 Claude 流式按字节保真转发，绕开共享扫描器的协议重建。
 	// 触发条件与请求侧（claude_handler.go）完全一致，语义「开了透传就两头都透传」。
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	if info.RelayFormat == types.RelayFormatClaude && (model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled) {
 		return ClaudeStreamPassThroughHandler(c, resp, info)
 	}
 
@@ -1211,6 +1211,16 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	}
 	var responseData []byte
 	switch info.RelayFormat {
+	case types.RelayFormatGemini, types.RelayFormatOpenAIResponses:
+		usage := buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
+		converted, convertErr := convertClaudeResponse(c, info, &claudeResponse, &usage)
+		if convertErr != nil {
+			return claudeConversionResponseError(convertErr)
+		}
+		responseData, err = common.Marshal(converted)
+		if err != nil {
+			return types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
 	case types.RelayFormatOpenAI:
 		openaiResponse := ResponseClaude2OpenAI(&claudeResponse)
 		openaiResponse.Usage = buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)

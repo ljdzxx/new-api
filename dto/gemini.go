@@ -262,7 +262,7 @@ func (p *GeminiPart) UnmarshalJSON(data []byte) error {
 		InlineDataSnake *GeminiInlineData `json:"inline_data,omitempty"` // snake_case variant
 	}
 
-	if err := common.Unmarshal(data, &aux); err != nil {
+	if err := common.UnmarshalUseNumber(data, &aux); err != nil {
 		return err
 	}
 
