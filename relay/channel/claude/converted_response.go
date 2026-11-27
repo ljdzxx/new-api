@@ -2,7 +2,9 @@ package claude
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -13,15 +15,16 @@ import (
 )
 
 type claudeOutputBlock struct {
-	kind      string
-	index     int
-	item      map[string]any
-	text      strings.Builder
-	arguments strings.Builder
-	initial   json.RawMessage
-	closed    bool
-	itemDone  bool
-	custom    bool
+	kind          string
+	index         int
+	item          map[string]any
+	text          strings.Builder
+	arguments     strings.Builder
+	initial       json.RawMessage
+	closed        bool
+	truncatedArgs bool
+	itemDone      bool
+	custom        bool
 }
 
 // One state per attempt. Native block indices are not Responses output indices
@@ -247,7 +250,14 @@ func (s *claudeConvertedResponse) close(index int) error {
 			}
 		}
 		var args map[string]json.RawMessage
-		if err := common.Unmarshal([]byte(b.arguments.String()), &args); err != nil || args == nil {
+		if err := common.UnmarshalUseNumber([]byte(b.arguments.String()), &args); err != nil || args == nil {
+			// A length stop can split a tool argument mid-object. Its stop reason follows block_stop.
+			if !initial && args == nil && errors.Is(err, io.ErrUnexpectedEOF) && strings.HasPrefix(strings.TrimSpace(b.arguments.String()), "{") {
+				b.truncatedArgs = true
+				b.closed = true
+				s.updateItem(b)
+				return nil
+			}
 			return fmt.Errorf("Claude tool arguments are incomplete or invalid")
 		}
 		field, prefix, value := "arguments", "response.function_call_arguments", b.arguments.String()
@@ -352,12 +362,21 @@ func (s *claudeConvertedResponse) complete(usage *dto.Usage) (any, error) {
 	if !s.stopped {
 		return nil, fmt.Errorf("Claude stream ended before message_stop")
 	}
+	finishReason := stopReasonClaude2OpenAI(s.stop)
+	for _, b := range s.ordered {
+		if b.truncatedArgs && finishReason != "length" {
+			return nil, fmt.Errorf("Claude tool arguments are incomplete")
+		}
+	}
 	if s.info.RelayFormat == types.RelayFormatGemini {
 		if s.emit != nil {
 			return nil, s.geminiChunk(nil, usage, s.stop)
 		}
 		parts := make([]dto.GeminiPart, 0, len(s.ordered))
 		for _, b := range s.ordered {
+			if b.truncatedArgs {
+				continue
+			}
 			if b.kind == "tool_use" {
 				parts = append(parts, dto.GeminiPart{FunctionCall: &dto.FunctionCall{ID: common.GetPointer(b.item["call_id"].(string)), FunctionName: b.item["name"].(string), Arguments: json.RawMessage(b.arguments.String())}})
 			} else {
@@ -367,12 +386,12 @@ func (s *claudeConvertedResponse) complete(usage *dto.Usage) (any, error) {
 		return s.geminiResponse(parts, usage, s.stop), nil
 	}
 	status := "completed"
-	if stopReasonClaude2OpenAI(s.stop) == "length" || stopReasonClaude2OpenAI(s.stop) == "content_filter" {
+	if finishReason == "length" || finishReason == "content_filter" {
 		status = "incomplete"
 	}
 	for _, b := range s.ordered {
 		if !b.itemDone {
-			if b.kind == "text" {
+			if b.kind == "text" || b.truncatedArgs {
 				b.item["status"] = status
 			}
 			b.itemDone = true

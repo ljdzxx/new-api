@@ -443,3 +443,78 @@ func TestClaudeResponsesInterruptedStream(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeResponsesForcedToolChoice(t *testing.T) {
+	for _, tc := range []struct{ kind, namespace, name string }{{"function", "", "lookup"}, {"custom", "ops", "ops__lookup"}} {
+		c, _, info := claudeConversionContext(types.RelayFormatOpenAIResponses)
+		tool := map[string]any{"type": tc.kind, "name": "lookup"}
+		choice := map[string]any{"type": tc.kind, "name": "lookup"}
+		if tc.namespace != "" {
+			tool = map[string]any{"type": "namespace", "name": tc.namespace, "tools": []any{tool}}
+			choice["namespace"] = tc.namespace
+		}
+		tools, err := common.Marshal([]any{tool})
+		require.NoError(t, err)
+		selected, err := common.Marshal(choice)
+		require.NoError(t, err)
+		out, err := ConvertResponsesToClaude(c, info, dto.OpenAIResponsesRequest{Model: "claude-test", Input: json.RawMessage(`"hello"`), Tools: tools, ToolChoice: selected})
+		require.NoError(t, err)
+		body, err := common.Marshal(out)
+		require.NoError(t, err)
+		require.Equal(t, "tool", gjson.GetBytes(body, "tool_choice.type").String())
+		require.Equal(t, tc.name, gjson.GetBytes(body, "tool_choice.name").String())
+	}
+}
+
+func TestClaudeRejectsGeminiContinuation(t *testing.T) {
+	for _, key := range []string{"continuationToken", "continuation_token"} {
+		for _, policy := range []types.ConversionLossPolicy{types.ConversionLossPolicyAllow, types.ConversionLossPolicyStrict} {
+			c, _, info := claudeConversionContext(types.RelayFormatGemini)
+			info.ChannelOtherSettings.ToolLossPolicy = policy
+			var req dto.GeminiChatRequest
+			require.NoError(t, common.UnmarshalJsonStr(`{"contents":[{"parts":[{"text":"continue"}]}],"`+key+`":"previous"}`, &req))
+			_, err := ConvertGeminiToClaude(c, info, &req)
+			require.ErrorContains(t, err, "continuationToken requires a native Gemini upstream")
+		}
+	}
+}
+
+func TestClaudeTruncatedToolArguments(t *testing.T) {
+	for _, stop := range []string{"max_tokens", "model_context_window_exceeded", "tool_use"} {
+		for _, format := range []types.RelayFormat{types.RelayFormatOpenAIResponses, types.RelayFormatGemini} {
+			t.Run(stop+"/"+string(format), func(t *testing.T) {
+				c, w, info := claudeConversionContext(format)
+				frames := claudeConvertedFrames()
+				frames = append(frames[:9], frames[10:]...)
+				frames[10] = strings.Replace(frames[10], "tool_use", stop, 1)
+				usage, err := runClaudeConvertedFrames(c, info, frames)
+				wire := w.Body.String()
+				require.Equal(t, 8, usage.CompletionTokens)
+				if stop == "tool_use" {
+					require.NotNil(t, err)
+					if format == types.RelayFormatOpenAIResponses {
+						require.Contains(t, wire, "event: response.failed")
+					}
+					return
+				}
+				require.Nil(t, err)
+				require.Contains(t, wire, "Answer")
+				require.NotContains(t, wire, "event: response.failed")
+				if format == types.RelayFormatGemini {
+					require.Contains(t, wire, `"finishReason":"MAX_TOKENS"`)
+					require.NotContains(t, wire, `"functionCall"`)
+					return
+				}
+				require.Equal(t, 1, strings.Count(wire, "event: response.incomplete"))
+				require.NotContains(t, wire, "event: response.function_call_arguments.done")
+				for _, line := range strings.Split(wire, "\n") {
+					if data, ok := strings.CutPrefix(line, "data: "); ok && gjson.Get(data, "type").String() == "response.incomplete" {
+						require.Equal(t, "max_output_tokens", gjson.Get(data, "response.incomplete_details.reason").String())
+						require.Equal(t, "incomplete", gjson.Get(data, "response.output.2.status").String())
+						require.Equal(t, `{"id":`, gjson.Get(data, "response.output.2.arguments").String())
+					}
+				}
+			})
+		}
+	}
+}

@@ -57,3 +57,19 @@ func TestOpenAIToolSchemaTokenMetadataUsesJSONText(t *testing.T) {
 		require.Nil(t, fn.Parameters)
 	}
 }
+
+func TestClaudeEstimateIncludesWireAndAppendedTools(t *testing.T) {
+	const schema = `{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`
+	var req ClaudeRequest
+	require.NoError(t, common.UnmarshalJsonStr(`{"tools":[{"name":"lookup","description":"Lookup a city","input_schema":`+schema+`},{"type":"web_search_20250305","name":"web_search","user_location":{"city":"Berlin"}}]}`, &req))
+	meta := req.GetTokenCountMeta()
+	require.Equal(t, 2, meta.ToolsCount)
+	for _, text := range []string{"lookup", "Lookup a city", schema, "web_search", "Berlin"} {
+		require.Contains(t, meta.CombineText, text)
+	}
+	req.AddTool(Tool{Name: "appended"})
+	meta = req.GetTokenCountMeta()
+	require.Equal(t, 3, meta.ToolsCount)
+	require.Contains(t, meta.CombineText, schema)
+	require.Contains(t, meta.CombineText, "appended")
+}

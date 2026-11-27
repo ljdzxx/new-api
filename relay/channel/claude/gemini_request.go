@@ -27,6 +27,9 @@ func ConvertGeminiToClaude(c *gin.Context, info *relaycommon.RelayInfo, req *dto
 	if req.CachedContent != "" {
 		return nil, fmt.Errorf("cachedContent requires a native Gemini upstream")
 	}
+	if rawPresent(req.ContinuationToken) {
+		return nil, fmt.Errorf("continuationToken requires a native Gemini upstream")
+	}
 	if len(req.Requests) > 0 {
 		return nil, fmt.Errorf("Gemini batch requests cannot be converted to Claude Messages")
 	}

@@ -1,12 +1,25 @@
 package helper
 
 import (
+	"reflect"
+
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+// GeminiPassthroughThinkingChanged also accounts for normalization without a channel mapping.
+func GeminiPassthroughThinkingChanged(info *relaycommon.RelayInfo, req *dto.GeminiChatRequest) bool {
+	if info.ChannelMappedReasoningEffort != "" {
+		return true
+	}
+	if original, ok := info.Request.(*dto.GeminiChatRequest); ok && original != nil {
+		return !reflect.DeepEqual(original.GenerationConfig.ThinkingConfig, req.GenerationConfig.ThinkingConfig)
+	}
+	return info.ClientReasoningEffort != "" && info.ReasoningEffort != info.ClientReasoningEffort
+}
 
 // ApplyModelMappingToPassthroughBody applies the fields changed by model
 // mapping to an otherwise untouched request body.  Passthrough requests may
@@ -16,10 +29,19 @@ import (
 // A non-JSON body (for example multipart image data) is returned unchanged;
 // such bodies cannot be safely patched without changing their encoding.
 func ApplyModelMappingToPassthroughBody(body []byte, info *relaycommon.RelayInfo, request dto.Request) ([]byte, error) {
-	if info == nil || !info.IsModelMapped || len(body) == 0 || !gjson.ValidBytes(body) {
+	if info == nil || len(body) == 0 {
 		return body, nil
 	}
 
+	if req, ok := request.(*dto.GeminiChatRequest); ok {
+		if req == nil || !GeminiPassthroughThinkingChanged(info, req) || !gjson.ValidBytes(body) {
+			return body, nil
+		}
+		return setGeminiThinkingConfig(body, req.GenerationConfig.ThinkingConfig)
+	}
+	if !info.IsModelMapped || !gjson.ValidBytes(body) {
+		return body, nil
+	}
 	result := body
 	// These request formats carry the model in the JSON body. Gemini and
 	// several task-specific formats put it in the URL or form data instead.
@@ -69,114 +91,93 @@ func ApplyModelMappingToPassthroughBody(body []byte, info *relaycommon.RelayInfo
 			result, err = sjson.SetBytes(result, "reasoning.effort", info.ReasoningEffort)
 		case *dto.ClaudeRequest:
 			// Claude's adaptive-thinking effort is represented by output_config.
-			result, err = sjson.SetBytes(result, "output_config.effort", info.ReasoningEffort)
-		case *dto.GeminiChatRequest:
-			// Gemini's effort adapter uses thinkingLevel in generationConfig.
-			result, err = setGeminiThinkingField(result, "thinkingLevel", info.ReasoningEffort)
+			effort := req.GetEfforts()
+			if effort == "" {
+				effort = info.ReasoningEffort
+			}
+			result, err = sjson.SetBytes(result, "output_config.effort", effort)
 		}
 		if err != nil {
 			return body, err
 		}
-	}
-
-	// Claude/Gemini adapters can derive thinking settings from the mapped
-	// target model (for example a -thinking suffix) even when no explicit
-	// effort was present in the client request. Mirror those normalized fields
-	// into the passthrough body as well.
-	if effortChanged {
-		switch req := request.(type) {
-		case *dto.ClaudeRequest:
-			if req.GetEfforts() != "" {
-				result, err = sjson.SetBytes(result, "output_config.effort", req.GetEfforts())
-			}
-		case *dto.GeminiChatRequest:
-			if config := req.GenerationConfig.ThinkingConfig; config != nil {
-				result, err = setGeminiThinkingConfig(result, config)
-			}
-		}
-	}
-	if err != nil {
-		return body, err
 	}
 	return result, nil
 }
 
-func setGeminiThinkingField(body []byte, field, value string) ([]byte, error) {
-	if value == "" {
-		return body, nil
-	}
-	path := geminiThinkingPath(body, field)
-	return sjson.SetBytes(body, path, value)
-}
-
+// Patch only the normalized thinking fields. Preserve provider extensions and the input's field style.
 func setGeminiThinkingConfig(body []byte, config *dto.GeminiThinkingConfig) ([]byte, error) {
-	if config == nil {
-		return body, nil
-	}
-	var err error
-	if config.ThinkingLevel != "" {
-		for _, container := range []string{"generationConfig", "generation_config"} {
-			for _, thinking := range []string{"thinkingConfig", "thinking_config"} {
-				for _, field := range []string{"thinkingBudget", "thinking_budget"} {
-					body, err = sjson.DeleteBytes(body, container+"."+thinking+"."+field)
-					if err != nil {
-						return body, err
-					}
-				}
+	// A client may supply both supported spellings. Update each existing block
+	// so the provider's alias precedence cannot restore the old level or budget.
+	found := false
+	for _, container := range []string{"generationConfig", "generation_config"} {
+		generation := gjson.GetBytes(body, container)
+		if !generation.IsObject() {
+			continue
+		}
+		for _, thinking := range []string{"thinkingConfig", "thinking_config"} {
+			if !generation.Get(thinking).Exists() {
+				continue
+			}
+			found = true
+			var err error
+			body, err = patchGeminiThinkingBlock(body, container+"."+thinking, thinking == "thinking_config", config)
+			if err != nil {
+				return nil, err
 			}
 		}
-		body, err = setGeminiThinkingField(body, "thinkingLevel", config.ThinkingLevel)
-		if err != nil {
-			return body, err
-		}
 	}
-	if config.ThinkingBudget != nil {
-		path := geminiThinkingPath(body, "thinkingBudget")
-		body, err = sjson.SetBytes(body, path, *config.ThinkingBudget)
-		if err != nil {
-			return body, err
-		}
-	}
-	if config.IncludeThoughts != nil {
-		path := geminiThinkingPath(body, "includeThoughts")
-		body, err = sjson.SetBytes(body, path, *config.IncludeThoughts)
-	}
-	return body, err
-}
-
-func geminiThinkingPath(body []byte, field string) string {
-	camelField := field
-	snake := field
-	switch field {
-	case "thinkingLevel":
-		snake = "thinking_level"
-	case "thinkingBudget":
-		snake = "thinking_budget"
-	case "includeThoughts":
-		snake = "include_thoughts"
-	}
-	paths := []struct {
-		container string
-		config    string
-		field     string
-	}{
-		{"generationConfig", "thinkingConfig", camelField},
-		{"generationConfig", "thinking_config", snake},
-		{"generation_config", "thinkingConfig", camelField},
-		{"generation_config", "thinking_config", snake},
-	}
-	for _, candidate := range paths {
-		if gjson.GetBytes(body, candidate.container+"."+candidate.config).Exists() {
-			return candidate.container + "." + candidate.config + "." + candidate.field
-		}
+	if found || config == nil {
+		return body, nil
 	}
 	if gjson.GetBytes(body, "generation_config").Exists() {
-		return "generation_config.thinking_config." + snake
+		return patchGeminiThinkingBlock(body, "generation_config.thinking_config", true, config)
 	}
-	if gjson.GetBytes(body, "generationConfig").Exists() {
-		return "generationConfig.thinkingConfig." + camelField
+	return patchGeminiThinkingBlock(body, "generationConfig.thinkingConfig", false, config)
+}
+
+func patchGeminiThinkingBlock(body []byte, path string, snakeCase bool, config *dto.GeminiThinkingConfig) ([]byte, error) {
+	if config == nil {
+		return sjson.DeleteBytes(body, path)
 	}
-	// Gemini accepts camelCase by default; use it when the target object was
-	// omitted and must be created.
-	return "generationConfig.thinkingConfig." + camelField
+	block := []byte(gjson.GetBytes(body, path).Raw)
+	if len(block) == 0 || !gjson.ParseBytes(block).IsObject() {
+		block = []byte("{}")
+	}
+	var level, budget, include any
+	if config.ThinkingLevel != "" {
+		level = config.ThinkingLevel
+	}
+	if config.ThinkingBudget != nil {
+		budget = *config.ThinkingBudget
+	}
+	if config.IncludeThoughts != nil {
+		include = *config.IncludeThoughts
+	}
+	for _, field := range []struct {
+		camel, snake string
+		value        any
+	}{
+		{"thinkingLevel", "thinking_level", level},
+		{"thinkingBudget", "thinking_budget", budget},
+		{"includeThoughts", "include_thoughts", include},
+	} {
+		key, alias := field.camel, field.snake
+		if snakeCase {
+			key, alias = alias, key
+		}
+		var err error
+		block, err = sjson.DeleteBytes(block, alias)
+		if err != nil {
+			return nil, err
+		}
+		if field.value == nil {
+			block, err = sjson.DeleteBytes(block, key)
+		} else {
+			block, err = sjson.SetBytes(block, key, field.value)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return sjson.SetRawBytes(body, path, block)
 }

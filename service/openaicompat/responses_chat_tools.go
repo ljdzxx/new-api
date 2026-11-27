@@ -158,7 +158,7 @@ func convertResponsesChatTools(raw, rawChoice json.RawMessage) ([]dto.ToolCallRe
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			choice = map[string]any{"type": "function", "function": map[string]string{"name": alias}}
+			choice = map[string]any{"type": "function", "function": map[string]any{"name": alias}}
 		}
 	}
 	return tools, choice, mapping, nil

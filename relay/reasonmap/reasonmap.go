@@ -12,7 +12,7 @@ func ClaudeStopReasonToOpenAIFinishReason(stopReason string) string {
 		return "stop"
 	case "end_turn":
 		return "stop"
-	case "max_tokens":
+	case "max_tokens", "model_context_window_exceeded":
 		return "length"
 	case "tool_use":
 		return "tool_calls"

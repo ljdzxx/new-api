@@ -1114,15 +1114,16 @@ func patchGeminiZeroCompletionUsage(c *gin.Context, info *relaycommon.RelayInfo,
 }
 
 func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) dto.Usage {
+	imageCount := observeGeminiInlineMedia(info, response)
 	metadata := response.GetUsageMetadata()
 	recordGeminiUpstreamUsage(info, metadata)
 	if dto.HasGeminiUsageMetadataTokens(metadata) {
 		usage := buildUsageFromGeminiMetadata(*metadata, info.GetEstimatePromptTokens())
-		patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(response), geminiResponseInlineImageCount(response))
+		patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(response), imageCount)
 		return usage
 	}
 	usage := service.ResponseText2Usage(c, geminiResponseUsageText(response), info.UpstreamModelName, info.GetEstimatePromptTokens())
-	patchGeminiZeroCompletionUsage(c, info, usage, "", geminiResponseInlineImageCount(response))
+	patchGeminiZeroCompletionUsage(c, info, usage, "", imageCount)
 	attachEstimatedGeminiBillingUsage(usage)
 	return *usage
 }
@@ -1467,14 +1468,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		grounding.observe(&geminiResponse)
 		grounding.commit(info)
 
-		// 统计图片数量
-		for _, candidate := range geminiResponse.Candidates {
-			for _, part := range candidate.Content.Parts {
-				if part.InlineData != nil && part.InlineData.MimeType != "" {
-					imageCount++
-				}
-			}
-		}
+		imageCount += observeGeminiInlineMedia(info, &geminiResponse)
 		responseText.WriteString(geminiResponseUsageText(&geminiResponse))
 
 		// 更新使用量统计
@@ -1498,10 +1492,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	if !hasBillableUsageMetadata {
 		if info.ReceivedResponseCount > 0 {
 			usage = service.ResponseText2Usage(c, responseText.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
-			if imageCount > 0 && usage.CompletionTokens == 0 {
-				usage.CompletionTokens = imageCount * 1400
-				usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-			}
+			patchGeminiZeroCompletionUsage(c, info, usage, "", imageCount)
 			attachEstimatedGeminiBillingUsage(usage)
 		} else {
 			usage = &dto.Usage{}
@@ -1739,7 +1730,7 @@ func geminiResponseUsageText(response *dto.GeminiChatResponse) string {
 	return text.String()
 }
 
-func geminiResponseInlineImageCount(response *dto.GeminiChatResponse) int {
+func observeGeminiInlineMedia(info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) int {
 	if response == nil {
 		return 0
 	}
@@ -1750,6 +1741,9 @@ func geminiResponseInlineImageCount(response *dto.GeminiChatResponse) int {
 				count++
 			}
 		}
+	}
+	if count > 0 {
+		info.HasMediaOutput = true
 	}
 	return count
 }

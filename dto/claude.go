@@ -371,34 +371,25 @@ func (c *ClaudeRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		}
 	}
 
-	// tools
 	if c.Tools != nil {
-		tools := c.GetTools()
-		normalTools, webSearchTools := ProcessTools(tools)
-		if normalTools != nil {
-			for _, t := range normalTools {
-				tokenCountMeta.ToolsCount++
-				if t.Name != "" {
-					texts = append(texts, t.Name)
-				}
-				if t.Description != "" {
-					texts = append(texts, t.Description)
-				}
-				if t.InputSchema != nil {
-					b, _ := common.Marshal(t.InputSchema)
-					texts = append(texts, string(b))
-				}
-			}
+		// Estimate from the wire representation, including mixed raw and typed tools after AddTool.
+		var tools []struct {
+			Name         string          `json:"name"`
+			Description  string          `json:"description"`
+			InputSchema  json.RawMessage `json:"input_schema"`
+			UserLocation json.RawMessage `json:"user_location"`
 		}
-		if webSearchTools != nil {
-			for _, t := range webSearchTools {
+		raw, ok := c.Tools.(json.RawMessage)
+		if !ok {
+			raw, _ = common.Marshal(c.Tools)
+		}
+		if common.Unmarshal(raw, &tools) == nil {
+			for _, tool := range tools {
 				tokenCountMeta.ToolsCount++
-				if t.Name != "" {
-					texts = append(texts, t.Name)
-				}
-				if t.UserLocation != nil {
-					b, _ := common.Marshal(t.UserLocation)
-					texts = append(texts, string(b))
+				for _, field := range []string{tool.Name, tool.Description, common.JsonRawMessageToString(tool.InputSchema), common.JsonRawMessageToString(tool.UserLocation)} {
+					if field != "" {
+						texts = append(texts, field)
+					}
 				}
 			}
 		}

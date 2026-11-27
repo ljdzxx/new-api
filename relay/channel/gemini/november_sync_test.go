@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
@@ -283,4 +284,38 @@ func TestNovemberGroundingRepeatedTextAndMediaNewline(t *testing.T) {
 	got := responseGeminiChat2OpenAI(c, response)
 	require.Equal(t, "tool_calls", got.Choices[0].FinishReason)
 	require.Equal(t, "stop", got.Choices[1].FinishReason)
+}
+
+func TestGeminiImageOutputExcludedFromLogTPS(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, metadata string
+			tokens         int
+		}{
+			{"missing", ``, 1400}, {"prompt only", `,"usageMetadata":{"promptTokenCount":10,"totalTokenCount":10}`, 1400}, {"aggregate only", `,"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":25,"totalTokenCount":35}`, 25},
+		} {
+			t.Run(fmt.Sprintf("%s/stream=%v", tc.name, stream), func(t *testing.T) {
+				c, _, info := geminiSyncContext()
+				body := `{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"AA=="}}]}}]` + tc.metadata + `}`
+				if stream {
+					body = "data: " + body + "\n\n"
+				}
+				resp := &http.Response{Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
+				handler := GeminiTextGenerationHandler
+				if stream {
+					handler = GeminiTextGenerationStreamHandler
+				}
+				usage, err := handler(c, info, resp)
+				require.Nil(t, err)
+				require.Equal(t, tc.tokens, usage.CompletionTokens)
+				require.Zero(t, usage.CompletionTokenDetails.ImageTokens)
+				other := map[string]any{}
+				service.MarkLogTextOutput(c, info, usage, other)
+				require.NotContains(t, other, "output_tps_eligible")
+				info.InitChannelMeta(c)
+				service.MarkLogTextOutput(c, info, &dto.Usage{CompletionTokens: 10}, other)
+				require.Equal(t, true, other["output_tps_eligible"])
+			})
+		}
+	}
 }

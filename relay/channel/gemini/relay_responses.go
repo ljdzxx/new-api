@@ -159,7 +159,7 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 		}
 		grounding.observe(response)
 		grounding.commit(info)
-		imageCount += geminiResponseInlineImageCount(response)
+		imageCount += observeGeminiInlineMedia(info, response)
 		if apiErr = geminiResponsesBlocked(c, response); apiErr != nil {
 			streamErr = apiErr
 			sr.Stop(apiErr)

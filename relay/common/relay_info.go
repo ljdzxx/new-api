@@ -93,6 +93,7 @@ type TokenCountMeta struct {
 type RelayInfo struct {
 	ResponsesUpstreamRequestHash string // actual native Responses endpoint and credential headers
 	UpstreamUsageReported        bool   // An explicit upstream usage object, including all-zero counters.
+	HasMediaOutput               bool   // Observed output media can lack token details in upstream usage.
 	upstreamUsage                *dto.Usage
 
 	TokenId           int
@@ -234,6 +235,7 @@ type RelayInfo struct {
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	info.ForcedServiceTier = ""
 	info.ResetUpstreamUsage()
+	info.HasMediaOutput = false
 	// 渠道重试不继承前一次 Gemini 搜索计数。
 	if info.ResponsesUsageInfo != nil {
 		delete(info.ResponsesUsageInfo.BuiltInTools, GeminiGoogleSearchQueryTool)

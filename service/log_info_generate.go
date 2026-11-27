@@ -107,7 +107,7 @@ func AppendResponsesLogBadges(ctx *gin.Context, other map[string]interface{}) {
 }
 
 func MarkLogTextOutput(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage, other map[string]interface{}) {
-	if usage == nil || usage.CompletionTokenDetails.ImageTokens > 0 ||
+	if usage == nil || info.HasMediaOutput || usage.CompletionTokenDetails.ImageTokens > 0 ||
 		usage.CompletionTokenDetails.AudioTokens > 0 || ctx.GetBool("image_generation_call") {
 		return
 	}

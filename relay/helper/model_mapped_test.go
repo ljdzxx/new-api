@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -357,4 +358,17 @@ func TestApplyModelMappingToPassthroughBodyGeminiThinkingKeepsFieldStyle(t *test
 	require.Equal(t, "high", gjson.GetBytes(patched, "generationConfig.thinkingConfig.thinkingLevel").String())
 	require.True(t, gjson.GetBytes(patched, "generationConfig.thinkingConfig.vendorFlag").Bool())
 	require.True(t, gjson.GetBytes(patched, "generationConfig.providerExtension.keep").Bool())
+}
+
+func TestGeminiPassthroughClearsConflictingThinkingAliases(t *testing.T) {
+	c := newModelMappedTestContext(`{"gemini-2.5-flash":"gemini-2.5-flash,high"}`)
+	info := newModelMappedTestInfo("gemini-2.5-flash")
+	body := []byte(`{"generationConfig":{"thinkingConfig":{"thinking_level":"low","extra":1}},"generation_config":{"thinking_config":{"thinkingLevel":"low","extra":2}}}`)
+	var request dto.GeminiChatRequest
+	require.NoError(t, common.Unmarshal(body, &request))
+	require.NoError(t, ModelMappedHelper(c, info, &request))
+	request.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{ThinkingBudget: common.GetPointer(24576)}
+	patched, err := ApplyModelMappingToPassthroughBody(body, info, &request)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"generationConfig":{"thinkingConfig":{"thinkingBudget":24576,"extra":1}},"generation_config":{"thinking_config":{"thinking_budget":24576,"extra":2}}}`, string(patched))
 }

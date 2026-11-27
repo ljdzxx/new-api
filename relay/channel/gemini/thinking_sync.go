@@ -15,11 +15,6 @@ func normalizeGeminiThinkingConfig(request *dto.GeminiChatRequest, info *relayco
 	if request == nil || info == nil {
 		return nil
 	}
-	// Resolve provider defaults first; an explicit channel rule is the final
-	// authority. Keep rule matching and the original model's billing identity.
-	if err := normalizeGeminiThinkingDefaults(request, info); err != nil {
-		return err
-	}
 	model := strings.TrimPrefix(strings.ToLower(info.UpstreamModelName), "models/")
 	if effort := info.ChannelMappedReasoningEffort; effort != "" {
 		config := request.GenerationConfig.ThinkingConfig
@@ -30,7 +25,11 @@ func normalizeGeminiThinkingConfig(request *dto.GeminiChatRequest, info *relayco
 		config.ThinkingLevel = effort
 		config.ThinkingBudget = nil
 		info.ReasoningEffort = effort
-	} else if config := request.GenerationConfig.ThinkingConfig; config != nil && config.ThinkingLevel != "" {
+	}
+	if err := normalizeGeminiThinkingDefaults(request, info); err != nil {
+		return err
+	}
+	if config := request.GenerationConfig.ThinkingConfig; config != nil && config.ThinkingLevel != "" {
 		info.ReasoningEffort = config.ThinkingLevel
 	} else if strings.HasPrefix(model, "gemini-4-argon-cyber-permissive") {
 		info.ReasoningEffort = "high"
@@ -44,7 +43,7 @@ func normalizeGeminiThinkingDefaults(request *dto.GeminiChatRequest, info *relay
 	if request == nil || request.GenerationConfig.ThinkingConfig == nil || info == nil {
 		return nil
 	}
-	model := strings.ToLower(strings.TrimPrefix(info.UpstreamModelName, "models/"))
+	model := strings.TrimPrefix(strings.ToLower(info.UpstreamModelName), "models/")
 	config := request.GenerationConfig.ThinkingConfig
 	if strings.HasPrefix(model, "gemini-2.5-flash-image") {
 		request.GenerationConfig.ThinkingConfig = nil
@@ -73,7 +72,10 @@ func normalizeGeminiThinkingDefaults(request *dto.GeminiChatRequest, info *relay
 		}
 		if config.ThinkingLevel != "" {
 			if strings.HasPrefix(model, "gemini-4-") {
-				config.ThinkingLevel = reasoning.Gemini4ThinkingLevel(model, config.ThinkingLevel)
+				// Gemini 4 channel rules can explicitly select a provider-specific level.
+				if info.ChannelMappedReasoningEffort == "" {
+					config.ThinkingLevel = reasoning.Gemini4ThinkingLevel(model, config.ThinkingLevel)
+				}
 			} else {
 				config.ThinkingLevel = normalizeGeminiThinkingLevel(config.ThinkingLevel)
 			}
@@ -148,6 +150,8 @@ func geminiThinkingLevelFromBudget(budget int) string {
 
 func geminiThinkingBudgetForLevel(level string, maxBudget int) int {
 	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "none":
+		return 0
 	case "minimal", "low":
 		return min(maxBudget, 1024)
 	case "medium":

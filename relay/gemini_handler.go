@@ -147,7 +147,7 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		if info.IsModelMapped {
+		if helper.GeminiPassthroughThinkingChanged(info, request) {
 			passthroughBody, bodyErr := storage.Bytes()
 			if bodyErr != nil {
 				return types.NewError(bodyErr, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
