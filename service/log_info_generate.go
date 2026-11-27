@@ -106,6 +106,18 @@ func AppendResponsesLogBadges(ctx *gin.Context, other map[string]interface{}) {
 	}
 }
 
+func MarkLogTextOutput(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage, other map[string]interface{}) {
+	if usage == nil || usage.CompletionTokenDetails.ImageTokens > 0 ||
+		usage.CompletionTokenDetails.AudioTokens > 0 || ctx.GetBool("image_generation_call") {
+		return
+	}
+	switch info.RelayFormat {
+	case types.RelayFormatOpenAI, types.RelayFormatClaude, types.RelayFormatGemini,
+		types.RelayFormatOpenAIResponses, types.RelayFormatOpenAIResponsesCompaction:
+		other["output_tps_eligible"] = true
+	}
+}
+
 func AppendClientFastMode(ctx *gin.Context, other map[string]interface{}) {
 	if ctx != nil && other != nil && common.GetContextKeyBool(ctx, constant.ContextKeyClientFastMode) {
 		other["fast_mode"] = true

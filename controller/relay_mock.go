@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -247,10 +246,7 @@ func recordMockTestConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, usage
 	service.AppendChannelAffinityAdminInfo(c, adminInfo)
 	other["admin_info"] = adminInfo
 
-	useTimeSeconds := 0
-	if !info.StartTime.IsZero() {
-		useTimeSeconds = int(time.Since(info.StartTime).Seconds())
-	}
+	service.MarkLogTextOutput(c, info, &usage, other)
 	model.RecordConsumeLog(c, userID, model.RecordConsumeLogParams{
 		ChannelId:        info.ChannelId,
 		PromptTokens:     usage.PromptTokens,
@@ -260,7 +256,7 @@ func recordMockTestConsumeLog(c *gin.Context, info *relaycommon.RelayInfo, usage
 		Quota:            0,
 		Content:          content,
 		TokenId:          info.TokenId,
-		UseTimeSeconds:   useTimeSeconds,
+		DurationMS:       model.LogDurationMS(info.StartTime),
 		IsStream:         info.IsStream,
 		Group:            info.UsingGroup,
 		Other:            other,

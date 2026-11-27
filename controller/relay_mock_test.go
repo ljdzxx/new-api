@@ -543,7 +543,8 @@ func TestNonMockTextConsumeQuotaStillBillsAndLogsRealTokenName(t *testing.T) {
 		TokenKey:        "sk-real-token",
 		OriginModelName: "gpt-4o-mini",
 		UsingGroup:      "default",
-		StartTime:       time.Now(),
+		RelayFormat:     types.RelayFormatOpenAI,
+		StartTime:       time.Now().Add(-250 * time.Millisecond),
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelId: 88,
 		},
@@ -575,6 +576,16 @@ func TestNonMockTextConsumeQuotaStillBillsAndLogsRealTokenName(t *testing.T) {
 	}
 	if log.Quota != 20 {
 		t.Fatalf("expected non-mock quota 20, got %d", log.Quota)
+	}
+	var timing struct {
+		DurationMS int64 `json:"duration_ms"`
+		TextOutput bool  `json:"output_tps_eligible"`
+	}
+	if err := common.UnmarshalJsonStr(log.Other, &timing); err != nil {
+		t.Fatal(err)
+	}
+	if timing.DurationMS < 250 || log.UseTime != int(timing.DurationMS/1000) || !timing.TextOutput || log.CompletionTokens != 5 {
+		t.Fatalf("unexpected request timing: %+v, logged seconds: %d", timing, log.UseTime)
 	}
 	if log.TokenName != "real-api-token" {
 		t.Fatalf("expected real token name, got %q", log.TokenName)

@@ -52,14 +52,15 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo) {
 	attachPerRequestBillingPolicySnapshot(c, info, info.PriceData.Quota, other)
 	attachQuotaSaturation(c, info, other)
 	model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
-		ChannelId: info.ChannelId,
-		ModelName: info.OriginModelName,
-		TokenName: tokenName,
-		Quota:     info.PriceData.Quota,
-		Content:   logContent,
-		TokenId:   info.TokenId,
-		Group:     info.UsingGroup,
-		Other:     other,
+		DurationMS: model.LogDurationMS(info.StartTime),
+		ChannelId:  info.ChannelId,
+		ModelName:  info.OriginModelName,
+		TokenName:  tokenName,
+		Quota:      info.PriceData.Quota,
+		Content:    logContent,
+		TokenId:    info.TokenId,
+		Group:      info.UsingGroup,
+		Other:      other,
 	})
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)

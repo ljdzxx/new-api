@@ -96,12 +96,35 @@ func RecordLog(userId int, logType int, content string) {
 	}
 }
 
-func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string, tokenName string, content string, tokenId int, useTimeSeconds int,
+// LogDurationMS distinguishes a sub-millisecond request from an unknown duration.
+func LogDurationMS(start time.Time) *int64 {
+	if start.IsZero() {
+		return nil
+	}
+	elapsed := time.Since(start)
+	if elapsed < 0 {
+		return nil
+	}
+	ms := elapsed.Milliseconds()
+	return &ms
+}
+
+func (log *Log) setRequestTiming(other map[string]interface{}, durationMS *int64) {
+	if durationMS != nil {
+		if other == nil {
+			other = make(map[string]interface{})
+		}
+		other["duration_ms"] = *durationMS
+		log.UseTime = int(*durationMS / 1000)
+	}
+	log.Other = common.MapToJsonStr(other)
+}
+
+func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string, tokenName string, content string, tokenId int, durationMS *int64,
 	isStream bool, group string, other map[string]interface{}) {
 	logger.LogInfo(c, fmt.Sprintf("record error log: userId=%d, channelId=%d, modelName=%s, tokenName=%s, content=%s", userId, channelId, modelName, tokenName, content))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
-	otherStr := common.MapToJsonStr(other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -122,7 +145,6 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		Quota:            0,
 		ChannelId:        channelId,
 		TokenId:          tokenId,
-		UseTime:          useTimeSeconds,
 		IsStream:         isStream,
 		Group:            group,
 		Ip: func() string {
@@ -132,8 +154,8 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 			return ""
 		}(),
 		RequestId: requestId,
-		Other:     otherStr,
 	}
+	log.setRequestTiming(other, durationMS)
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
@@ -149,7 +171,7 @@ type RecordConsumeLogParams struct {
 	Quota            int                    `json:"quota"`
 	Content          string                 `json:"content"`
 	TokenId          int                    `json:"token_id"`
-	UseTimeSeconds   int                    `json:"use_time_seconds"`
+	DurationMS       *int64                 `json:"duration_ms,omitempty"`
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
 	Other            map[string]interface{} `json:"other"`
@@ -168,7 +190,6 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
-	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -189,7 +210,6 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		Quota:            params.Quota,
 		ChannelId:        params.ChannelId,
 		TokenId:          params.TokenId,
-		UseTime:          params.UseTimeSeconds,
 		IsStream:         params.IsStream,
 		Group:            params.Group,
 		Ip: func() string {
@@ -199,8 +219,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			return ""
 		}(),
 		RequestId: requestId,
-		Other:     otherStr,
 	}
+	log.setRequestTiming(params.Other, params.DurationMS)
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())

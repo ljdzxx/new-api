@@ -40,6 +40,7 @@ import {
 import { IconHelpCircle } from '@douyinfe/semi-icons';
 import { Route, Sparkles } from 'lucide-react';
 import UsageLogTypeBadges from './UsageLogTypeBadges';
+import { getLogLatency } from './logLatency';
 import './UsageLogsColumnDefs.css';
 
 const colors = [
@@ -170,19 +171,6 @@ const LATENCY_COLORS = {
   unknown: { text: 'var(--latency-muted)', bar: '#9ca3af' },
 };
 
-function normalizeLatency(value, multiplier = 1) {
-  if (
-    (typeof value !== 'number' && typeof value !== 'string') ||
-    (typeof value === 'string' && value.trim() === '')
-  ) {
-    return null;
-  }
-  const milliseconds = Number(value) * multiplier;
-  return Number.isFinite(milliseconds) && milliseconds >= 0
-    ? milliseconds
-    : null;
-}
-
 function getLatencyColors(milliseconds, [warn, slow, critical]) {
   if (milliseconds === null) return LATENCY_COLORS.unknown;
   if (milliseconds >= critical) return LATENCY_COLORS.critical;
@@ -202,9 +190,7 @@ function formatLatency(milliseconds) {
 
 function renderLatency(record, t) {
   const other = getLogOther(record.other);
-  const firstToken = record.is_stream ? normalizeLatency(other?.frt) : null;
-  // Logs store total duration in seconds and first-token latency in milliseconds.
-  const duration = normalizeLatency(record.use_time, 1000);
+  const { firstToken, duration, outputRate } = getLogLatency(record, other);
   // Match sub2api: TTFT 10s/30s/60s; total duration 1m/3m/5m.
   const firstTokenColors = getLatencyColors(firstToken, [10000, 30000, 60000]);
   const durationColors = getLatencyColors(duration, [60000, 180000, 300000]);
@@ -235,6 +221,12 @@ function renderLatency(record, t) {
           style={{ color: durationColors.text }}
         >
           {formatLatency(duration)}
+        </span>
+        <span title={t('输出 Token 数除以总耗时，包含首字等待。')}>
+          {t('输出 TPS')}
+        </span>
+        <span className='font-medium tabular-nums text-[var(--semi-color-text-1)]'>
+          {outputRate}
         </span>
       </div>
     </div>

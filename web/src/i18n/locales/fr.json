@@ -3991,6 +3991,8 @@
     "延迟": "Latence",
     "首字": "Premier token",
     "总耗时": "Durée totale",
+    "输出 TPS": "TPS en sortie",
+    "输出 Token 数除以总耗时，包含首字等待。": "Nombre de tokens de sortie divisé par la durée totale, attente du premier token comprise.",
     "用以防止恶意用户利用临时邮箱批量注册": "Pour empêcher les utilisateurs malveillants d'utiliser des e-mails temporaires pour s'inscrire en masse",
     "用以支持基于 WebAuthn 的无密码登录注册": "Prise en charge de la connexion et de l'enregistrement sans mot de passe basés sur WebAuthn",
     "用以支持通过 Discord 进行登录注册": "Utilisé pour prendre en charge la connexion/l'inscription via Discord",

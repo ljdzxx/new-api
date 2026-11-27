@@ -61,6 +61,7 @@ func TestCalculateTextQuotaSummaryRechecksChannelRatioWithActualInputTokens(t *t
 
 	relayInfo := &relaycommon.RelayInfo{
 		OriginModelName: "actual-input-channel-threshold",
+		RelayFormat:     types.RelayFormatOpenAI,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelModelRatio: 1.1,
 			RatioThreshold:    10_000,
@@ -91,6 +92,31 @@ func TestCalculateTextQuotaSummaryRechecksChannelRatioWithActualInputTokens(t *t
 	require.Equal(t, 1.1, relayInfo.PriceData.GlobalModelRatio)
 	require.Equal(t, 45_029, summary.PromptTokens)
 	require.Equal(t, 159_667, summary.CacheTokens)
+	other := map[string]interface{}{}
+	MarkLogTextOutput(ctx, relayInfo, usage, other)
+	require.NotEqual(t, usage.CompletionTokens, summary.CompletionTokens)
+	require.Equal(t, true, other["output_tps_eligible"])
+}
+
+func TestLogTextOutputExcludesMedia(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	for _, tc := range []struct {
+		format    types.RelayFormat
+		details   dto.OutputTokenDetails
+		imageCall bool
+	}{
+		{format: types.RelayFormatOpenAIImage},
+		{format: types.RelayFormatOpenAIRealtime},
+		{format: types.RelayFormatOpenAIResponses, imageCall: true},
+		{format: types.RelayFormatGemini, details: dto.OutputTokenDetails{ImageTokens: 3}},
+		{format: types.RelayFormatOpenAI, details: dto.OutputTokenDetails{AudioTokens: 3}},
+	} {
+		ctx.Set("image_generation_call", tc.imageCall)
+		other := map[string]interface{}{}
+		MarkLogTextOutput(ctx, &relaycommon.RelayInfo{RelayFormat: tc.format},
+			&dto.Usage{CompletionTokens: 10, CompletionTokenDetails: tc.details}, other)
+		require.NotContains(t, other, "output_tps_eligible", "%+v", tc)
+	}
 }
 
 func TestReevaluateGlobalModelRatioFreezesSystemAndUserThresholdConfig(t *testing.T) {

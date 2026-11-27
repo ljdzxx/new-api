@@ -916,7 +916,7 @@ func runChannelForwardPrecheck(c *gin.Context, sourceInfo *relaycommon.RelayInfo
 		return nil, nil, fixedForwardPrecheckError(types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusNetworkAuthenticationRequired, types.ErrOptionWithSkipRetry()))
 	}
 	usage := response.Usage
-	recordChannelForwardPrecheckUsage(precheckContext, sourceInfo, precheckInfo, sourceChannel, &usage, int(time.Since(startTime).Seconds()))
+	recordChannelForwardPrecheckUsage(precheckContext, sourceInfo, precheckInfo, sourceChannel, &usage, model.LogDurationMS(startTime))
 	if common.DebugEnabled || common.DebugTraceEnabledForContext(c) {
 		logger.LogInfo(c, fmt.Sprintf("channel forward precheck result: source_channel=%d model=%s metrics=%v prompt_tokens=%d completion_tokens=%d", sourceChannel.Id, precheckInfo.UpstreamModelName, metrics, usage.PromptTokens, usage.CompletionTokens))
 	}
@@ -932,7 +932,7 @@ func fixedForwardPrecheckError(err *types.NewAPIError) *types.NewAPIError {
 	return fixedErr
 }
 
-func recordChannelForwardPrecheckUsage(c *gin.Context, sourceInfo *relaycommon.RelayInfo, precheckInfo *relaycommon.RelayInfo, sourceChannel *model.Channel, usage *dto.Usage, useTimeSeconds int) {
+func recordChannelForwardPrecheckUsage(c *gin.Context, sourceInfo *relaycommon.RelayInfo, precheckInfo *relaycommon.RelayInfo, sourceChannel *model.Channel, usage *dto.Usage, durationMS *int64) {
 	if c == nil || sourceInfo == nil || precheckInfo == nil || sourceChannel == nil || usage == nil {
 		return
 	}
@@ -947,6 +947,7 @@ func recordChannelForwardPrecheckUsage(c *gin.Context, sourceInfo *relaycommon.R
 		"upstream_model":           precheckInfo.UpstreamModelName,
 		"note":                     "system side precheck usage, quota is not charged to user",
 	}
+	service.MarkLogTextOutput(c, precheckInfo, usage, other)
 	model.RecordConsumeLog(c, userId, model.RecordConsumeLogParams{
 		ChannelId:        sourceChannel.Id,
 		PromptTokens:     usage.PromptTokens,
@@ -956,7 +957,7 @@ func recordChannelForwardPrecheckUsage(c *gin.Context, sourceInfo *relaycommon.R
 		Quota:            0,
 		Content:          "渠道转发预检",
 		TokenId:          sourceInfo.TokenId,
-		UseTimeSeconds:   useTimeSeconds,
+		DurationMS:       durationMS,
 		IsStream:         false,
 		Group:            sourceInfo.UsingGroup,
 		Other:            other,
@@ -1286,11 +1287,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
-		if startTime.IsZero() {
-			startTime = time.Now()
-		}
-		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, model.LogDurationMS(startTime), common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
 }
