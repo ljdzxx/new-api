@@ -185,7 +185,11 @@ func (r *GeneralOpenAIRequest) GetTokenCountMeta() *types.TokenCountMeta {
 				texts = append(texts, tool.Function.Description)
 			}
 			if tool.Function.Parameters != nil {
-				texts = append(texts, fmt.Sprintf("%v", tool.Function.Parameters))
+				if raw, ok := tool.Function.Parameters.(json.RawMessage); ok {
+					texts = append(texts, string(raw))
+				} else {
+					texts = append(texts, fmt.Sprintf("%v", tool.Function.Parameters))
+				}
 			}
 		}
 		//toolTokens := CountTokenInput(countStr, request.Model)
@@ -240,6 +244,24 @@ type FunctionRequest struct {
 	Name        string `json:"name"`
 	Parameters  any    `json:"parameters,omitempty"`
 	Arguments   string `json:"arguments,omitempty"`
+}
+
+// UnmarshalJSON keeps tool parameter schemas in their original property order.
+// Parameters stays any to support existing programmatic map construction.
+func (f *FunctionRequest) UnmarshalJSON(data []byte) error {
+	type fields FunctionRequest
+	var decoded struct {
+		fields
+		Parameters json.RawMessage `json:"parameters,omitempty"`
+	}
+	if err := common.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*f = FunctionRequest(decoded.fields)
+	if len(decoded.Parameters) > 0 && common.GetJsonType(decoded.Parameters) != "null" {
+		f.Parameters = decoded.Parameters
+	}
+	return nil
 }
 
 type StreamOptions struct {

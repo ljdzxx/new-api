@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -1561,7 +1562,7 @@ func moveValue(data []byte, fromPath, toPath string) ([]byte, error) {
 	if !sourceValue.Exists() {
 		return data, fmt.Errorf("source path does not exist: %s", fromPath)
 	}
-	result, err := sjson.SetBytes(data, toPath, sourceValue.Value())
+	result, err := setOverrideJSONResult(data, toPath, sourceValue)
 	if err != nil {
 		return nil, err
 	}
@@ -1573,7 +1574,15 @@ func copyValue(data []byte, fromPath, toPath string) ([]byte, error) {
 	if !sourceValue.Exists() {
 		return data, fmt.Errorf("source path does not exist: %s", fromPath)
 	}
-	return sjson.SetBytes(data, toPath, sourceValue.Value())
+	return setOverrideJSONResult(data, toPath, sourceValue)
+}
+
+func setOverrideJSONResult(data []byte, path string, value gjson.Result) ([]byte, error) {
+	// Computed selectors such as array.# have no original JSON token.
+	if value.Raw == "" {
+		return sjson.SetBytes(data, path, value.Value())
+	}
+	return sjson.SetRawBytes(data, path, []byte(value.Raw))
 }
 
 func isPathBasedOperation(mode string) bool {
@@ -1689,7 +1698,7 @@ func modifyArray(data []byte, path string, value interface{}, isPrepend bool) ([
 	// 添加原值
 	addOriginal := func() {
 		current.ForEach(func(_, val gjson.Result) bool {
-			newArray = append(newArray, val.Value())
+			newArray = append(newArray, json.RawMessage(val.Raw))
 			return true
 		})
 	}

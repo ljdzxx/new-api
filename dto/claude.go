@@ -36,6 +36,18 @@ type ClaudeMediaMessage struct {
 	ToolUseId string `json:"tool_use_id,omitempty"`
 }
 
+// UnmarshalJSON preserves opaque tool input numbers across response conversion
+// and ParseContent, which otherwise decode interface values through float64.
+func (c *ClaudeMediaMessage) UnmarshalJSON(data []byte) error {
+	type fields ClaudeMediaMessage
+	var decoded fields
+	if err := common.UnmarshalUseNumber(data, &decoded); err != nil {
+		return err
+	}
+	*c = ClaudeMediaMessage(decoded)
+	return nil
+}
+
 func (c *ClaudeMediaMessage) SetText(s string) {
 	c.Text = &s
 }
@@ -171,10 +183,28 @@ func (c *ClaudeMessage) ParseContent() ([]ClaudeMediaMessage, error) {
 }
 
 type Tool struct {
-	Type        string                 `json:"type,omitempty"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	InputSchema map[string]interface{} `json:"input_schema"`
+	Type        string `json:"type,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	InputSchema any    `json:"input_schema"`
+}
+
+// UnmarshalJSON preserves schema property order while allowing callers to
+// construct Tool values with maps as before.
+func (t *Tool) UnmarshalJSON(data []byte) error {
+	type fields Tool
+	var decoded struct {
+		fields
+		InputSchema json.RawMessage `json:"input_schema"`
+	}
+	if err := common.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*t = Tool(decoded.fields)
+	if len(decoded.InputSchema) > 0 && common.GetJsonType(decoded.InputSchema) != "null" {
+		t.InputSchema = decoded.InputSchema
+	}
+	return nil
 }
 
 type InputSchema struct {
@@ -221,6 +251,7 @@ type ClaudeRequest struct {
 	TopK              *int            `json:"top_k,omitempty"`
 	Stream            *bool           `json:"stream,omitempty"`
 	Tools             any             `json:"tools,omitempty"`
+	Safeguards        json.RawMessage `json:"safeguards,omitempty"`
 	ContextManagement json.RawMessage `json:"context_management,omitempty"`
 	OutputConfig      json.RawMessage `json:"output_config,omitempty"`
 	OutputFormat      json.RawMessage `json:"output_format,omitempty"`
@@ -229,12 +260,31 @@ type ClaudeRequest struct {
 	Thinking          *Thinking       `json:"thinking,omitempty"`
 	McpServers        json.RawMessage `json:"mcp_servers,omitempty"`
 	Metadata          json.RawMessage `json:"metadata,omitempty"`
+	// vLLM Messages extension; forwarded verbatim when present.
+	ChatTemplateKwargs json.RawMessage `json:"chat_template_kwargs,omitempty"`
 	// Speed specifies the Claude inference speed mode.
 	// This field is filtered by default and can be enabled via channel setting allow_speed.
 	Speed json.RawMessage `json:"speed,omitempty"`
 	// ServiceTier specifies upstream service level and may affect billing.
 	// This field is filtered by default and can be enabled via channel setting allow_service_tier.
 	ServiceTier string `json:"service_tier,omitempty"`
+}
+
+// UnmarshalJSON keeps tool schemas raw and opaque message numbers exact.
+func (c *ClaudeRequest) UnmarshalJSON(data []byte) error {
+	type fields ClaudeRequest
+	var decoded struct {
+		fields
+		Tools json.RawMessage `json:"tools,omitempty"`
+	}
+	if err := common.UnmarshalUseNumber(data, &decoded); err != nil {
+		return err
+	}
+	*c = ClaudeRequest(decoded.fields)
+	if len(decoded.Tools) > 0 && common.GetJsonType(decoded.Tools) != "null" {
+		c.Tools = decoded.Tools
+	}
+	return nil
 }
 
 // OutputConfigForEffort just for extract effort
@@ -393,6 +443,17 @@ func (c *ClaudeRequest) AddTool(tool any) {
 	switch tools := c.Tools.(type) {
 	case []any:
 		c.Tools = append(tools, tool)
+	case json.RawMessage:
+		var items []json.RawMessage
+		if err := common.Unmarshal(tools, &items); err != nil {
+			c.Tools = []any{tool}
+			return
+		}
+		merged := make([]any, 0, len(items)+1)
+		for _, item := range items {
+			merged = append(merged, item)
+		}
+		c.Tools = append(merged, tool)
 	default:
 		// 如果Tools不是[]any类型，重新初始化为[]any
 		c.Tools = []any{tool}
@@ -408,6 +469,12 @@ func (c *ClaudeRequest) GetTools() []any {
 	switch tools := c.Tools.(type) {
 	case []any:
 		return tools
+	case json.RawMessage:
+		var decoded []any
+		if err := common.UnmarshalUseNumber(tools, &decoded); err != nil {
+			return nil
+		}
+		return decoded
 	default:
 		return nil
 	}

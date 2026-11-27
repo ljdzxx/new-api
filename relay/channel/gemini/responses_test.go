@@ -228,7 +228,7 @@ func TestGeminiResponsesStreamFailures(t *testing.T) {
 			require.Equal(t, 20, usage.CompletionTokens)
 			require.Contains(t, recorder.Body.String(), "event: response.failed\n")
 			require.NotContains(t, recorder.Body.String(), "response.completed")
-			require.NoError(t, helper.WriteResponsesStreamFailure(c, err))
+			require.NoError(t, helper.WriteResponsesStreamFailure(c, err, info))
 			require.Equal(t, 1, strings.Count(recorder.Body.String(), "event: response.failed\n"))
 		})
 	}

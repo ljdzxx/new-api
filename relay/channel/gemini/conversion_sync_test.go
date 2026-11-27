@@ -32,6 +32,29 @@ func TestGeminiSchemaUsesFullJSONOnV1Beta(t *testing.T) {
 	require.Equal(t, float64(3), gjson.GetBytes(got.GenerationConfig.ResponseJsonSchema, "properties.x.const").Float())
 }
 
+func TestGeminiFunctionSchemaFromRawJSON(t *testing.T) {
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeGemini, UpstreamModelName: "gemini-2.5-flash"}}
+	for _, schema := range []string{
+		`{"type":"object","properties":{"x":{"type":"string"}}}`,
+		`{"type":"object","properties":{"reasoning":{"type":"string"},"answer":{"const":9007199254740993}}}`,
+		`{"type":"object","properties":{}}`,
+	} {
+		var function dto.FunctionRequest
+		require.NoError(t, common.Unmarshal([]byte(`{"name":"f","parameters":`+schema+`}`), &function))
+		decl := convertGeminiFunctionDeclaration(nil, info, function)
+		encoded, err := common.Marshal(decl)
+		require.NoError(t, err)
+		if gjson.Get(schema, "properties.answer.const").Exists() {
+			require.Equal(t, schema, gjson.GetBytes(encoded, "parametersJsonSchema").Raw)
+		} else if gjson.Get(schema, "properties.x").Exists() {
+			require.Equal(t, "STRING", gjson.GetBytes(encoded, "parameters.properties.x.type").String())
+		} else {
+			require.Nil(t, decl.Parameters)
+			require.Nil(t, decl.ParametersJsonSchema)
+		}
+	}
+}
+
 func TestGeminiEmptyObjectConstraintsArePreserved(t *testing.T) {
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeGemini, UpstreamModelName: "gemini-2.5-flash"}}
 	for _, key := range []string{"minProperties", "maxProperties", "description"} {

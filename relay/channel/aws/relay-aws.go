@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
+	"github.com/tidwall/sjson"
 
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -181,13 +182,11 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 		if err != nil {
 			return nil, errors.Wrap(err, "apply model mapping to pass-through body fail")
 		}
-		var data map[string]interface{}
-		if err := common.Unmarshal(body, &data); err != nil {
-			return nil, errors.Wrap(err, "pass-through unmarshal request body fail")
+		body, err = sjson.DeleteBytes(body, "model")
+		if err != nil {
+			return nil, errors.Wrap(err, "remove pass-through model fail")
 		}
-		delete(data, "model")
-		delete(data, "stream")
-		return common.Marshal(data)
+		return sjson.DeleteBytes(body, "stream")
 	}
 	return common.Marshal(awsClaudeReq)
 }

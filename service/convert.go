@@ -640,7 +640,7 @@ func ResponseOpenAI2Claude(openAIResponse *dto.OpenAITextResponse, info *relayco
 				claudeContent.Id = toolUse.ID
 				claudeContent.Name = toolUse.Function.Name
 				var mapParams map[string]interface{}
-				if err := common.Unmarshal([]byte(toolUse.Function.Arguments), &mapParams); err == nil {
+				if err := common.UnmarshalUseNumber([]byte(toolUse.Function.Arguments), &mapParams); err == nil {
 					claudeContent.Input = mapParams
 				} else {
 					claudeContent.Input = toolUse.Function.Arguments

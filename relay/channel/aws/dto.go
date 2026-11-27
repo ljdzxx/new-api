@@ -30,6 +30,24 @@ type AwsClaudeRequest struct {
 	//Metadata         json.RawMessage     `json:"metadata,omitempty"`
 }
 
+// UnmarshalJSON keeps tool schemas raw and opaque message numbers exact when
+// the generic Claude payload is decoded again for Bedrock.
+func (r *AwsClaudeRequest) UnmarshalJSON(data []byte) error {
+	type fields AwsClaudeRequest
+	var decoded struct {
+		fields
+		Tools json.RawMessage `json:"tools,omitempty"`
+	}
+	if err := common.UnmarshalUseNumber(data, &decoded); err != nil {
+		return err
+	}
+	*r = AwsClaudeRequest(decoded.fields)
+	if len(decoded.Tools) > 0 && common.GetJsonType(decoded.Tools) != "null" {
+		r.Tools = decoded.Tools
+	}
+	return nil
+}
+
 func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaudeRequest, error) {
 	var awsClaudeRequest AwsClaudeRequest
 	err := common.DecodeJson(requestBody, &awsClaudeRequest)
@@ -39,12 +57,12 @@ func formatRequest(requestBody io.Reader, requestHeader http.Header) (*AwsClaude
 	awsClaudeRequest.AnthropicVersion = "bedrock-2023-05-31"
 
 	// check header anthropic-beta
-	anthropicBetaValues := requestHeader.Get("anthropic-beta")
+	anthropicBetaValues := strings.Join(requestHeader.Values("anthropic-beta"), ",")
 	if len(anthropicBetaValues) > 0 {
 		var tempArray []string
 		tempArray = strings.Split(anthropicBetaValues, ",")
 		if len(tempArray) > 0 {
-			betaJson, err := json.Marshal(tempArray)
+			betaJson, err := common.Marshal(tempArray)
 			if err != nil {
 				return nil, err
 			}

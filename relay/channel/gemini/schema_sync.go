@@ -1,10 +1,12 @@
 package gemini
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
@@ -30,8 +32,15 @@ func convertGeminiFunctionDeclaration(c *gin.Context, info *relaycommon.RelayInf
 	if function.Parameters == nil {
 		return declaration
 	}
-	misfits := geminiSchemaMisfits(function.Parameters)
-	object, _ := function.Parameters.(map[string]any)
+	// Inspect a decoded copy; the full-schema path retains the original JSON.
+	parameters := function.Parameters
+	if raw, ok := parameters.(json.RawMessage); ok {
+		if err := common.UnmarshalUseNumber(raw, &parameters); err != nil {
+			return declaration
+		}
+	}
+	misfits := geminiSchemaMisfits(parameters)
+	object, _ := parameters.(map[string]any)
 	properties, hasProperties := object["properties"].(map[string]any)
 	emptyObject := hasProperties && len(properties) == 0
 	if emptyObject {
@@ -60,7 +69,7 @@ func convertGeminiFunctionDeclaration(c *gin.Context, info *relaycommon.RelayInf
 	if emptyObject {
 		return declaration
 	}
-	declaration.Parameters = cleanFunctionParameters(function.Parameters)
+	declaration.Parameters = cleanFunctionParameters(parameters)
 	return declaration
 }
 

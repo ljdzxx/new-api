@@ -1,11 +1,14 @@
 package xiaomi
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 func normalizeClaudeToolsForMimo(request *dto.ClaudeRequest) error {
@@ -14,6 +17,20 @@ func normalizeClaudeToolsForMimo(request *dto.ClaudeRequest) error {
 	}
 
 	switch tools := request.Tools.(type) {
+	case json.RawMessage:
+		var items []json.RawMessage
+		if err := common.Unmarshal(tools, &items); err != nil {
+			return err
+		}
+		normalizedTools := make([]any, 0, len(items))
+		for _, item := range items {
+			normalized, err := normalizeRawClaudeToolForMimo(item)
+			if err != nil {
+				return err
+			}
+			normalizedTools = append(normalizedTools, normalized)
+		}
+		request.Tools = normalizedTools
 	case []any:
 		for i, tool := range tools {
 			normalized, err := normalizeClaudeToolForMimo(tool)
@@ -54,6 +71,8 @@ func normalizeClaudeToolsForMimo(request *dto.ClaudeRequest) error {
 
 func normalizeClaudeToolForMimo(tool any) (any, error) {
 	switch t := tool.(type) {
+	case json.RawMessage:
+		return normalizeRawClaudeToolForMimo(t)
 	case *dto.Tool:
 		if t != nil && strings.TrimSpace(t.Type) == "" {
 			t.Type = "custom"
@@ -71,6 +90,13 @@ func normalizeClaudeToolForMimo(tool any) (any, error) {
 		return t, nil
 	}
 	return tool, nil
+}
+
+func normalizeRawClaudeToolForMimo(tool json.RawMessage) (json.RawMessage, error) {
+	if common.GetJsonType(tool) != "object" || strings.TrimSpace(gjson.GetBytes(tool, "type").String()) != "" {
+		return tool, nil
+	}
+	return sjson.SetBytes(tool, "type", "custom")
 }
 
 func summarizeClaudeToolsForLog(tools any) string {

@@ -248,5 +248,28 @@ C:\Users\ray\AppData\Local\Temp\new-api-production-responses-probe\sse-channel31
 - master 22:34:30–22:44:12 全窗口：归一化命中 6 次（5 次渠道 312 页面上下文自然流量 + 1 次上述探针），`function_call_output requires call_id` 400 为 0，`tool output rejected` 诊断日志为 0。
 - 遗留：slave 仍为 21:59 镜像，不含第二版兜底，若流量切回 13001，悬空工具结果类请求会重新 400，两节点应保持一致。master 观察窗口仅约 10 分钟，兜底目前只有探针证据，尚未观察到真实用户以该形状复现；后续可按 `names=[?` 检索自然流量命中。
 
+## 2026-11-26：固定服务档位 SSE 一致性复测
+
+- UTC 13:45（北京时间 21:45）使用用户当次提供的凭据，向公网入口的 `/v1/responses` 和 `/v1/chat/completions` 各发送两个小规模 SSE 请求：`gpt-6.2-sol` 显式请求 `service_tier=ultrafast`，`gpt-5.6-sol` 显式请求 `service_tier=fast`。用户确认已开启固定服务档位计费；本次未读取或修改渠道配置。
+- 当次 `diag nginx` 确认 `newapi_backend` 指向 slave / 13001。`diag status` 显示 slave 健康运行，启动时间为 `2026-11-26T12:35:30Z`；master 仍为 11 月 22 日启动的实例，不能将本次结果外推至 master。
+- 四次请求均 HTTP 200。两个 Responses 流各有 11 个事件，其中 `response.created`、`response.in_progress`、`response.completed` 的 `response.service_tier` 均与请求一致，终态为 completed；两个 Chat Completions 流各有 4 个 JSON chunk（含 usage），所有 chunk 的顶层 `service_tier` 均一致，且收到 stop 和 `[DONE]`。无档位缺失、不一致或 JSON 解析失败。
+- 对应请求 ID：Responses / gpt-6.2-sol 为 `202611261345198556998145CFYm797`，Responses / gpt-5.6-sol 为 `20261126134522539101625PtGxZeM2`；Chat / gpt-6.2-sol 为 `20261126134524955285735RUiLjrtY`，Chat / gpt-5.6-sol 为 `20261126134526612951984K0IYFBqJ`。slave 容器日志按这些 ID 关联，确认由渠道 360 处理。
+- 验证边界：仅验证上述显式请求档位与下游 SSE 一致；未测试请求档位冲突或省略时的覆盖行为、非流式响应、Compact 或 WebSocket，未取证实际出站请求及上游原始档位，不据此证明上游实际调度档位。未启动本地前后端服务，未部署、重启或更改生产配置；凭据不落盘。
+
+## 2026-11-27：渠道 198 的 Claude thinking 模式被上游拒绝
+
+- 北京时间 16:37:07，请求 `20261127083706938995114my0Chhdb` 在 new-api slave / 13001 通过渠道 198 请求 `claude-sonnet-5-5`，路径为 `POST /v1/messages?beta=true`，最终 HTTP 400，耗时约 289 ms。上游错误原文为 `claude-sonnet-5-5 requires adaptive thinking or thinking.type=between_tools; omit thinking or use one of those modes`。
+- 日志明确记录 `upstream_status=400`、`mapped_status=400`、`channel_type=14`、`api_type=1`、`pass_through_channel=true`、`mapped=false`、`param_override=0`、`retry=0`。客户端标识为 `claude-cli/2.1.332 (external, claude-vscode, agent-sdk/0.3.332)`。现有目标请求日志没有 thinking 字段值，不能断言具体是 enabled、disabled 或其他模式。
+- 按 16:20:00–16:50:00 +08:00 的时间参数读取 slave 容器日志（采集启动时约 16:49，故末端只覆盖当时已经产生的日志），本机筛选 `channel error` 并按请求 ID 去重，发现 24 笔相同 thinking 错误，全部为渠道 198、上述模型，首末错误时间为 16:33:03 与 16:46:24。一次请求在多个层次记录错误，不能将原始错误行数当作请求数。
+- 当次 `diag nginx` 确认 newapi_backend 指向 13001；slave healthy、restarts=0，状态探针 HTTP 200；master 为 exited，当前路由未指向它。本次错误有上游明确返回的模型参数校验证据。
+- 本地 `relay/claude_handler.go` 的透传分支在未做模型映射时直接使用原始请求体，结构化请求上的 thinking 处理不会自动写回该透传体。这是本地代码证据，未核验生产运行二进制的精确提交，也没有采集该请求原始正文。
+- 处理方向：按此上游返回的要求调整该模型请求的 thinking 模式，或省略 thinking；需用小规模请求验证上游实际接受情况。不能仅修改结构化 DTO 的 thinking 逻辑就认为透传请求已修复。本次仅只读排查，未发模型探针、部署、重启或修改渠道。
+
+### 同次排查补充：失败后的相邻成功请求
+
+- 目标请求在 16:37:07.228 返回最终 HTTP 400，`retry=0`。随后同一用户、同一令牌、同一模型和渠道 198 的独立请求 `20261127083707940339456zo9xAIp3` 在约 16:37:07.940 开始，16:37:18.576 返回 HTTP 200，耗时约 10.636 秒；不是目标请求在 new-api 内部重试后成功，也没有切换 new-api 渠道。
+- 两笔预估日志的 `output_estimate_source` 均为 `max_tokens`，失败请求的输出上限估算为 64，后一笔为 64000；输入 token 估算分别为 42555 与 33755。这些是请求预估值，不是实际消耗，说明不能把后一笔当作参数完全相同的重放。此前同一用户/令牌/模型/渠道的两笔请求也分别在 16:37:01 和 16:37:06 返回 HTTP 200。
+- 可能是辅助短输出请求失败后主请求继续，或客户端改变参数后另发请求；仅凭相邻时间、相同令牌和模型，不能证明业务上的重试关系。缺少两笔 thinking 字段及客户端调用用途，尚不能判断具体是哪一种；HTTP 200 也不单独证明流式响应正常完成。
+
 本文含内部地址和运维路径，未经要求不公开发布。实际 API Key、SSH 私钥、生产 .env 及未筛选完整日志不写入本文或 Git。
 
