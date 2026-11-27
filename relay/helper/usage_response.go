@@ -391,7 +391,7 @@ func recomputeTotal(data []byte, prefix, inputKey, outputKey, totalKey string) (
 }
 
 func patchGeminiDetailArrays(data []byte, prefix string, ratio float64) ([]byte, error) {
-	for _, name := range []string{"promptTokensDetails", "toolUsePromptTokensDetails", "candidatesTokensDetails"} {
+	for _, name := range []string{"promptTokensDetails", "promptTokenDetails", "toolUsePromptTokensDetails", "candidatesTokensDetails"} {
 		items := gjson.GetBytes(data, prefix+"."+name).Array()
 		for i, item := range items {
 			value := item.Get("tokenCount")

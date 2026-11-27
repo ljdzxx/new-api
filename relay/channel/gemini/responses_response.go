@@ -84,7 +84,7 @@ func (s *geminiResponsesState) response(status string, usage *dto.Usage) map[str
 	}
 	if status == "incomplete" {
 		reason := "content_filter"
-		if s.finish == "MAX_TOKENS" {
+		if s.finish == "MAX_TOKENS" || s.finish == "CONTINUATION" {
 			reason = "max_output_tokens"
 		}
 		resp["incomplete_details"] = map[string]any{"reason": reason}
@@ -216,19 +216,23 @@ func (s *geminiResponsesState) consume(response *dto.GeminiChatResponse) error {
 		if err := s.start(); err != nil {
 			return err
 		}
-		s.grounding.observeCandidate(candidate)
 		textParts := 0
-		writePart := func(text string) error {
+		lastWasText := false
+		writePart := func(text string, plain bool, index int) error {
 			if text == "" {
 				return nil
 			}
-			if textParts > 0 {
+			if textParts > 0 && !(plain && lastWasText) {
 				text = "\n" + text
 			}
 			textParts++
+			lastWasText = plain
+			if plain {
+				s.grounding.recordPart(index, candidate.Content.Parts[index].Text, s.grounding.rendered.Len()+len(text)-len(candidate.Content.Parts[index].Text))
+			}
 			return s.textDelta(text, false)
 		}
-		for _, part := range candidate.Content.Parts {
+		for index, part := range candidate.Content.Parts {
 			if part.FileData != nil {
 				s.info.RecordConversionDiagnostics(s.c, []types.ConversionDiagnostic{{Code: "unsupported_output_media", Path: "output", Message: "Gemini fileData output cannot be represented and was omitted", Severity: types.ConversionDiagnosticError, From: types.RelayFormatGemini, To: types.RelayFormatOpenAIResponses}})
 			}
@@ -237,7 +241,7 @@ func (s *geminiResponsesState) consume(response *dto.GeminiChatResponse) error {
 				if part.Thought {
 					err = s.textDelta(part.Text, true)
 				} else {
-					err = writePart(part.Text)
+					err = writePart(part.Text, true, index)
 				}
 				if err != nil {
 					return err
@@ -254,7 +258,7 @@ func (s *geminiResponsesState) consume(response *dto.GeminiChatResponse) error {
 				if strings.HasPrefix(part.InlineData.MimeType, "image/") {
 					label = "![image]"
 				}
-				if err := writePart(label + "(data:" + part.InlineData.MimeType + ";base64," + part.InlineData.Data + ")"); err != nil {
+				if err := writePart(label+"(data:"+part.InlineData.MimeType+";base64,"+part.InlineData.Data+")", false, index); err != nil {
 					return err
 				}
 			}
@@ -268,7 +272,7 @@ func (s *geminiResponsesState) consume(response *dto.GeminiChatResponse) error {
 				if part.CodeExecutionResult != nil {
 					text += "```output\n" + part.CodeExecutionResult.Output + "\n```\n"
 				}
-				if err := writePart(text); err != nil {
+				if err := writePart(text, false, index); err != nil {
 					return err
 				}
 			}
@@ -297,7 +301,7 @@ func (s *geminiResponsesState) complete(usage *dto.Usage, grounding *geminiGroun
 	status := "completed"
 	switch s.finish {
 	case "", "STOP":
-	case "MAX_TOKENS", "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY":
+	case "MAX_TOKENS", "CONTINUATION", "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY":
 		status = "incomplete"
 	default:
 		// Upstream maps OTHER and unrecognized finish reasons to content_filter.

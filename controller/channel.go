@@ -474,6 +474,13 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 			}
 		}
 	}
+	if channel.Type == constant.ChannelTypeVertexAi {
+		switch channel.GetOtherSettings().VertexAPIVersion {
+		case "", "v1", "v1beta1":
+		default:
+			return fmt.Errorf("Vertex API version must be v1 or v1beta1")
+		}
+	}
 	if channel.ModelRatio != nil && *channel.ModelRatio < 0 {
 		return fmt.Errorf("渠道模型倍率不能小于 0")
 	}

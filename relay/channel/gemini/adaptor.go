@@ -49,7 +49,11 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	if err != nil {
 		return nil, err
 	}
-	return a.ConvertOpenAIRequest(c, info, oaiReq.(*dto.GeneralOpenAIRequest))
+	chatRequest := oaiReq.(*dto.GeneralOpenAIRequest)
+	// The shared Claude-to-Chat converter uses legacy model suffixes. Carry
+	// explicit effort through as well so Gemini 4 can apply its level policy.
+	chatRequest.ReasoningEffort = req.GetEfforts()
+	return a.ConvertOpenAIRequest(c, info, chatRequest)
 }
 
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {

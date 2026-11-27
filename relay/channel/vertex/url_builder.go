@@ -32,6 +32,10 @@ func appendVertexAPIVersion(baseURL, version string) string {
 	if strings.HasSuffix(baseURL, "/"+version) {
 		return baseURL
 	}
+	// A configured base may already contain the previous API version.
+	for _, existing := range []string{"/v1", "/v1beta1"} {
+		baseURL = strings.TrimSuffix(baseURL, existing)
+	}
 	return baseURL + "/" + version
 }
 

@@ -190,8 +190,9 @@ const (
 )
 
 type ChannelOtherSettings struct {
-	AdvancedCustom *AdvancedCustomConfig      `json:"advanced_custom,omitempty"`
-	ToolLossPolicy types.ConversionLossPolicy `json:"tool_loss_policy,omitempty"`
+	VertexAPIVersion string                     `json:"vertex_api_version,omitempty"` // Google models: v1 (default) or v1beta1.
+	AdvancedCustom   *AdvancedCustomConfig      `json:"advanced_custom,omitempty"`
+	ToolLossPolicy   types.ConversionLossPolicy `json:"tool_loss_policy,omitempty"`
 
 	VertexProjectID                       string                    `json:"vertex_project_id,omitempty"` // Optional project for Vertex API key mode.
 	ServiceTierBilling                    *types.ServiceTierBilling `json:"service_tier_billing,omitempty"`

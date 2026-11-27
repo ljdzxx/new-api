@@ -22,6 +22,7 @@ test('Vertex API key project survives save and reload without changing other set
     readVertexChannelSettings(41, JSON.parse(JSON.stringify(saved))),
   ).toEqual({
     vertex_key_type: 'api_key',
+    vertex_api_version: 'v1',
     vertex_project_id: 'project-123',
   });
 });
@@ -51,7 +52,29 @@ test('switching authentication mode or channel type removes stale Vertex fields'
   expect(writeVertexChannelSettings(saved, { type: 1, ...saved })).toEqual({});
   expect(readVertexChannelSettings(41, {})).toEqual({
     vertex_key_type: 'json',
+    vertex_api_version: 'v1',
     vertex_project_id: '',
   });
   expect(saved.vertex_project_id).toBe('old');
+});
+
+test('Vertex API version survives save/load for both key types and clears on channel change', () => {
+  for (const keyType of ['json', 'api_key']) {
+    const saved = writeVertexChannelSettings(
+      {},
+      { type: 41, vertex_key_type: keyType, vertex_api_version: 'v1beta1' },
+    );
+    expect(saved.vertex_api_version).toBe('v1beta1');
+    expect(readVertexChannelSettings(41, saved).vertex_api_version).toBe(
+      'v1beta1',
+    );
+    expect(writeVertexChannelSettings(saved, { type: 1 })).toEqual({});
+    expect(
+      writeVertexChannelSettings(saved, {
+        type: 41,
+        vertex_key_type: keyType,
+        vertex_api_version: 'v1',
+      }).vertex_api_version,
+    ).toBeUndefined();
+  }
 });

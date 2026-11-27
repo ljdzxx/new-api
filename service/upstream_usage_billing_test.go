@@ -23,23 +23,22 @@ func setupUpstreamUsageBillingDB(t *testing.T) {
 	t.Helper()
 	oldDB, oldLogDB := model.DB, model.LOG_DB
 	oldPath, oldMaster := common.SQLitePath, common.IsMasterNode
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = oldDB, oldLogDB
+		common.SQLitePath, common.IsMasterNode = oldPath, oldMaster
+	})
 	t.Setenv("SQL_DSN", "local")
 	common.SQLitePath, common.IsMasterNode = ":memory:", false
+	// InitDB migrates on both master and slave nodes. Use its SQLite-safe
+	// migrations; a second AutoMigrate would bypass them and rebuild users.
 	require.NoError(t, model.InitDB())
 	testDB, err := model.DB.DB()
 	require.NoError(t, err)
 	testDB.SetMaxOpenConns(1)
 	model.LOG_DB = model.DB
 	t.Cleanup(func() {
-		model.DB, model.LOG_DB = oldDB, oldLogDB
-		common.SQLitePath, common.IsMasterNode = oldPath, oldMaster
 		require.NoError(t, testDB.Close())
 	})
-	require.NoError(t, model.DB.AutoMigrate(
-		&model.Task{}, &model.User{}, &model.Token{}, &model.Log{}, &model.Channel{},
-		&model.SubscriptionPlan{}, &model.UserSubscription{},
-		&model.SubscriptionPreConsumeRecord{}, &model.UserSubscriptionDailyStat{},
-	))
 }
 
 func TestUpstreamUsageSettlementAndRefund(t *testing.T) {

@@ -45,7 +45,7 @@ func ApplyModelMappingToPassthroughBody(body []byte, info *relaycommon.RelayInfo
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		return sjson.DeleteBytes(result, "reasoning")
 	}
-	effortChanged := info.ReasoningEffort != "" && info.ReasoningEffort != info.ClientReasoningEffort
+	effortChanged := info.ChannelMappedReasoningEffort != "" || info.ReasoningEffort != "" && info.ReasoningEffort != info.ClientReasoningEffort
 	var err error
 	if effortChanged {
 		switch req := request.(type) {
@@ -115,6 +115,16 @@ func setGeminiThinkingConfig(body []byte, config *dto.GeminiThinkingConfig) ([]b
 	}
 	var err error
 	if config.ThinkingLevel != "" {
+		for _, container := range []string{"generationConfig", "generation_config"} {
+			for _, thinking := range []string{"thinkingConfig", "thinking_config"} {
+				for _, field := range []string{"thinkingBudget", "thinking_budget"} {
+					body, err = sjson.DeleteBytes(body, container+"."+thinking+"."+field)
+					if err != nil {
+						return body, err
+					}
+				}
+			}
+		}
 		body, err = setGeminiThinkingField(body, "thinkingLevel", config.ThinkingLevel)
 		if err != nil {
 			return body, err

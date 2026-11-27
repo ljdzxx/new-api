@@ -74,7 +74,7 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	if model_setting.GetGeminiSettings().ThinkingAdapterEnabled {
-		if isNoThinkingRequest(request) {
+		if isNoThinkingRequest(request) && !info.IsModelMapped {
 			// check is thinking
 			if !strings.Contains(info.OriginModelName, "-nothinking") {
 				// try to get no thinking model price

@@ -139,13 +139,15 @@ type RelayInfo struct {
 	ModelMappingCandidateModel     string
 	ModelMappingCandidateEffort    string
 	ModelMappingSkippedReason      string
-	UserSetting                    dto.UserSetting
-	UserEmail                      string
-	UserQuota                      int
-	RelayFormat                    types.RelayFormat
-	SendResponseCount              int
-	ReceivedResponseCount          int
-	FinalPreConsumedQuota          int // 最终预消耗的配额
+	// Explicit channel effort is applied after provider defaults, even for identity mappings.
+	ChannelMappedReasoningEffort string
+	UserSetting                  dto.UserSetting
+	UserEmail                    string
+	UserQuota                    int
+	RelayFormat                  types.RelayFormat
+	SendResponseCount            int
+	ReceivedResponseCount        int
+	FinalPreConsumedQuota        int // 最终预消耗的配额
 	// WssConsumedQuota tracks the quota already deducted incrementally for a
 	// realtime request, so final settlement can correct thresholded ratios and
 	// per-chunk rounding against the complete upstream usage.

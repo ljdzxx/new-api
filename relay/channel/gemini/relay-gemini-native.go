@@ -70,7 +70,7 @@ func NativeGeminiEmbeddingHandler(c *gin.Context, resp *http.Response, info *rel
 		println(string(responseBody))
 	}
 
-	usage := service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())
+	var metadata *dto.GeminiEmbeddingUsageMetadata
 
 	if info.IsGeminiBatchEmbedding {
 		var geminiResponse dto.GeminiBatchEmbeddingResponse
@@ -78,14 +78,23 @@ func NativeGeminiEmbeddingHandler(c *gin.Context, resp *http.Response, info *rel
 		if err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
+		metadata = geminiResponse.UsageMetadata
 	} else {
 		var geminiResponse dto.GeminiEmbeddingResponse
 		err = common.Unmarshal(responseBody, &geminiResponse)
 		if err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
+		metadata = geminiResponse.UsageMetadata
 	}
 
+	usage := embeddingUsage(c, info, metadata)
+	if helper.ShouldScaleResponseUsage(info) {
+		responseBody, err = helper.PatchResponseUsageJSONForRelay(responseBody, types.RelayFormatGemini, info)
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
+		}
+	}
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return usage, nil
@@ -111,4 +120,15 @@ func GeminiTextGenerationStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 		info.SendResponseCount++
 		return true
 	})
+}
+
+// Preserve raw provider usage for settlement. Client response scaling happens
+// separately, after threshold reevaluation, just as it does for chat responses.
+func embeddingUsage(c *gin.Context, info *relaycommon.RelayInfo, metadata *dto.GeminiEmbeddingUsageMetadata) *dto.Usage {
+	if upstream := metadata.GeminiUsageMetadata(); upstream != nil {
+		recordGeminiUpstreamUsage(info, upstream)
+		usage := buildUsageFromGeminiMetadata(*upstream, info.GetEstimatePromptTokens())
+		return &usage
+	}
+	return service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())
 }

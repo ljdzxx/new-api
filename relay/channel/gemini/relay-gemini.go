@@ -639,6 +639,20 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		}
 	}
 
+	// A portable Chat effort must work without a synthetic model suffix.
+	if !adaptorWithExtraBody && textRequest.ReasoningEffort != "" {
+		config := geminiRequest.GenerationConfig.ThinkingConfig
+		if config == nil {
+			config = &dto.GeminiThinkingConfig{}
+		}
+		config.ThinkingBudget = nil
+		config.ThinkingLevel = textRequest.ReasoningEffort
+		if textRequest.ReasoningEffort == "none" {
+			config.ThinkingLevel = ""
+			config.ThinkingBudget = common.GetPointer(0)
+		}
+		geminiRequest.GenerationConfig.ThinkingConfig = config
+	}
 	if err := normalizeGeminiThinkingConfig(&geminiRequest, info); err != nil {
 		return nil, err
 	}
@@ -1127,8 +1141,9 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 		Created: common.GetTimestamp(),
 		Choices: make([]dto.OpenAITextResponseChoice, 0, len(response.Candidates)),
 	}
-	isToolCall := false
 	for _, candidate := range response.Candidates {
+		isToolCall := false
+		textParts := make([]renderedGeminiPart, len(candidate.Content.Parts))
 		choice := dto.OpenAITextResponseChoice{
 			Index: int(candidate.Index),
 			Message: dto.Message{
@@ -1145,7 +1160,8 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 			// 上述两份临时分配在高并发下会显著放大堆驻留。
 			var content strings.Builder
 			var inlineGrow int
-			for _, part := range candidate.Content.Parts {
+			for index, part := range candidate.Content.Parts {
+				textParts[index].startByte = -1
 				if part.InlineData != nil {
 					inlineGrow += len(part.InlineData.MimeType) + len(part.InlineData.Data) + 32
 				}
@@ -1154,18 +1170,21 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 				content.Grow(inlineGrow)
 			}
 			appended := 0
-			writeSep := func() {
-				if appended > 0 {
+			lastWasText := false
+			writeSep := func(text bool) {
+				if appended > 0 && !(text && lastWasText) {
 					content.WriteByte('\n')
 				}
 				appended++
+				lastWasText = text
 			}
 			var toolCalls []dto.ToolCallResponse
-			for _, part := range candidate.Content.Parts {
+			for index, part := range candidate.Content.Parts {
+				textParts[index].startByte = -1
 				if part.InlineData != nil {
 					// 媒体内容
 					if strings.HasPrefix(part.InlineData.MimeType, "image") {
-						writeSep()
+						writeSep(false)
 						content.WriteString("![image](data:")
 						content.WriteString(part.InlineData.MimeType)
 						content.WriteString(";base64,")
@@ -1173,7 +1192,7 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 						content.WriteByte(')')
 					} else {
 						// 其他媒体类型，直接显示链接
-						writeSep()
+						writeSep(false)
 						content.WriteString("[media](data:")
 						content.WriteString(part.InlineData.MimeType)
 						content.WriteString(";base64,")
@@ -1189,21 +1208,22 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 					choice.Message.ReasoningContent = &part.Text
 				} else {
 					if part.ExecutableCode != nil {
-						writeSep()
+						writeSep(false)
 						content.WriteString("```")
 						content.WriteString(part.ExecutableCode.Language)
 						content.WriteByte('\n')
 						content.WriteString(part.ExecutableCode.Code)
 						content.WriteString("\n```")
 					} else if part.CodeExecutionResult != nil {
-						writeSep()
+						writeSep(false)
 						content.WriteString("```output\n")
 						content.WriteString(part.CodeExecutionResult.Output)
 						content.WriteString("\n```")
 					} else {
-						// 过滤掉空行
-						if part.Text != "\n" {
-							writeSep()
+						// Preserve plain text exactly, including standalone newlines.
+						if part.Text != "" {
+							writeSep(true)
+							textParts[index] = renderedGeminiPart{text: part.Text, startByte: content.Len()}
 							content.WriteString(part.Text)
 						}
 					}
@@ -1220,7 +1240,7 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 			switch *candidate.FinishReason {
 			case "STOP":
 				choice.FinishReason = constant.FinishReasonStop
-			case "MAX_TOKENS":
+			case "MAX_TOKENS", "CONTINUATION":
 				choice.FinishReason = constant.FinishReasonLength
 			case "SAFETY":
 				// Safety filter triggered
@@ -1247,7 +1267,7 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 		if isToolCall {
 			choice.FinishReason = constant.FinishReasonToolCalls
 		}
-		choice.Message.Annotations = geminiGroundingAnnotations(candidate.GroundingMetadata, candidate.Content, choice.Message.StringContent(), nil)
+		choice.Message.Annotations = geminiGroundingAnnotations(candidate.GroundingMetadata, candidate.Content, choice.Message.StringContent(), nil, textParts)
 
 		fullTextResponse.Choices = append(fullTextResponse.Choices, choice)
 	}
@@ -1255,6 +1275,12 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 }
 
 func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*dto.ChatCompletionsStreamResponse, bool) {
+	response, stop, _ := streamResponseGeminiChatWithParts(geminiResponse)
+	return response, stop
+}
+
+func streamResponseGeminiChatWithParts(geminiResponse *dto.GeminiChatResponse) (*dto.ChatCompletionsStreamResponse, bool, [][]renderedGeminiPart) {
+	contentParts := make([][]renderedGeminiPart, 0, len(geminiResponse.Candidates))
 	choices := make([]dto.ChatCompletionsStreamResponseChoice, 0, len(geminiResponse.Candidates))
 	isStop := false
 	for _, candidate := range geminiResponse.Candidates {
@@ -1281,11 +1307,13 @@ func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 			content.Grow(inlineGrow)
 		}
 		appended := 0
-		writeSep := func() {
-			if appended > 0 {
+		lastWasText := false
+		writeSep := func(text bool) {
+			if appended > 0 && !(text && lastWasText) {
 				content.WriteByte('\n')
 			}
 			appended++
+			lastWasText = text
 		}
 		isTools := false
 		isThought := false
@@ -1295,7 +1323,7 @@ func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 			case "STOP":
 				// Normal completion
 				choice.FinishReason = &constant.FinishReasonStop
-			case "MAX_TOKENS":
+			case "MAX_TOKENS", "CONTINUATION":
 				// Reached maximum token limit
 				choice.FinishReason = &constant.FinishReasonLength
 			case "SAFETY":
@@ -1321,10 +1349,12 @@ func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 				choice.FinishReason = &constant.FinishReasonContentFilter
 			}
 		}
-		for _, part := range candidate.Content.Parts {
+		textParts := make([]renderedGeminiPart, len(candidate.Content.Parts))
+		for index, part := range candidate.Content.Parts {
+			textParts[index].startByte = -1
 			if part.InlineData != nil {
 				if strings.HasPrefix(part.InlineData.MimeType, "image") {
-					writeSep()
+					writeSep(false)
 					content.WriteString("![image](data:")
 					content.WriteString(part.InlineData.MimeType)
 					content.WriteString(";base64,")
@@ -1340,24 +1370,25 @@ func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 
 			} else if part.Thought {
 				isThought = true
-				writeSep()
+				writeSep(false)
 				content.WriteString(part.Text)
 			} else {
 				if part.ExecutableCode != nil {
-					writeSep()
+					writeSep(false)
 					content.WriteString("```")
 					content.WriteString(part.ExecutableCode.Language)
 					content.WriteByte('\n')
 					content.WriteString(part.ExecutableCode.Code)
 					content.WriteString("\n```\n")
 				} else if part.CodeExecutionResult != nil {
-					writeSep()
+					writeSep(false)
 					content.WriteString("```output\n")
 					content.WriteString(part.CodeExecutionResult.Output)
 					content.WriteString("\n```\n")
 				} else {
-					if part.Text != "\n" {
-						writeSep()
+					if part.Text != "" {
+						writeSep(true)
+						textParts[index] = renderedGeminiPart{text: part.Text, startByte: content.Len()}
 						content.WriteString(part.Text)
 					}
 				}
@@ -1365,19 +1396,22 @@ func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 		}
 		if isThought {
 			choice.Delta.SetReasoningContent(content.String())
+			textParts = nil
 		} else {
 			choice.Delta.SetContentString(content.String())
 		}
 		if isTools {
 			choice.FinishReason = &constant.FinishReasonToolCalls
 		}
+		choice.Delta.Annotations = geminiGroundingAnnotations(candidate.GroundingMetadata, candidate.Content, choice.Delta.GetContentString(), nil, textParts)
 		choices = append(choices, choice)
+		contentParts = append(contentParts, textParts)
 	}
 
 	var response dto.ChatCompletionsStreamResponse
 	response.Object = "chat.completion.chunk"
 	response.Choices = choices
-	return &response, isStop
+	return &response, isStop, contentParts
 }
 
 func handleStream(c *gin.Context, info *relaycommon.RelayInfo, resp *dto.ChatCompletionsStreamResponse) error {
@@ -1488,7 +1522,7 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 	groundingByChoice := make(map[int]*geminiGroundingStreamState)
 
 	usage, err := geminiStreamHandler(c, info, resp, func(data string, geminiResponse *dto.GeminiChatResponse) bool {
-		response, isStop := streamResponseGeminiChat2OpenAI(geminiResponse)
+		response, isStop, contentParts := streamResponseGeminiChatWithParts(geminiResponse)
 
 		response.Id = id
 		response.Created = createAt
@@ -1500,10 +1534,9 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 				state = &geminiGroundingStreamState{seen: make(map[string]struct{})}
 				groundingByChoice[choice.Index] = state
 			}
-			state.rendered.WriteString(choice.Delta.GetContentString())
 			for _, candidate := range geminiResponse.Candidates {
 				if int(candidate.Index) == choice.Index {
-					state.observeCandidate(candidate)
+					state.appendContent(candidate.Content, contentParts[choiceIdx], choice.Delta.GetContentString())
 					choice.Delta.Annotations = state.annotations(candidate.GroundingMetadata)
 					break
 				}
@@ -1754,7 +1787,7 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	// Google has not yet clarified how embedding models will be billed
 	// refer to openai billing method to use input tokens billing
 	// https://platform.openai.com/docs/guides/embeddings#what-are-embeddings
-	usage := service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())
+	usage := embeddingUsage(c, info, geminiResponse.UsageMetadata)
 	openAIResponse.Usage = *usage
 	if helper.ShouldScaleResponseUsage(info) {
 		openAIResponse.Usage = *helper.ScaleOpenAIUsageForRelayResponse(usage, info)

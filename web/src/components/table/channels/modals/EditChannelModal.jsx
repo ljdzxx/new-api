@@ -330,6 +330,7 @@ const EditChannelModal = (props) => {
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
     vertex_project_id: '',
+    vertex_api_version: 'v1',
     advanced_custom: undefined,
     tool_loss_policy: 'allow',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
@@ -2223,6 +2224,7 @@ const EditChannelModal = (props) => {
     // 顶层的 vertex_key_type 不应发送给后端
     delete localInputs.vertex_key_type;
     delete localInputs.vertex_project_id;
+    delete localInputs.vertex_api_version;
     delete localInputs.advanced_custom;
     delete localInputs.tool_loss_policy;
     // 顶层的 aws_key_type 不应发送给后端
@@ -2783,6 +2785,27 @@ const EditChannelModal = (props) => {
                             ? t('API Key 模式下不支持批量创建')
                             : t('JSON 模式支持手动输入或上传服务账号 JSON')
                         }
+                      />
+                    )}
+                    {inputs.type === 41 && (
+                      <Form.Select
+                        field='vertex_api_version'
+                        label={t('Vertex API 版本')}
+                        optionList={[
+                          { label: 'v1', value: 'v1' },
+                          { label: 'v1beta1', value: 'v1beta1' },
+                        ]}
+                        style={{ width: '100%' }}
+                        value={inputs.vertex_api_version || 'v1'}
+                        onChange={(value) =>
+                          handleChannelOtherSettingsChange(
+                            'vertex_api_version',
+                            value,
+                          )
+                        }
+                        extraText={t(
+                          'Google 模型默认使用 v1；需要预览功能时可选择 v1beta1。',
+                        )}
                       />
                     )}
                     {inputs.type === 41 &&

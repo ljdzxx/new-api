@@ -1,5 +1,7 @@
 {
   "translation": {
+    "Vertex API 版本": "Vertex API version",
+    "Google 模型默认使用 v1；需要预览功能时可选择 v1beta1。": "Google models use v1 by default; select v1beta1 for preview features.",
     "仅对 OpenAI 协议的 Chat Completions、Responses 和 Responses Compact 生效。": "Applies only to Chat Completions, Responses, and Responses Compact using the OpenAI protocol.",
     "强制使用匹配的 service_tier": "Force matched service_tier",
     "按映射前模型匹配，精确规则优先，* 匹配任意模型；仅调整模型费用，不调整独立工具费用。": "Match the model before mapping. Exact rules take priority; * matches any model. Only model charges are adjusted, not separate tool charges.",

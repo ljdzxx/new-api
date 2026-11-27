@@ -29,139 +29,158 @@ type geminiGroundingSupport struct {
 	GroundingChunkIndices []int `json:"groundingChunkIndices"`
 }
 
-// geminiGroundingStreamState 保存同一候选结果的已发送文本及引用去重状态。
+type renderedGeminiPart struct {
+	text      string
+	startByte int
+}
+type geminiTextSpan struct{ start, end, rendered int }
+type streamedGeminiPart struct {
+	text  strings.Builder
+	spans []geminiTextSpan
+}
 type geminiGroundingStreamState struct {
 	rendered strings.Builder
 	seen     map[string]struct{}
 	chunks   []geminiGroundingChunk
-	parts    map[int]string
+	parts    map[int]*streamedGeminiPart
 }
 
-// annotations 汇总前后帧的来源，再把累计文本中的引用位置映射到输出。
+func (s *geminiGroundingStreamState) recordPart(index int, text string, renderedStart int) {
+	if text == "" {
+		return
+	}
+	if s.parts == nil {
+		s.parts = make(map[int]*streamedGeminiPart)
+	}
+	part := s.parts[index]
+	if part == nil {
+		part = &streamedGeminiPart{}
+		s.parts[index] = part
+	}
+	start := part.text.Len()
+	part.text.WriteString(text)
+	if renderedStart >= 0 {
+		part.spans = append(part.spans, geminiTextSpan{start, start + len(text), renderedStart})
+	}
+}
+
+func (s *geminiGroundingStreamState) appendContent(content dto.GeminiChatContent, parts []renderedGeminiPart, rendered string) {
+	for i, part := range content.Parts {
+		if part.Thought || part.Text == "" {
+			continue
+		}
+		start := -1
+		if i < len(parts) && parts[i].startByte >= 0 {
+			start = s.rendered.Len() + parts[i].startByte
+		}
+		s.recordPart(i, part.Text, start)
+	}
+	s.rendered.WriteString(rendered)
+}
+
 func (s *geminiGroundingStreamState) annotations(metadata *dto.GeminiGroundingMetadata) []any {
 	if s == nil || metadata == nil {
 		return nil
 	}
 	var incoming []geminiGroundingChunk
 	if len(metadata.GroundingChunks) > 0 && common.Unmarshal(metadata.GroundingChunks, &incoming) == nil {
-		// Gemini 的 chunk 索引跨帧累计，按到达顺序追加。
 		s.chunks = append(s.chunks, incoming...)
 	}
-	if len(s.chunks) == 0 || len(metadata.GroundingSupports) == 0 {
-		return nil
+	if s.seen == nil {
+		s.seen = make(map[string]struct{})
 	}
-	chunks, err := common.Marshal(s.chunks)
-	if err != nil {
-		return nil
-	}
-	merged := *metadata
-	merged.GroundingChunks = chunks
-	content := dto.GeminiChatContent{}
-	if len(s.parts) > 0 {
-		maxPart := 0
-		for index := range s.parts {
-			maxPart = max(maxPart, index)
-		}
-		content.Parts = make([]dto.GeminiPart, maxPart+1)
-		for index, text := range s.parts {
-			content.Parts[index].Text = text
-		}
-	} else {
-		content.Parts = []dto.GeminiPart{{Text: s.rendered.String()}}
-	}
-	return geminiGroundingAnnotations(&merged, content, s.rendered.String(), s.seen)
-}
-
-// observeCandidate 累计源文本 part，以便将延迟到达的 grounding offsets 映射回流式文本。
-func (s *geminiGroundingStreamState) observeCandidate(candidate dto.GeminiChatCandidate) {
-	if s == nil {
-		return
-	}
-	if s.parts == nil {
-		s.parts = make(map[int]string)
-	}
-	for index, part := range candidate.Content.Parts {
-		if part.Text != "" && !part.Thought {
-			s.parts[index] += part.Text
-		}
-	}
+	return groundingAnnotationsForParts(metadata.GroundingSupports, s.chunks, s.parts, s.rendered.String(), s.seen)
 }
 
 // geminiGroundingAnnotations 将 Gemini 字节位置转换成 OpenAI 的 Unicode 字符位置。
 // 流式调用传入累计文本与 seen；非流式传入 nil 以按当前响应去重。
-func geminiGroundingAnnotations(metadata *dto.GeminiGroundingMetadata, content dto.GeminiChatContent, rendered string, seen map[string]struct{}) []any {
-	if metadata == nil || len(metadata.GroundingChunks) == 0 || len(metadata.GroundingSupports) == 0 {
+func geminiGroundingAnnotations(metadata *dto.GeminiGroundingMetadata, content dto.GeminiChatContent, rendered string, seen map[string]struct{}, locations ...[]renderedGeminiPart) []any {
+	if metadata == nil {
 		return nil
 	}
 	var chunks []geminiGroundingChunk
-	var supports []geminiGroundingSupport
-	if common.Unmarshal(metadata.GroundingChunks, &chunks) != nil || common.Unmarshal(metadata.GroundingSupports, &supports) != nil {
+	if common.Unmarshal(metadata.GroundingChunks, &chunks) != nil {
 		return nil
 	}
 	if seen == nil {
 		seen = make(map[string]struct{})
 	}
-	parts := make([]struct {
-		text  string
-		start int
-	}, len(content.Parts))
-	textParts := 0
-	solePart := -1
+	state := &geminiGroundingStreamState{}
 	cursor := 0
 	for i, part := range content.Parts {
-		parts[i].start = -1
-		if part.Thought || part.Text == "" || part.Text == "\n" {
+		if part.Thought || part.Text == "" {
 			continue
 		}
-		start := strings.Index(rendered[cursor:], part.Text)
-		if start < 0 {
-			continue
+		start := cursor
+		if len(locations) > 0 {
+			if i >= len(locations[0]) {
+				continue
+			}
+			start = locations[0][i].startByte
 		}
-		parts[i].text = part.Text
-		parts[i].start = cursor + start
-		cursor = parts[i].start + len(part.Text)
-		textParts++
-		solePart = i
+		state.recordPart(i, part.Text, start)
+		cursor += len(part.Text)
 	}
-	// 流式 metadata 往往在文本帧之后到达，使用累计文本作单一 part。
-	if textParts == 0 && len(content.Parts) == 0 && rendered != "" {
-		parts = append(parts, struct {
-			text  string
-			start int
-		}{text: rendered, start: 0})
-		textParts, solePart = 1, 0
+	return groundingAnnotationsForParts(metadata.GroundingSupports, chunks, state.parts, rendered, seen)
+}
+
+func groundingAnnotationsForParts(raw []byte, chunks []geminiGroundingChunk, parts map[int]*streamedGeminiPart, rendered string, seen map[string]struct{}) []any {
+	var supports []geminiGroundingSupport
+	if len(chunks) == 0 || common.Unmarshal(raw, &supports) != nil {
+		return nil
+	}
+	solePart := -1
+	for index, part := range parts {
+		if len(part.spans) == 0 {
+			continue
+		}
+		if solePart != -1 {
+			solePart = -2
+			break
+		}
+		solePart = index
 	}
 	annotations := make([]any, 0)
 	for _, support := range supports {
-		partIndex := solePart
+		index := solePart
 		if support.Segment.PartIndex != nil {
-			partIndex = *support.Segment.PartIndex
-		} else if textParts != 1 {
+			index = *support.Segment.PartIndex
+		}
+		part := parts[index]
+		if part == nil {
 			continue
 		}
-		if partIndex < 0 || partIndex >= len(parts) || parts[partIndex].start < 0 {
-			continue
-		}
-		part := parts[partIndex]
+		text := part.text.String()
 		startByte, endByte := support.Segment.StartIndex, support.Segment.EndIndex
-		if startByte < 0 || endByte <= startByte || endByte > len(part.text) {
+		if startByte < 0 || endByte <= startByte || endByte > len(text) {
 			continue
 		}
-		if !utf8.ValidString(part.text[:startByte]) || !utf8.ValidString(part.text[:endByte]) {
+		if !utf8.ValidString(text[:startByte]) || !utf8.ValidString(text[:endByte]) {
 			continue
 		}
-		if support.Segment.Text != "" && part.text[startByte:endByte] != support.Segment.Text {
+		if support.Segment.Text != "" && text[startByte:endByte] != support.Segment.Text {
 			continue
 		}
-		start := utf8.RuneCountInString(rendered[:part.start+startByte])
-		end := utf8.RuneCountInString(rendered[:part.start+endByte])
-		for _, index := range support.GroundingChunkIndices {
-			if index < 0 || index >= len(chunks) {
+		start, end := -1, -1
+		for _, span := range part.spans {
+			if startByte >= span.start && startByte < span.end {
+				start = span.rendered + startByte - span.start
+			}
+			if endByte > span.start && endByte <= span.end {
+				end = span.rendered + endByte - span.start
+			}
+		}
+		if start < 0 || end <= start || end > len(rendered) || rendered[start:end] != text[startByte:endByte] {
+			continue
+		}
+		start, end = utf8.RuneCountInString(rendered[:start]), utf8.RuneCountInString(rendered[:end])
+		for _, chunkIndex := range support.GroundingChunkIndices {
+			if chunkIndex < 0 || chunkIndex >= len(chunks) {
 				continue
 			}
-			source := chunks[index].Web
+			source := chunks[chunkIndex].Web
 			if source == nil {
-				source = chunks[index].RetrievedContext
+				source = chunks[chunkIndex].RetrievedContext
 			}
 			if source == nil || source.URI == "" {
 				continue
@@ -171,10 +190,7 @@ func geminiGroundingAnnotations(metadata *dto.GeminiGroundingMetadata, content d
 				continue
 			}
 			seen[key] = struct{}{}
-			annotations = append(annotations, map[string]any{
-				"type":         "url_citation",
-				"url_citation": map[string]any{"start_index": start, "end_index": end, "url": source.URI, "title": source.Title},
-			})
+			annotations = append(annotations, map[string]any{"type": "url_citation", "url_citation": map[string]any{"start_index": start, "end_index": end, "url": source.URI, "title": source.Title}})
 		}
 	}
 	return annotations

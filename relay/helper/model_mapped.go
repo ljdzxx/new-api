@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 )
@@ -29,6 +30,7 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	}
 	// 渠道可能在重试时发生变化，映射状态必须按当前渠道重新计算。
 	info.IsModelMapped = false
+	info.ChannelMappedReasoningEffort = ""
 	info.UpstreamModelName = mappingModelName
 	clientReasoningEffort := requestReasoningEffort(request)
 	if info.ClientReasoningEffort == "" {
@@ -37,13 +39,18 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 	// A retry may select a different channel. Reset the upstream effort to the
 	// preserved client value before applying the current channel's mapping so
 	// an override from the previous channel cannot leak into this request.
-	info.ReasoningEffort = info.ClientReasoningEffort
+	info.ReasoningEffort = reasoning.Gemini4ThinkingLevel(mappingModelName, info.ClientReasoningEffort)
+	// Gemini defaults precede channel rule matching as well as the final
+	// channel override. Keep the raw client effort separately for audit/retry.
+	if strings.HasPrefix(strings.TrimPrefix(strings.ToLower(mappingModelName), "models/"), "gemini-4-") {
+		setRequestReasoningEffort(request, info, info.ReasoningEffort)
+	}
 	info.ModelMappingInputTokenEstimate = info.GetEstimatePromptTokens()
 	info.ModelMappingThresholdEnabled = info.ChannelMeta.ModelMappingInputTokenThresholdEnabled
 	info.ModelMappingThreshold = info.ChannelMeta.ModelMappingInputTokenThreshold
 	info.ModelMappingThresholdSatisfied = modelMappingThresholdSatisfied(info)
 	info.ModelMappingCandidateModel = mappingModelName
-	info.ModelMappingCandidateEffort = info.ClientReasoningEffort
+	info.ModelMappingCandidateEffort = info.ReasoningEffort
 	info.ModelMappingSkippedReason = ""
 	if info.ModelMappingThresholdEnabled && !info.ModelMappingThresholdSatisfied {
 		info.ModelMappingSkippedReason = "input_tokens_below_threshold"
@@ -66,10 +73,11 @@ func ModelMappedHelper(c *gin.Context, info *common.RelayInfo, request dto.Reque
 		// 模型重定向只执行单跳，命中后不再继续判断目标模型是否还有映射规则。
 		if info.ModelMappingThresholdSatisfied {
 			requestNeedsImageInput := requestRequiresImageInput(request)
-			requestEffort := info.ClientReasoningEffort
+			requestEffort := info.ModelMappingCandidateEffort
 			mappedModel, mappedEffort, exists := getMappedModel(modelMap, mappingModelName, requestEffort, requestNeedsImageInput)
 			if exists && mappedModel != "" {
-				if mappedModel != mappingModelName || mappedEffort != "" && mappedEffort != requestEffort {
+				info.ChannelMappedReasoningEffort = mappedEffort
+				if mappedModel != mappingModelName || mappedEffort != "" {
 					info.IsModelMapped = true
 					info.UpstreamModelName = mappedModel
 					setRequestReasoningEffort(request, info, mappedEffort)
@@ -279,6 +287,7 @@ func setRequestReasoningEffort(request dto.Request, info *common.RelayInfo, effo
 			req.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{}
 		}
 		req.GenerationConfig.ThinkingConfig.ThinkingLevel = effort
+		req.GenerationConfig.ThinkingConfig.ThinkingBudget = nil
 	}
 }
 

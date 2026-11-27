@@ -851,10 +851,11 @@ func ResponseOpenAI2Gemini(openAIResponse *dto.OpenAITextResponse, info *relayco
 	geminiResponse := &dto.GeminiChatResponse{
 		Candidates: make([]dto.GeminiChatCandidate, 0, len(openAIResponse.Choices)),
 		UsageMetadata: dto.GeminiUsageMetadata{
-			PromptTokenCount:     openAIResponse.PromptTokens,
-			CandidatesTokenCount: openAIResponse.CompletionTokens,
-			TotalTokenCount:      openAIResponse.PromptTokens + openAIResponse.CompletionTokens,
-			BillingUsage:         dto.CloneBillingUsage(openAIResponse.Usage.BillingUsage),
+			PromptTokenCount:        openAIResponse.PromptTokens,
+			CachedContentTokenCount: geminiCachedContentTokenCount(&openAIResponse.Usage),
+			CandidatesTokenCount:    openAIResponse.CompletionTokens,
+			TotalTokenCount:         openAIResponse.PromptTokens + openAIResponse.CompletionTokens,
+			BillingUsage:            dto.CloneBillingUsage(openAIResponse.Usage.BillingUsage),
 		},
 	}
 	if geminiResponse.UsageMetadata.BillingUsage == nil {
@@ -947,7 +948,7 @@ func StreamResponseOpenAI2Gemini(openAIResponse *dto.ChatCompletionsStreamRespon
 	}
 
 	// 如果没有实际内容且没有结束标志，跳过。主要针对 openai 流响应开头的空数据
-	if !hasContent && !hasFinishReason {
+	if !hasContent && !hasFinishReason && openAIResponse.Usage == nil {
 		return nil
 	}
 
@@ -964,6 +965,7 @@ func StreamResponseOpenAI2Gemini(openAIResponse *dto.ChatCompletionsStreamRespon
 		geminiResponse.UsageMetadata.PromptTokenCount = openAIResponse.Usage.PromptTokens
 		geminiResponse.UsageMetadata.CandidatesTokenCount = openAIResponse.Usage.CompletionTokens
 		geminiResponse.UsageMetadata.TotalTokenCount = openAIResponse.Usage.TotalTokens
+		geminiResponse.UsageMetadata.CachedContentTokenCount = geminiCachedContentTokenCount(openAIResponse.Usage)
 		geminiResponse.UsageMetadata.BillingUsage = dto.CloneBillingUsage(openAIResponse.Usage.BillingUsage)
 		if geminiResponse.UsageMetadata.BillingUsage == nil {
 			geminiResponse.UsageMetadata.BillingUsage = dto.NewOpenAIChatBillingUsage(openAIResponse.Usage)
@@ -1054,4 +1056,17 @@ func geminiBillingMetadataFromOpenAIUsage(usage *dto.Usage) (dto.GeminiUsageMeta
 		return dto.GeminiUsageMetadata{}, false
 	}
 	return *billingUsage.GeminiUsageMetadata, true
+}
+
+func geminiCachedContentTokenCount(usage *dto.Usage) int {
+	if usage == nil {
+		return 0
+	}
+	if usage.PromptTokensDetails.CachedTokens > 0 {
+		return usage.PromptTokensDetails.CachedTokens
+	}
+	if usage.InputTokensDetails != nil && usage.InputTokensDetails.CachedTokens > 0 {
+		return usage.InputTokensDetails.CachedTokens
+	}
+	return 0
 }

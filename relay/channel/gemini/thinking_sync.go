@@ -6,11 +6,41 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/reasoning"
 )
 
-// normalizeGeminiThinkingConfig 把 Gemini 2.5 的 budget 与 Gemini 3 的 level
+// normalizeGeminiThinkingConfig 把 Gemini 2.5 的 budget 与 Gemini 3/4 的 level
 // 互相转换，并限制模型接受的范围，避免上游因组合不兼容返回 400。
 func normalizeGeminiThinkingConfig(request *dto.GeminiChatRequest, info *relaycommon.RelayInfo) error {
+	if request == nil || info == nil {
+		return nil
+	}
+	// Resolve provider defaults first; an explicit channel rule is the final
+	// authority. Keep rule matching and the original model's billing identity.
+	if err := normalizeGeminiThinkingDefaults(request, info); err != nil {
+		return err
+	}
+	model := strings.TrimPrefix(strings.ToLower(info.UpstreamModelName), "models/")
+	if effort := info.ChannelMappedReasoningEffort; effort != "" {
+		config := request.GenerationConfig.ThinkingConfig
+		if config == nil {
+			config = &dto.GeminiThinkingConfig{}
+			request.GenerationConfig.ThinkingConfig = config
+		}
+		config.ThinkingLevel = effort
+		config.ThinkingBudget = nil
+		info.ReasoningEffort = effort
+	} else if config := request.GenerationConfig.ThinkingConfig; config != nil && config.ThinkingLevel != "" {
+		info.ReasoningEffort = config.ThinkingLevel
+	} else if strings.HasPrefix(model, "gemini-4-argon-cyber-permissive") {
+		info.ReasoningEffort = "high"
+	} else if strings.HasPrefix(model, "gemini-4-argon") {
+		info.ReasoningEffort = "medium"
+	}
+	return nil
+}
+
+func normalizeGeminiThinkingDefaults(request *dto.GeminiChatRequest, info *relaycommon.RelayInfo) error {
 	if request == nil || request.GenerationConfig.ThinkingConfig == nil || info == nil {
 		return nil
 	}
@@ -29,7 +59,7 @@ func normalizeGeminiThinkingConfig(request *dto.GeminiChatRequest, info *relayco
 		config.ThinkingLevel = strings.ToLower(strings.TrimSpace(config.ThinkingLevel))
 	}
 
-	levelModel := strings.HasPrefix(model, "gemini-3") || model == "gemini-flash-latest" || model == "gemini-flash-lite-latest" || model == "gemini-pro-latest"
+	levelModel := strings.HasPrefix(model, "gemini-3") || strings.HasPrefix(model, "gemini-4-") || model == "gemini-flash-latest" || model == "gemini-flash-lite-latest" || model == "gemini-pro-latest"
 	budgetModel := strings.HasPrefix(model, "gemini-2.5")
 	if levelModel {
 		if config.ThinkingBudget != nil {
@@ -42,7 +72,11 @@ func normalizeGeminiThinkingConfig(request *dto.GeminiChatRequest, info *relayco
 			config.ThinkingBudget = nil
 		}
 		if config.ThinkingLevel != "" {
-			config.ThinkingLevel = normalizeGeminiThinkingLevel(config.ThinkingLevel)
+			if strings.HasPrefix(model, "gemini-4-") {
+				config.ThinkingLevel = reasoning.Gemini4ThinkingLevel(model, config.ThinkingLevel)
+			} else {
+				config.ThinkingLevel = normalizeGeminiThinkingLevel(config.ThinkingLevel)
+			}
 			if strings.HasPrefix(model, "gemini-3-pro") && !strings.HasPrefix(model, "gemini-3.1-pro") {
 				if config.ThinkingLevel == "minimal" {
 					config.ThinkingLevel = "low"
